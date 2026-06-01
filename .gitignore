@@ -1,0 +1,18 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Node/Vite
+monitoring-dashboard/node_modules/
+dist/
+
+# IDE Files
+.idea/
+backend/.idea
+frontend/.idea
+
+# Enviornmental Variables
+backend/.env
+.env
+.env.*
