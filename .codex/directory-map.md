@@ -1,6 +1,7 @@
 # Directory Structure of Project
 
 ## Project Structure
+```
 equate-ogsd/
 ├── .codex/
 ├── .github/
@@ -77,9 +78,11 @@ equate-ogsd/
 ├── AGENTS.md
 ├── README.md
 └── .gitignore
+```
 
 ## .codex Structure
 
+```
 .codex/
 ├── project-context/
 │   ├── architecture.md
@@ -107,3 +110,4 @@ equate-ogsd/
 │   ├── phase-2.md
 │   └── backlog.md
 └── directory-map.md
+```
