@@ -16,7 +16,7 @@ Store all decisions in:
 Create a new file for every decision:
 
 ```text
-{service}-{decision-number}.            md
+{service}-{decision-number}.md
 ```
 
 Examples:
