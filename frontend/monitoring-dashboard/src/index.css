@@ -184,37 +184,6 @@ nav {
   margin-bottom: 32px;
 }
 
-.mode-strip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-}
-
-.mode-chip {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 10px 14px;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.mode-chip:hover {
-  border-color: var(--border-strong);
-}
-
-.mode-chip.active {
-  background: var(--salmon);
-  border-color: var(--salmon);
-  color: white;
-}
-
 .stat-card {
   background: var(--bg-2);
   border: 1px solid var(--border);
