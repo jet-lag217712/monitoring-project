@@ -28,7 +28,7 @@ export default function SiteDetail({ data, onBack }) {
           </div>
           <h1 className="page-title">{location}</h1>
           <p className="page-sub">
-            {summary?.total_devices ?? '—'} devices · {summary?.online_count ?? '—'} online · {summary?.idf_count ?? '—'} IDFs
+            {summary?.total_devices ?? '—'} devices · {summary?.online_count ?? '—'} online
           </p>
         </div>
         {summary?.active_alerts > 0 && (

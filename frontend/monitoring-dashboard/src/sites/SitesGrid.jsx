@@ -20,7 +20,6 @@ export default function SitesGrid({
       <PageHeader
         eyebrow={dataMode === 'live' ? 'Network Dashboard' : 'Network Dashboard'}
         title="All Sites"
-        subtitle={`District Network Overview`}
         rightContent={<LastUpdatedLabel lastUpdated={lastUpdated} />}
       />
 
