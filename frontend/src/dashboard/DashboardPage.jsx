@@ -40,6 +40,7 @@ export default function DashboardPage({ dashboard }) {
     return (
       <SiteDetail
         data={siteDetail}
+        siteId={selectedSite}
         onBack={handleBack}
         onDeviceClick={handleDeviceClick}
       />
