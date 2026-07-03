@@ -1,6 +1,5 @@
-import BackButton from '../common/BackButton.jsx'
-import Breadcrumb from '../common/Breadcrumb.jsx'
 import LoadingSkeleton from '../common/LoadingSkeleton.jsx'
+import PageNavStack from '../common/PageNavStack.jsx'
 import { DeviceStatusBadge } from '../common/StatusBadge.jsx'
 import { resolveSelectedInterface } from '../utils/deviceData.js'
 import DeviceInfoCard from './DeviceInfoCard.jsx'
@@ -19,62 +18,62 @@ export default function DeviceDetail({
   onNavigateAllSites,
   onNavigateSite,
 }) {
-  if (!device || !site) {
-    return <LoadingSkeleton />
-  }
-
-  const displayName = device.name ?? device.hostname ?? deviceIp
-  const selectedInterface = resolveSelectedInterface(device, selectedInterfaceKey)
-
-  const statusLabel = DEVICE_STATUS_LABELS[device.status] ?? 'Unknown'
+  const siteLabel = site?.location ?? 'Site'
+  const displayName = device?.name ?? device?.hostname ?? deviceIp
+  const selectedInterface = device ? resolveSelectedInterface(device, selectedInterfaceKey) : null
+  const statusLabel = DEVICE_STATUS_LABELS[device?.status] ?? 'Unknown'
 
   return (
     <div className="device-detail-page">
-      <div className="page-nav-stack">
-        <Breadcrumb
-          items={[
-            { label: 'All Sites', onClick: onNavigateAllSites },
-            { label: site.location ?? 'Site', onClick: onNavigateSite },
-            { label: displayName },
-          ]}
-        />
-        <BackButton onClick={onNavigateSite}>← Back</BackButton>
-      </div>
+      <PageNavStack
+        breadcrumbItems={[
+          { label: 'All Sites', onClick: onNavigateAllSites },
+          { label: siteLabel, onClick: onNavigateSite },
+          { label: displayName },
+        ]}
+        onBack={onNavigateSite}
+      />
 
-      <div className="site-detail-header">
-        <div>
-          <div className="page-eyebrow">
-            <span className="eyebrow-dot" />
-            Device Detail
+      {!device || !site ? (
+        <LoadingSkeleton />
+      ) : (
+        <>
+          <div className="site-detail-header">
+            <div>
+              <div className="page-eyebrow">
+                <span className="eyebrow-dot" />
+                Device Detail
+              </div>
+              <h1 className="page-title">{displayName}</h1>
+              <p className="page-sub">
+                {device.hostname ?? '—'} · {deviceIp} · {statusLabel}
+              </p>
+            </div>
+            <DeviceStatusBadge status={device.status} />
           </div>
-          <h1 className="page-title">{displayName}</h1>
-          <p className="page-sub">
-            {device.hostname ?? '—'} · {deviceIp} · {statusLabel}
-          </p>
-        </div>
-        <DeviceStatusBadge status={device.status} />
-      </div>
 
-      <DeviceMetricsCharts history={device.history} />
+          <DeviceMetricsCharts history={device.history} />
 
-      <DeviceInfoCard device={device} ip={deviceIp} />
+          <DeviceInfoCard device={device} ip={deviceIp} />
 
-      <div className="interface-section-header">
-        <div className="chart-card-label">Interface Management</div>
-      </div>
+          <div className="interface-section-header">
+            <div className="chart-card-label">Interface Management</div>
+          </div>
 
-      <div className="interface-split">
-        <div className="interface-split-table">
-          <InterfacesTable
-            interfaces={device.interfaces}
-            selectedKey={selectedInterfaceKey ?? selectedInterface?.name}
-            onSelect={key => onInterfaceSelect(deviceIp, key)}
-          />
-        </div>
-        <div className="interface-split-detail">
-          <InterfaceDetailPanel iface={selectedInterface} />
-        </div>
-      </div>
+          <div className="interface-split">
+            <div className="interface-split-table">
+              <InterfacesTable
+                interfaces={device.interfaces}
+                selectedKey={selectedInterfaceKey ?? selectedInterface?.name}
+                onSelect={key => onInterfaceSelect(deviceIp, key)}
+              />
+            </div>
+            <div className="interface-split-detail">
+              <InterfaceDetailPanel iface={selectedInterface} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

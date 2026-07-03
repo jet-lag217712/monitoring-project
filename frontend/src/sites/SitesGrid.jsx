@@ -1,6 +1,7 @@
 import LastUpdatedLabel from '../dashboard/LastUpdatedLabel.jsx'
 import OverviewStats from '../dashboard/OverviewStats.jsx'
 import PageHeader from '../dashboard/PageHeader.jsx'
+import PageNavStack from '../common/PageNavStack.jsx'
 import SearchBar from '../common/SearchBar.jsx'
 import SiteCard from './SiteCard.jsx'
 import { getSiteStats } from '../utils/siteData.js'
@@ -17,6 +18,8 @@ export default function SitesGrid({
 
   return (
     <div>
+      <PageNavStack breadcrumbItems={[{ label: 'All Sites' }]} />
+
       <PageHeader
         eyebrow={dataMode === 'live' ? 'Network Dashboard' : 'Network Dashboard'}
         title="All Sites"

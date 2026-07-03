@@ -408,7 +408,7 @@ body {
 .site-card-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
