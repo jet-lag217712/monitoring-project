@@ -211,11 +211,32 @@ function buildInterfaces(ip, device) {
   })
 }
 
-function enrichDevice(ip, device) {
+function buildSysDescr(role, meta) {
+  switch (role) {
+    case 'Core Switch':
+      return `Cisco IOS XE Software, ${meta.model}`
+    case 'Firewall':
+      return `Palo Alto PAN-OS, ${meta.model}`
+    case 'Wireless Controller':
+      return `Aruba AOS, ${meta.model}`
+    case 'Distribution Switch':
+      return `Cisco IOS XE Software, ${meta.model}`
+    default:
+      return `Cisco IOS Software, ${meta.model}`
+  }
+}
+
+function enrichDevice(ip, device, siteLocation) {
   const meta = DEVICE_META[device.role] ?? DEVICE_META['Access Switch']
   const seed = hashSeed(ip)
   const rng = createRng(seed)
   const serialSuffix = (seed % 900000 + 100000).toString(16).toUpperCase()
+  const interfaces = buildInterfaces(ip, device)
+  const activeInterfaceCount = interfaces.filter(iface => iface.oper_status === 'up').length
+  const isOnline = device.status === 1
+  const psu1_v = Math.round((11.8 + rng() * 0.6) * 10) / 10
+  const psu2_v = Math.round((11.8 + rng() * 0.6) * 10) / 10
+  const voltagesInRange = psu1_v >= 11.5 && psu1_v <= 12.5 && psu2_v >= 11.5 && psu2_v <= 12.5
 
   return {
     ...device,
@@ -225,15 +246,27 @@ function enrichDevice(ip, device) {
     serial_number: `SN-${serialSuffix}`,
     temperature_c: Math.round(38 + rng() * 18 + (device.cpu_pct ?? 0) * 0.1),
     power_supply: {
-      psu1_v: Math.round((11.8 + rng() * 0.6) * 10) / 10,
-      psu2_v: Math.round((11.8 + rng() * 0.6) * 10) / 10,
+      psu1_v,
+      psu2_v,
     },
+    power_supply_status: voltagesInRange ? 'Normal' : 'Warning',
+    snmp: {
+      sysName: device.hostname,
+      sysDescr: buildSysDescr(device.role, meta),
+      sysUpTime: Math.round((device.uptime_days ?? 0) * 24 * 60 * 60 * 100),
+      sysContact: 'netops@district.edu',
+      sysLocation: siteLocation ?? '—',
+    },
+    interface_count: interfaces.length,
+    active_interface_count: activeInterfaceCount,
+    admin_status: isOnline ? 'up' : 'down',
+    oper_status: isOnline ? 'up' : 'down',
     history: {
       cpu: buildHistory(seed, device.cpu_pct ?? 30),
       memory: buildHistory(seed + 1, device.memory_pct ?? 40),
       temperature: buildHistory(seed + 2, 42 + (device.cpu_pct ?? 0) * 0.15, 4),
     },
-    interfaces: buildInterfaces(ip, device),
+    interfaces,
   }
 }
 
@@ -241,7 +274,7 @@ function enrichDetails(details) {
   for (const detail of Object.values(details)) {
     const devices = detail.latest?.devices ?? {}
     for (const [ip, device] of Object.entries(devices)) {
-      detail.latest.devices[ip] = enrichDevice(ip, device)
+      detail.latest.devices[ip] = enrichDevice(ip, device, detail.location)
     }
   }
 }
