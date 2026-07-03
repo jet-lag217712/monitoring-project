@@ -54,7 +54,6 @@ export default function SiteCard({ site, onClick }) {
       <MiniBar value={avg_cpu} />
 
       <div className="site-card-footer">
-        <span className="ups-count">{idf_count} IDFs</span>
         <span className="card-arrow">→</span>
       </div>
     </div>
