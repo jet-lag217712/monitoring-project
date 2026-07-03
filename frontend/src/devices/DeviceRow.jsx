@@ -10,9 +10,19 @@ const mutedCellStyle = {
   fontSize: '0.8rem',
 }
 
-export default function DeviceRow({ ip, device, renderStatus }) {
+export default function DeviceRow({ ip, device, renderStatus, onClick }) {
+  const interactiveProps = onClick
+    ? {
+        className: 'clickable-row',
+        onClick,
+        onKeyDown: e => e.key === 'Enter' && onClick(),
+        role: 'button',
+        tabIndex: 0,
+      }
+    : {}
+
   return (
-    <tr>
+    <tr {...interactiveProps}>
       <td><span className="ups-ip">{ip}</span></td>
       <td style={mutedCellStyle}>{device.hostname ?? '—'}</td>
       <td style={mutedCellStyle}>{device.role ?? '—'}</td>

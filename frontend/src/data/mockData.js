@@ -116,6 +116,136 @@ const baseDetails = {
   },
 }
 
+const DEVICE_META = {
+  'Core Switch': { vendor: 'Cisco', model: 'Catalyst 9300-48P', portCount: 12, prefix: 'Gi1/0' },
+  'Firewall': { vendor: 'Palo Alto', model: 'PA-3220', portCount: 8, prefix: 'ethernet1/' },
+  'Wireless Controller': { vendor: 'Aruba', model: 'Mobility Master', portCount: 4, prefix: 'Port' },
+  'Access Switch': { vendor: 'Cisco', model: 'Catalyst 9200-24P', portCount: 12, prefix: 'Gi1/0' },
+  'Distribution Switch': { vendor: 'Cisco', model: 'Catalyst 9500-24Y4C', portCount: 12, prefix: 'Te1/0' },
+}
+
+function hashSeed(str) {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+function createRng(seed) {
+  let s = seed
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+}
+
+function buildHistory(seed, baseValue, variance = 12, points = 24) {
+  const rng = createRng(seed)
+  const now = Date.now()
+  const hourMs = 60 * 60 * 1000
+  return Array.from({ length: points }, (_, i) => {
+    const offset = (points - 1 - i) * hourMs
+    const jitter = (rng() - 0.5) * variance * 2
+    const value = Math.max(0, Math.min(100, Math.round(baseValue + jitter)))
+    return { ts: new Date(now - offset).toISOString(), value }
+  })
+}
+
+function buildTrafficHistory(seed, baseIn, baseOut, points = 24) {
+  const rng = createRng(seed + 99)
+  const now = Date.now()
+  const hourMs = 60 * 60 * 1000
+  return Array.from({ length: points }, (_, i) => {
+    const offset = (points - 1 - i) * hourMs
+    const inJitter = (rng() - 0.5) * baseIn * 0.4
+    const outJitter = (rng() - 0.5) * baseOut * 0.4
+    return {
+      ts: new Date(now - offset).toISOString(),
+      in_mbps: Math.max(0, Math.round((baseIn + inJitter) * 10) / 10),
+      out_mbps: Math.max(0, Math.round((baseOut + outJitter) * 10) / 10),
+    }
+  })
+}
+
+function buildInterfaces(ip, device) {
+  const meta = DEVICE_META[device.role] ?? DEVICE_META['Access Switch']
+  const rng = createRng(hashSeed(`${ip}-${device.hostname}`))
+  const descriptions = [
+    'Uplink to core',
+    'IDF access layer',
+    'AP trunk VLAN 110',
+    'Security camera VLAN 120',
+    'VoIP phone VLAN 130',
+    'Guest Wi-Fi uplink',
+    'Building management system',
+    'Spare — unused',
+  ]
+
+  return Array.from({ length: meta.portCount }, (_, i) => {
+    const ifIndex = i + 1
+    const name = `${meta.prefix}${ifIndex}`
+    const isUp = rng() > 0.12
+    const utilization = isUp ? Math.round(rng() * 85) : 0
+    const speed = device.role === 'Distribution Switch' && i < 2 ? '10 Gbps' : '1 Gbps'
+    const bytesBase = isUp ? Math.round(rng() * 8e9 + 5e7) : 0
+    const seed = hashSeed(`${ip}-${name}`)
+
+    return {
+      if_index: ifIndex,
+      name,
+      status: isUp ? 'up' : 'down',
+      utilization_pct: utilization,
+      speed,
+      admin_status: isUp || rng() > 0.3 ? 'up' : 'down',
+      oper_status: isUp ? 'up' : 'down',
+      duplex: isUp ? 'full' : '—',
+      bytes_in: bytesBase,
+      bytes_out: Math.round(bytesBase * (0.3 + rng() * 0.5)),
+      packets_in: Math.round(bytesBase / 900),
+      packets_out: Math.round(bytesBase / 1100),
+      errors_in: isUp && rng() > 0.85 ? Math.round(rng() * 12) : 0,
+      errors_out: isUp && rng() > 0.9 ? Math.round(rng() * 8) : 0,
+      last_status_change: new Date(Date.now() - Math.round(rng() * 30) * 86400000).toISOString(),
+      description: descriptions[i % descriptions.length],
+      traffic_history: buildTrafficHistory(seed, 20 + utilization * 0.8, 10 + utilization * 0.5),
+    }
+  })
+}
+
+function enrichDevice(ip, device) {
+  const meta = DEVICE_META[device.role] ?? DEVICE_META['Access Switch']
+  const seed = hashSeed(ip)
+  const rng = createRng(seed)
+  const serialSuffix = (seed % 900000 + 100000).toString(16).toUpperCase()
+
+  return {
+    ...device,
+    name: device.hostname,
+    vendor: meta.vendor,
+    model: meta.model,
+    serial_number: `SN-${serialSuffix}`,
+    temperature_c: Math.round(38 + rng() * 18 + (device.cpu_pct ?? 0) * 0.1),
+    power_supply: {
+      psu1_v: Math.round((11.8 + rng() * 0.6) * 10) / 10,
+      psu2_v: Math.round((11.8 + rng() * 0.6) * 10) / 10,
+    },
+    history: {
+      cpu: buildHistory(seed, device.cpu_pct ?? 30),
+      memory: buildHistory(seed + 1, device.memory_pct ?? 40),
+      temperature: buildHistory(seed + 2, 42 + (device.cpu_pct ?? 0) * 0.15, 4),
+    },
+    interfaces: buildInterfaces(ip, device),
+  }
+}
+
+function enrichDetails(details) {
+  for (const detail of Object.values(details)) {
+    const devices = detail.latest?.devices ?? {}
+    for (const [ip, device] of Object.entries(devices)) {
+      detail.latest.devices[ip] = enrichDevice(ip, device)
+    }
+  }
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
@@ -152,6 +282,7 @@ function deriveSiteSummary(detail) {
 function buildScenario(mutator) {
   const details = clone(baseDetails)
   mutator(details)
+  enrichDetails(details)
 
   const sites = Object.fromEntries(
     Object.entries(details).map(([siteId, detail]) => [siteId, deriveSiteSummary(detail)]),

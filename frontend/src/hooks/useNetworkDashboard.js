@@ -25,6 +25,8 @@ export function useNetworkDashboard() {
   const [sites, setSites] = useState(initialSites)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSite, setSelectedSite] = useState(null)
+  const [selectedDevice, setSelectedDevice] = useState(null)
+  const [selectedInterfaceByDevice, setSelectedInterfaceByDevice] = useState({})
   const [siteDetail, setSiteDetail] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [alerts, setAlerts] = useState(() => buildAlerts(initialSites))
@@ -106,6 +108,7 @@ export function useNetworkDashboard() {
 
   const handleSiteClick = siteId => {
     setSelectedSite(siteId)
+    setSelectedDevice(null)
     setSiteDetail(null)
     fetchSiteDetail(siteId)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -113,16 +116,41 @@ export function useNetworkDashboard() {
 
   const handleBack = () => {
     setSelectedSite(null)
+    setSelectedDevice(null)
+    setSelectedInterfaceByDevice({})
     setSiteDetail(null)
   }
+
+  const handleDeviceClick = ip => {
+    setSelectedDevice(ip)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDeviceBack = () => {
+    setSelectedDevice(null)
+  }
+
+  const handleInterfaceSelect = (deviceIp, interfaceKey) => {
+    setSelectedInterfaceByDevice(prev => ({
+      ...prev,
+      [deviceIp]: interfaceKey,
+    }))
+  }
+
+  const getSelectedInterfaceKey = deviceIp => selectedInterfaceByDevice[deviceIp] ?? null
 
   return {
     alerts,
     dataMode,
+    getSelectedInterfaceKey,
     handleBack,
+    handleDeviceBack,
+    handleDeviceClick,
+    handleInterfaceSelect,
     handleSiteClick,
     lastUpdated,
     searchQuery,
+    selectedDevice,
     selectedSite,
     setSearchQuery,
     siteDetail,
