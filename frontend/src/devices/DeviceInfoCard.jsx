@@ -1,9 +1,9 @@
 import { UtilizationBar } from '../common/UtilizationBar.jsx'
 import { formatSysUpTime } from '../utils/formatters.js'
 
-function InfoItem({ label, snmpKey, span2, children }) {
+function InfoItem({ label, snmpKey, spanFull, children }) {
   return (
-    <div className={`metric-item${span2 ? ' metric-item-span-2' : ''}`}>
+    <div className={`metric-item${spanFull ? ' metric-item-span-full' : ''}`}>
       <div className="metric-label">
         {label}
         {snmpKey && <span className="metric-snmp-key">{snmpKey}</span>}
@@ -24,14 +24,6 @@ function PortStatusBadge({ status }) {
 }
 
 export default function DeviceInfoCard({ device, ip }) {
-  const psu1 = device.power_supply?.psu1_v
-  const psu2 = device.power_supply?.psu2_v
-  const psuStatus = device.power_supply_status ?? '—'
-  const psuText =
-    psu1 != null && psu2 != null
-      ? `${psuStatus} · PSU1: ${psu1}V · PSU2: ${psu2}V`
-      : psuStatus
-
   return (
     <div className="device-info-card">
       <div className="device-info-card-header">
@@ -41,17 +33,11 @@ export default function DeviceInfoCard({ device, ip }) {
         <InfoItem label="System Name" snmpKey="sysName">
           {device.snmp?.sysName ?? '—'}
         </InfoItem>
-        <InfoItem label="System Description" snmpKey="sysDescr" span2>
-          {device.snmp?.sysDescr ?? '—'}
-        </InfoItem>
         <InfoItem label="System Uptime" snmpKey="sysUpTime">
           {formatSysUpTime(device.snmp?.sysUpTime)}
         </InfoItem>
-        <InfoItem label="System Contact" snmpKey="sysContact">
-          {device.snmp?.sysContact ?? '—'}
-        </InfoItem>
-        <InfoItem label="System Location" snmpKey="sysLocation">
-          {device.snmp?.sysLocation ?? '—'}
+        <InfoItem label="System Description" snmpKey="sysDescr" spanFull>
+          {device.snmp?.sysDescr ?? '—'}
         </InfoItem>
         <InfoItem label="IP Address">
           <span className="ups-ip">{ip}</span>
@@ -65,7 +51,6 @@ export default function DeviceInfoCard({ device, ip }) {
         <InfoItem label="Device Temperature">
           {device.temperature_c != null ? `${device.temperature_c}°C` : '—'}
         </InfoItem>
-        <InfoItem label="Power Supply">{psuText}</InfoItem>
         <InfoItem label="Interface Count">
           {device.interface_count ?? '—'}
         </InfoItem>
