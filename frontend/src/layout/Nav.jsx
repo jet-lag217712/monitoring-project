@@ -5,12 +5,12 @@ export default function Nav({ onLogoClick, sites, dataMode }) {
   const unitCount = sites.reduce((sum, site) => sum + (site.device_count ?? 0), 0)
 
   return (
-    <nav>
+    <nav className="app-nav">
       <span className="nav-logo" onClick={onLogoClick}>
         <span className="logo-mark">
           <img src={logoUrl} alt="Equate Logo" />
         </span>
-          Network Dashboard
+          Equate
       </span>
 
       <div className="nav-right">

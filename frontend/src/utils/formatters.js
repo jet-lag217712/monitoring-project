@@ -12,6 +12,18 @@ export function formatUptime(days) {
   return `${days} days`
 }
 
+export function formatSysUpTime(centiseconds) {
+  if (centiseconds == null || Number.isNaN(centiseconds)) return '—'
+  const totalSeconds = Math.floor(centiseconds / 100)
+  const days = Math.floor(totalSeconds / 86400)
+  const remainder = totalSeconds % 86400
+  const hours = Math.floor(remainder / 3600)
+  const minutes = Math.floor((remainder % 3600) / 60)
+  const seconds = remainder % 60
+  const pad = n => String(n).padStart(2, '0')
+  return `${days} days, ${hours}:${pad(minutes)}:${pad(seconds)}`
+}
+
 export function formatTimestamp(iso) {
   if (!iso) return '—'
   try {

@@ -1,3 +1,4 @@
+import BackButton from '../common/BackButton.jsx'
 import Breadcrumb from '../common/Breadcrumb.jsx'
 import LoadingSkeleton from '../common/LoadingSkeleton.jsx'
 import { DeviceStatusBadge } from '../common/StatusBadge.jsx'
@@ -6,6 +7,8 @@ import DeviceInfoCard from './DeviceInfoCard.jsx'
 import DeviceMetricsCharts from './DeviceMetricsCharts.jsx'
 import InterfaceDetailPanel from './InterfaceDetailPanel.jsx'
 import InterfacesTable from '../tables/InterfacesTable.jsx'
+
+const DEVICE_STATUS_LABELS = { 1: 'Healthy', 2: 'Warning', 3: 'Critical' }
 
 export default function DeviceDetail({
   site,
@@ -23,15 +26,20 @@ export default function DeviceDetail({
   const displayName = device.name ?? device.hostname ?? deviceIp
   const selectedInterface = resolveSelectedInterface(device, selectedInterfaceKey)
 
+  const statusLabel = DEVICE_STATUS_LABELS[device.status] ?? 'Unknown'
+
   return (
-    <div>
-      <Breadcrumb
-        items={[
-          { label: 'All Sites', onClick: onNavigateAllSites },
-          { label: site.location ?? 'Site', onClick: onNavigateSite },
-          { label: displayName },
-        ]}
-      />
+    <div className="device-detail-page">
+      <div className="page-nav-row">
+        <BackButton onClick={onNavigateSite}>← Back</BackButton>
+        <Breadcrumb
+          items={[
+            { label: 'All Sites', onClick: onNavigateAllSites },
+            { label: site.location ?? 'Site', onClick: onNavigateSite },
+            { label: displayName },
+          ]}
+        />
+      </div>
 
       <div className="site-detail-header">
         <div>
@@ -41,7 +49,7 @@ export default function DeviceDetail({
           </div>
           <h1 className="page-title">{displayName}</h1>
           <p className="page-sub">
-            {device.hostname ?? '—'} · {device.role ?? '—'} · {deviceIp}
+            {device.hostname ?? '—'} · {deviceIp} · {statusLabel}
           </p>
         </div>
         <DeviceStatusBadge status={device.status} />
