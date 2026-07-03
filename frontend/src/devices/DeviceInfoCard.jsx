@@ -1,9 +1,17 @@
 import { UtilizationBar } from '../common/UtilizationBar.jsx'
 import { formatSysUpTime } from '../utils/formatters.js'
 
-function InfoItem({ label, snmpKey, spanFull, children }) {
+function InfoItem({ label, snmpKey, span2, spanFull, rowStart, children }) {
+  const spanClass = spanFull
+    ? ' metric-item-span-full'
+    : span2
+      ? ' metric-item-span-2'
+      : rowStart
+        ? ' metric-item-row-start'
+        : ''
+
   return (
-    <div className={`metric-item${spanFull ? ' metric-item-span-full' : ''}`}>
+    <div className={`metric-item${spanClass}`}>
       <div className="metric-label">
         {label}
         {snmpKey && <span className="metric-snmp-key">{snmpKey}</span>}
@@ -30,26 +38,17 @@ export default function DeviceInfoCard({ device, ip }) {
         <div className="chart-card-label">Device Information</div>
       </div>
       <div className="device-info-grid">
-        <InfoItem label="System Name" snmpKey="sysName">
+        <InfoItem label="System Name" snmpKey="sysName" span2>
           {device.snmp?.sysName ?? '—'}
+        </InfoItem>
+        <InfoItem label="System Description" snmpKey="sysDescr" span2>
+          {device.snmp?.sysDescr ?? '—'}
         </InfoItem>
         <InfoItem label="System Uptime" snmpKey="sysUpTime">
           {formatSysUpTime(device.snmp?.sysUpTime)}
         </InfoItem>
-        <InfoItem label="System Description" snmpKey="sysDescr" spanFull>
-          {device.snmp?.sysDescr ?? '—'}
-        </InfoItem>
         <InfoItem label="IP Address">
           <span className="ups-ip">{ip}</span>
-        </InfoItem>
-        <InfoItem label="CPU Utilization">
-          <UtilizationBar pct={device.cpu_pct ?? 0} />
-        </InfoItem>
-        <InfoItem label="Memory Utilization">
-          {device.memory_pct != null ? `${device.memory_pct}%` : '—'}
-        </InfoItem>
-        <InfoItem label="Device Temperature">
-          {device.temperature_c != null ? `${device.temperature_c}°C` : '—'}
         </InfoItem>
         <InfoItem label="Interface Count">
           {device.interface_count ?? '—'}
@@ -57,7 +56,16 @@ export default function DeviceInfoCard({ device, ip }) {
         <InfoItem label="Active Interface Count">
           {device.active_interface_count ?? '—'}
         </InfoItem>
-        <InfoItem label="Administrative Status">
+        <InfoItem label="CPU Utilization">
+          <UtilizationBar pct={device.cpu_pct ?? 0} />
+        </InfoItem>
+        <InfoItem label="Memory Utilization">
+          <UtilizationBar pct={device.memory_pct ?? 0} />
+        </InfoItem>
+        <InfoItem label="Device Temperature">
+          {device.temperature_c != null ? `${device.temperature_c}°C` : '—'}
+        </InfoItem>
+        <InfoItem label="Administrative Status" rowStart>
           <PortStatusBadge status={device.admin_status} />
         </InfoItem>
         <InfoItem label="Operational Status">

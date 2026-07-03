@@ -680,6 +680,14 @@ body {
   margin-top: 2px;
 }
 
+.metric-item-span-2 {
+  grid-column: span 2;
+}
+
+.metric-item-row-start {
+  grid-column-start: 1;
+}
+
 .metric-item-span-full {
   grid-column: 1 / -1;
 }
