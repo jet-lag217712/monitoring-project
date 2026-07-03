@@ -3,7 +3,7 @@ import LoadingSkeleton from '../common/LoadingSkeleton.jsx'
 import { DeviceStatusBadge } from '../common/StatusBadge.jsx'
 import DevicesTable from '../tables/DevicesTable.jsx'
 
-export default function SiteDetail({ data, onBack }) {
+export default function SiteDetail({ data, onBack, onDeviceClick }) {
   if (!data) {
     return (
       <div>
@@ -40,6 +40,7 @@ export default function SiteDetail({ data, onBack }) {
 
       <DevicesTable
         devices={devices}
+        onDeviceClick={onDeviceClick}
         renderStatus={status => <DeviceStatusBadge status={status} />}
       />
     </div>

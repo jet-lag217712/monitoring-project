@@ -1,3 +1,6 @@
-Charts are not implemented yet.
+Chart components for utilization history and interface traffic.
 
-Use this folder for future chart components, such as Recharts line charts or utilization history visualizations.
+- `MetricLineChart.jsx` — single-metric time series (CPU, memory, temperature)
+- `InterfaceTrafficChart.jsx` — dual-line inbound/outbound traffic for a selected interface
+
+Built with Recharts. Styled using design tokens from `src/index.css`.

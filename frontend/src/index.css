@@ -557,3 +557,147 @@ nav {
   }
   .stat-strip { grid-template-columns: 1fr; }
 }
+
+/* ── BREADCRUMB ── */
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.breadcrumb-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb-sep {
+  color: var(--border-strong);
+}
+
+.breadcrumb-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.breadcrumb-link:hover {
+  color: var(--ink);
+}
+
+.breadcrumb-current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── DEVICE DETAIL ── */
+.device-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.chart-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+
+.chart-card-compact {
+  padding: 14px 16px;
+}
+
+.chart-card-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-muted);
+  margin-bottom: 10px;
+}
+
+.chart-card-body {
+  width: 100%;
+}
+
+.device-info-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 28px;
+}
+
+.device-info-card-header {
+  margin-bottom: 16px;
+}
+
+.device-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px 16px;
+}
+
+.interface-section-header {
+  margin-bottom: 16px;
+}
+
+.interface-split {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  gap: 12px;
+  align-items: start;
+}
+
+.interface-detail-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  min-height: 200px;
+}
+
+.ups-table tr.clickable-row {
+  cursor: pointer;
+}
+
+.ups-table tr.clickable-row.selected td,
+.ups-table tr.selected td {
+  background: var(--salmon-light);
+}
+
+.ups-table tr.clickable-row.selected:hover td {
+  background: var(--salmon-light);
+}
+
+@media (max-width: 900px) {
+  .device-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .device-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .interface-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .device-info-grid {
+    grid-template-columns: 1fr;
+  }
+}

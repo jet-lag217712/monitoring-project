@@ -1,6 +1,6 @@
 import DeviceRow from '../devices/DeviceRow.jsx'
 
-export default function DevicesTable({ devices, renderStatus }) {
+export default function DevicesTable({ devices, renderStatus, onDeviceClick }) {
   const entries = Object.entries(devices)
 
   return (
@@ -25,6 +25,7 @@ export default function DevicesTable({ devices, renderStatus }) {
               ip={ip}
               device={device}
               renderStatus={renderStatus}
+              onClick={onDeviceClick ? () => onDeviceClick(ip) : undefined}
             />
           ))}
 
