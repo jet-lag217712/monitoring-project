@@ -30,8 +30,7 @@ export default function DeviceDetail({
 
   return (
     <div className="device-detail-page">
-      <div className="page-nav-row">
-        <BackButton onClick={onNavigateSite}>← Back</BackButton>
+      <div className="page-nav-stack">
         <Breadcrumb
           items={[
             { label: 'All Sites', onClick: onNavigateAllSites },
@@ -39,6 +38,7 @@ export default function DeviceDetail({
             { label: displayName },
           ]}
         />
+        <BackButton onClick={onNavigateSite}>← Back</BackButton>
       </div>
 
       <div className="site-detail-header">
