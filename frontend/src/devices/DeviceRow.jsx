@@ -28,11 +28,7 @@ export default function DeviceRow({ ip, device, renderStatus, onClick }) {
       <td style={mutedCellStyle}>{device.role ?? '—'}</td>
       <td>{renderStatus(device.status)}</td>
       <td><UtilizationBar pct={device.cpu_pct ?? 0} /></td>
-      <td>
-        <span style={monoTextStyle}>
-          {device.memory_pct ?? '—'}%
-        </span>
-      </td>
+      <td><UtilizationBar pct={device.memory_pct ?? 0} /></td>
       <td>
         <span style={monoTextStyle}>
           {device.uptime_days ?? '—'} days

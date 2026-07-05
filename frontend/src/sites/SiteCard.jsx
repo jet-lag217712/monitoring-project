@@ -25,7 +25,6 @@ export default function SiteCard({ site, onClick }) {
       <div className="site-card-header">
         <div>
           <div className="site-name">{location}</div>
-          <div className="site-type">{type}</div>
         </div>
         <SiteStatusBadge status={status} />
       </div>
@@ -50,8 +49,6 @@ export default function SiteCard({ site, onClick }) {
           </div>
         </div>
       </div>
-
-      <MiniBar value={avg_cpu} />
 
       <div className="site-card-footer">
         <span className="card-arrow">→</span>
