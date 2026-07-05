@@ -3,7 +3,7 @@
 ## Project Structure
 ```
 equate-ogsd/
-├── .codex/
+├── .ai/
 ├── .github/
 ├── docs/
 │   ├── architecture/
@@ -43,9 +43,11 @@ equate-ogsd/
 ├── frontend/
 │   └── monitoring-dashboard/
 │       ├── src/
-│       ├── public/
+│       ├── assets/
 │       ├── Dockerfile
-│       └── package.json
+│       ├── index.html
+│       ├── package.json
+│       └── vite.config.js
 │
 ├── infrastructure/
 │   ├── terraform/
@@ -80,10 +82,10 @@ equate-ogsd/
 └── .gitignore
 ```
 
-## .codex Structure
+## .ai Structure
 
 ```
-.codex/
+.ai/
 ├── project-context/
 │   ├── architecture.md
 │   ├── network-topology.md

@@ -1,18 +1,11 @@
-# Python
-backend/.venv/
-__pycache__/
-*.pyc
-
 # Node/Vite
-monitoring-dashboard/node_modules/
-dist/
+frontend/node_modules/
+frontend/dist
+frontend/package-lock.json
+
+# Remote Servers
+remote-servers/keys
 
 # IDE Files
 .idea/
-backend/.idea
-frontend/.idea
 
-# Enviornmental Variables
-backend/.env
-.env
-.env.*
