@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Equate OGSD is a cloud-native Out-of-Band (OOB) network management and monitoring platform for K-12 network infrastructure. The system monitors district network devices through distributed SNMP collectors deployed within customer environments and presents operational visibility through the UI/UX Cloud Plane.
+Equate OGSD is a cloud-native network telemetry and monitoring platform for K-12 network infrastructure. The system monitors district network devices through distributed SNMP collectors deployed within customer environments and presents operational visibility through the UI/UX Cloud Plane.
 
-The platform separates monitoring collection from the user experience layer. The on-premises OOB plane is responsible for collecting and securely transmitting telemetry, while the UI/UX Cloud Plane provides centralized visualization, API access, and operational workflows.
+The platform separates telemetry collection from the user experience layer. The customer-side OOB monitoring environment is responsible for collecting and securely transmitting telemetry, while the UI/UX Cloud Plane provides centralized visualization, API access, and operational workflows.
 
 This document provides a high-level architectural overview for AI agents. Detailed implementation, networking, and service ownership information is documented elsewhere.
 
@@ -13,7 +13,7 @@ This document provides a high-level architectural overview for AI agents. Detail
 ```text
 SNMP Devices
     ↓
-SNMP Collector (On-Premises OOB Plane)
+SNMP Collector (Customer OOB Monitoring Plane)
     ↓ MQTT/TLS Outbound Connection
 Message Transport Layer
     ↓
@@ -30,7 +30,7 @@ UI/UX Cloud Plane
 
 ### SNMP Collector
 
-Runs within the district OOB environment.
+Runs within the customer OOB monitoring environment.
 
 Responsibilities:
 
@@ -102,7 +102,7 @@ The UI/UX Cloud Plane receives operational state through the Backend API, which 
 
 ## Design Principles
 
-* The SNMP Collector is deployable within customer OOB environments.
+* The SNMP Collector is deployable within customer OOB monitoring environments.
 * Cloud communication uses outbound-only collector connections.
 * The UI/UX Cloud Plane is independent from individual customer deployments.
 * Message transport is a delivery mechanism, not a persistence layer.
@@ -117,6 +117,7 @@ The UI/UX Cloud Plane receives operational state through the Backend API, which 
 The system is not intended to:
 
 * Configure network devices.
+* Provide direct device console access.
 * Provision network infrastructure.
 * Function as an SD-WAN controller.
 * Perform packet capture or packet analysis.
