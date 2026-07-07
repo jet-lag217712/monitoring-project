@@ -99,8 +99,8 @@ Represents monitored locations.
 Examples:
 
 ```text
-GET /api/v1/sites
-GET /api/v1/sites/{siteId}
+GET /api/sites
+GET /api/sites/{siteId}
 ```
 
 ### Devices
@@ -110,9 +110,9 @@ Represents monitored network devices.
 Examples:
 
 ```text
-GET /api/v1/devices
-GET /api/v1/devices/{deviceId}
-GET /api/v1/sites/{siteId}/devices
+GET /api/devices
+GET /api/devices/{deviceId}
+GET /api/sites/{siteId}/devices
 ```
 
 ### Interfaces
@@ -122,8 +122,8 @@ Represents device interfaces discovered through IF-MIB.
 Examples:
 
 ```text
-GET /api/v1/devices/{deviceId}/interfaces
-GET /api/v1/interfaces/{interfaceId}
+GET /api/devices/{deviceId}/interfaces
+GET /api/interfaces/{interfaceId}
 ```
 
 ### Metrics
@@ -133,8 +133,8 @@ Represents historical time-series data.
 Examples:
 
 ```text
-GET /api/v1/devices/{deviceId}/metrics
-GET /api/v1/interfaces/{interfaceId}/metrics
+GET /api/devices/{deviceId}/metrics
+GET /api/interfaces/{interfaceId}/metrics
 ```
 
 Supported query parameters:
@@ -150,9 +150,9 @@ Represents monitoring events.
 Examples:
 
 ```text
-GET /api/v1/alerts
-GET /api/v1/alerts/{alertId}
-GET /api/v1/devices/{deviceId}/alerts
+GET /api/alerts
+GET /api/alerts/{alertId}
+GET /api/devices/{deviceId}/alerts
 ```
 
 ## Error Handling
