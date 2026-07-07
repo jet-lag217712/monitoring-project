@@ -127,7 +127,7 @@ Status labels, badges, and banner copy must remain consistent across the overvie
 
 The dashboard must receive monitoring data from the Backend API only.
 
-The frontend should not query PostgreSQL, MQTT, or the SNMP collector directly.
+The frontend should not query PostgreSQL, telemetry transport, or the SNMP collector directly.
 
 The backend response must provide enough normalized data for the frontend to:
 
@@ -190,7 +190,7 @@ The MVP monitoring dashboard does not need to:
 - edit inventory directly
 - acknowledge alerts
 - perform SNMP polling
-- process MQTT traffic
+- process telemetry transport traffic
 - manage user permissions beyond future auth integration
 
 ## Open Questions

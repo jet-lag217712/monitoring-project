@@ -2,151 +2,86 @@
 
 ## Purpose
 
-Defines the complete telemetry lifecycle from network devices to cloud-facing services.
+Defines the complete telemetry lifecycle from monitored network devices to the UI/UX Cloud Plane.
 
-## Telemetry Pipeline
+## Approved Telemetry Pipeline
 
-Arista Switches generate operational data.
+```text
+SNMP Devices
+    ↓
+SNMP Collector
+    ↓
+Secure Outbound Telemetry Transport
+    ↓
+Cloud Ingestion
+    ↓
+PostgreSQL
+    ↓
+Backend API
+    ↓
+UI/UX Cloud Plane
+```
 
-SNMP Collector:
-- Polls devices using SNMP.
-- Parses OID responses.
-- Normalizes telemetry.
-- Publishes telemetry messages.
+## Customer OOB Monitoring Plane
 
-MQTT Broker:
-- Provides asynchronous communication between collectors and ingestion.
-- Buffers messages.
-- Decouples polling from processing.
+The Customer OOB Monitoring Plane runs in the customer environment.
 
-Ingestion Service:
-- Consumes MQTT messages.
+Responsibilities:
+
+- Poll monitored devices using SNMP.
+- Parse OID responses.
+- Normalize telemetry into collector events.
+- Buffer telemetry locally during transport interruptions.
+- Initiate outbound-only secure telemetry connections.
+
+The Customer OOB Monitoring Plane does not host PostgreSQL, cloud ingestion, the Backend API, or the UI/UX Cloud Plane.
+
+## Secure Outbound Telemetry Transport
+
+Secure Outbound Telemetry Transport delivers collector telemetry from the Customer OOB Monitoring Plane to cloud ingestion.
+
+Responsibilities:
+
+- Accept outbound collector connections.
+- Protect telemetry in transit.
+- Decouple device polling from cloud processing.
+- Deliver telemetry to cloud ingestion.
+
+MQTT/TLS is the current transport implementation. Transport is not storage and must not be treated as the source of monitoring state.
+
+## UI/UX Cloud Plane
+
+The UI/UX Cloud Plane owns cloud ingestion, PostgreSQL, Backend API, aggregation, visualization, and monitoring state.
+
+Cloud Ingestion:
+
+- Consumes telemetry from Secure Outbound Telemetry Transport.
 - Validates payloads.
 - Transforms telemetry.
-- Stores data in PostgreSQL.
+- Writes monitoring state and history to PostgreSQL.
+
+PostgreSQL:
+
+- Stores inventory, current monitoring state, telemetry history, and alerts.
+- Acts as the authoritative system of record.
 
 Backend API:
-- Provides application data to the dashboard.
-- Handles business logic.
-- Provides alert and device state information.
 
-Cloud Services:
-- Monitoring Dashboard consumes API data.
-- Email Service handles notifications.
+- Provides application data to frontend clients.
+- Handles application logic and API contracts.
+- Reads monitoring state from PostgreSQL.
+
+Frontend:
+
+- Consumes data through the Backend API only.
+- Displays network health, device state, interface telemetry, and alerts.
 
 ## Failure Handling
 
-Device failures should create unhealthy device states.
+Device failures should create unhealthy device states after collector or ingestion validation.
 
-MQTT failures should trigger reconnect behavior.
+Transport failures should trigger collector buffering and reconnect behavior.
 
-Database failures should prevent data loss through retry handling.
+Database failures should prevent acknowledged data loss through retry handling and controlled ingestion errors.
 
 API failures should return controlled errors to clients.
-""",
-
-".ai/project-context/network-topology.md": """
-# Network Topology
-
-## Purpose
-
-Defines network boundaries and communication paths.
-
-## On-Prem Environment
-
-The monitoring stack runs inside the district environment.
-
-Components:
-- SNMP Collector
-- MQTT Broker
-- Ingestion Service
-- PostgreSQL
-- Backend API
-
-## Communication
-
-SNMP:
-- Collector communicates directly with network devices.
-
-Internal Services:
-- Docker networking is used for service communication.
-
-Cloud Connectivity:
-- Outbound HTTPS communication is preferred.
-- No inbound access into the district network is required.
-
-## Security Boundary
-
-Telemetry collection and storage remain on-premises.
-
-Only required application traffic leaves the environment.
-""",
-
-".ai/project-context/aws-deployment.md": """
-# AWS Deployment
-
-## Purpose
-
-Defines cloud-hosted components.
-
-## Cloud Responsibilities
-
-AWS hosts:
-
-- Monitoring Dashboard
-- Email Service
-
-AWS does not host:
-
-- SNMP Collector
-- MQTT Broker
-- Ingestion Service
-- PostgreSQL
-
-## Connectivity
-
-Cloud services communicate with the on-prem Backend API.
-
-Security requirements:
-- TLS encryption
-- Authentication
-- Restricted API access
-
-## Deployment Model
-
-The cloud layer is the presentation and notification layer.
-The monitoring data pipeline remains on-premises.
-""",
-
-"docs/architecture/monitoring-dashboard.md": """
-# Monitoring Dashboard Architecture
-
-## Purpose
-
-The dashboard provides visualization of infrastructure telemetry.
-
-## Responsibilities
-
-The frontend is responsible for:
-
-- Displaying site health.
-- Showing device status.
-- Rendering interface metrics.
-- Displaying alerts.
-
-The frontend does not:
-
-- Poll SNMP.
-- Access databases directly.
-- Process telemetry.
-
-## Data Source
-
-All data is retrieved through the Backend API.
-
-## Main Views
-
-- Site Overview
-- Device Details
-- Interface Metrics
-- Alert Dashboard

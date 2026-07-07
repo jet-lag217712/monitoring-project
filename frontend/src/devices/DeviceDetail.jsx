@@ -57,7 +57,7 @@ export default function DeviceDetail({
           <DeviceInfoCard device={device} ip={deviceIp} />
 
           <div className="interface-section-header">
-            <div className="chart-card-label">Interface Management</div>
+            <div className="chart-card-label">Interface Telemetry</div>
           </div>
 
           <div className="interface-split">

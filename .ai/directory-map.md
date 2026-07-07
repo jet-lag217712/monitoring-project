@@ -7,9 +7,9 @@ equate-ogsd/
 ├── .github/
 ├── docs/
 │   ├── architecture/
-│   ├── diagrams/
 │   ├── decisions/
-│   └── system-design.pdf
+│   └── diagrams/
+│       └── system-design.md
 │
 ├── services/
 │   ├── snmp-collector/
@@ -57,7 +57,7 @@ equate-ogsd/
 │   │   └── modules/
 │   │
 │   ├── docker/
-│   │   ├── mqtt-broker/
+│   │   ├── telemetry-transport/
 │   │   ├── postgres/
 │   │   └── local-dev/
 │   │

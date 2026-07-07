@@ -2,158 +2,153 @@
 
 ## Purpose
 
-The Ingestion Service is responsible for consuming monitoring data from the MQTT Broker, validating incoming messages, transforming payloads into the platform's internal data model, and persisting monitoring data into PostgreSQL.
+The Ingestion Service validates telemetry delivered through Secure Outbound Telemetry Transport, transforms payloads into the platform data model, and persists monitoring data into PostgreSQL.
 
-The service acts as the bridge between the messaging layer and the storage layer.
+The service bridges telemetry delivery and durable storage in the UI/UX Cloud Plane.
 
-The Ingestion Service is the only service authorized to write monitoring data into PostgreSQL.
+## Plane Ownership
 
----
+Plane: UI/UX Cloud Plane.
+
+The Ingestion Service runs in the cloud plane with access to PostgreSQL. It is not deployed inside the Customer OOB Monitoring Plane.
 
 ## Responsibilities
 
 The Ingestion Service is responsible for:
 
-* Subscribing to MQTT topics
-* Receiving monitoring messages
-* Validating payload structure
-* Validating required fields
-* Transforming incoming data
-* Creating and updating inventory records
-* Storing metric samples
-* Storing interface samples
-* Generating ingestion logs
-* Rejecting malformed messages
+- Consuming telemetry delivered by Secure Outbound Telemetry Transport.
+- Validating payload structure.
+- Validating required fields.
+- Transforming incoming data.
+- Creating and updating inventory records.
+- Storing metric samples.
+- Storing interface samples.
+- Generating ingestion logs.
+- Rejecting malformed messages.
 
 The Ingestion Service is not responsible for:
 
-* SNMP polling
-* MQTT routing
-* User authentication
-* Dashboard rendering
-* Alert presentation
-
----
+- SNMP polling.
+- Telemetry transport routing.
+- User authentication.
+- Dashboard rendering.
+- Alert presentation.
+- Device configuration or console access.
 
 ## Dependencies
 
-### Upstream Dependencies
+Upstream:
 
-* MQTT Broker
+- Secure Outbound Telemetry Transport.
 
-### Downstream Dependencies
+Downstream:
 
-* PostgreSQL Database
-
----
+- PostgreSQL Database.
 
 ## Data Flow
 
 ```text
 SNMP Collector
-↓
-MQTT Broker
-↓
+    ↓
+Secure Outbound Telemetry Transport
+    ↓
 Ingestion Service
-↓
+    ↓
 PostgreSQL
 ```
 
-The Ingestion Service consumes messages from MQTT and converts them into database records.
-
 No other service should write monitoring data directly into PostgreSQL.
 
----
+MQTT/TLS is the current telemetry transport implementation. Implementation-specific topic names may be used by the transport, but architecture docs should describe the boundary as Secure Outbound Telemetry Transport.
 
-## MQTT Topic Structure
+## Transport Contract Shape
 
-Topics should follow a predictable hierarchy.
+Transport routes should follow a predictable hierarchy when the current MQTT implementation is used.
 
 Format:
+
 ```text
 site/{siteId}/device/{deviceId}/metric/{metricName}
 ```
+
 Examples:
 
 ```text
 site/hub/device/rtr-01/metric/cpu_utilization
-
 site/hub/device/rtr-01/metric/memory_utilization
-
 site/remote-01/device/rtr-05/metric/interface_traffic
 ```
-The topic structure provides routing context while the payload contains measurement data.
 
----
+The route provides delivery context while the payload contains measurement data.
 
 ## Payload Structure
 
 All payloads should be JSON.
 
 Example:
-```text
+
+```json
 {
-"timestamp": "2026-06-01T18:00:00Z",
-"site_id": "hub",
-"device_id": "rtr-01",
-"metric": "cpu_utilization",
-"value": 42.5
+  "timestamp": "2026-06-01T18:00:00Z",
+  "site_id": "hub",
+  "device_id": "rtr-01",
+  "metric": "cpu_utilization",
+  "value": 42.5
 }
 ```
+
 Required fields:
 
-* timestamp
-* site_id
-* device_id
-* metric
-* value
+- `timestamp`
+- `site_id`
+- `device_id`
+- `metric`
+- `value`
 
 Messages missing required fields are rejected.
-
----
 
 ## Device Discovery
 
 The Ingestion Service automatically creates inventory records when previously unknown devices are received.
 
 Workflow:
+
 ```text
 Message Received
-↓
+    ↓
 Device Exists?
-↓
+    ↓
 No
-↓
+    ↓
 Create Device Record
-↓
+    ↓
 Store Metric
 ```
-This allows remote collectors to introduce devices without manual database updates.
 
----
+This allows remote collectors to introduce monitored devices without manual database updates.
 
 ## Interface Discovery
 
-Interface records should be created automatically when interface metrics are received.
+Interface records should be created automatically when interface telemetry is received.
 
 Workflow:
 
-Interface Metric Received
-↓
+```text
+Interface Telemetry Received
+    ↓
 Interface Exists?
-↓
+    ↓
 No
-↓
+    ↓
 Create Interface Record
-↓
+    ↓
 Store Sample
+```
 
 Interfaces are uniquely identified by:
 
-* device_id
-* if_index
-
----
+- `device_id`
+- `if_index`
 
 ## Validation Rules
 
@@ -161,55 +156,35 @@ Every message must pass validation before persistence.
 
 Validation checks include:
 
-* Valid JSON
-* Valid timestamp
-* Required fields present
-* Numeric metric values
-* Known device identifier
-* Valid MQTT topic format
+- Valid JSON.
+- Valid timestamp.
+- Required fields present.
+- Numeric metric values where required.
+- Known or discoverable device identifier.
+- Valid transport route format when route metadata is present.
 
 Invalid messages are rejected and logged.
 
 The service should never crash due to malformed payloads.
 
----
-
 ## Database Writes
 
-### Device Updates
+Device updates include:
 
-The service updates:
+- `last_seen`
+- `status`
 
-* last_seen
-* status
+Device-level metrics are stored in:
 
-when valid metrics are received.
-
-### Metric Samples
-
-Device-level metrics are stored within:
 ```text
 metric_samples
 ```
-Examples:
 
-* CPU utilization
-* Memory utilization
-* Uptime
+Interface-level metrics are stored in:
 
-### Interface Samples
-
-Interface-level metrics are stored within:
 ```text
 interface_samples
 ```
-Examples:
-
-* Bandwidth counters
-* Error counters
-* Discard counters
-
----
 
 ## Error Handling
 
@@ -217,16 +192,12 @@ All processing failures should be logged.
 
 Categories:
 
-* Invalid Payload
-* Validation Failure
-* Database Failure
-* MQTT Failure
+- Invalid payload.
+- Validation failure.
+- Database failure.
+- Transport failure.
 
 Failed messages should not terminate the service.
-
-The service should continue processing subsequent messages.
-
----
 
 ## Logging
 
@@ -234,72 +205,62 @@ The service produces structured JSON logs.
 
 Each processed message should include:
 
-* Timestamp
-* Site ID
-* Device ID
-* Metric Name
-* Processing Result
+- Timestamp.
+- Site ID.
+- Device ID.
+- Metric name.
+- Processing result.
 
-Example Results:
+Example results:
 
-* accepted
-* rejected
-* database_error
-
----
+- `accepted`
+- `rejected`
+- `database_error`
 
 ## Availability Requirements
 
 The service must be stateless.
 
-Multiple ingestion instances may consume from the same MQTT Broker.
+Multiple ingestion instances may consume from the same transport implementation when supported by deployment configuration.
 
 No monitoring state should be stored locally.
 
 Temporary restarts must not result in data corruption.
 
----
-
 ## Security
 
-All MQTT communication occurs over TLS.
+All telemetry transport communication must use TLS.
 
-The Ingestion Service accepts messages only from the MQTT Broker.
+The Ingestion Service accepts messages only from authenticated transport paths.
 
 Database access is restricted to a dedicated ingestion account with write permissions.
 
 Direct public access is prohibited.
 
----
-
 ## Future Enhancements
 
 Potential future capabilities include:
 
-* MQTT dead-letter queues
-* Batch database writes
-* Message deduplication
-* Alert generation
-* Metric enrichment
-* High-volume ingestion optimization
-* Stream processing
+- Dead-letter handling.
+- Batch database writes.
+- Message deduplication.
+- Alert generation.
+- Metric enrichment.
+- High-volume ingestion optimization.
+- Stream processing.
 
----
+## Deployment Boundary
 
-## Deployment Model
+The Ingestion Service runs in the UI/UX Cloud Plane.
 
-The Ingestion Service runs as a Docker container within the AWS private subnet.
+Network flow:
 
-Network Flow:
-```
-SNMP Collector
-↓
-MQTT Broker
-↓
+```text
+Secure Outbound Telemetry Transport
+    ↓
 Ingestion Service
-↓
+    ↓
 PostgreSQL
 ```
-The service maintains outbound connections to PostgreSQL and inbound subscriptions to MQTT topics.
 
-No direct access from the Monitoring Dashboard is permitted.
+No direct access from the frontend is permitted.
