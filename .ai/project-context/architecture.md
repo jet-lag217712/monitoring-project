@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Equate OGSD is a cloud-hosted SNMP monitoring platform for K-12 network infrastructure. The system collects SNMP telemetry from district network devices, securely transports telemetry to AWS, stores normalized state in PostgreSQL, and exposes monitoring data through a web dashboard.
+Equate OGSD is a cloud-native Out-of-Band (OOB) network management and monitoring platform for K-12 network infrastructure. The system monitors district network devices through distributed SNMP collectors deployed within customer environments and presents operational visibility through the UI/UX Cloud Plane.
+
+The platform separates monitoring collection from the user experience layer. The on-premises OOB plane is responsible for collecting and securely transmitting telemetry, while the UI/UX Cloud Plane provides centralized visualization, API access, and operational workflows.
 
 This document provides a high-level architectural overview for AI agents. Detailed implementation, networking, and service ownership information is documented elsewhere.
 
@@ -11,9 +13,9 @@ This document provides a high-level architectural overview for AI agents. Detail
 ```text
 SNMP Devices
     ↓
-SNMP Collector
-    ↓ MQTT/TLS
-MQTT Broker
+SNMP Collector (On-Premises OOB Plane)
+    ↓ MQTT/TLS Outbound Connection
+Message Transport Layer
     ↓
 Ingestion Service
     ↓
@@ -21,42 +23,43 @@ PostgreSQL
     ↓
 Backend API
     ↓
-Monitoring Dashboard
+UI/UX Cloud Plane
 ```
 
 ## Core Components
 
 ### SNMP Collector
 
-Runs within the district environment.
+Runs within the district OOB environment.
 
 Responsibilities:
 
-* Poll network devices via SNMPv2.
-* Buffer telemetry locally.
-* Publish telemetry to AWS through MQTT over TLS.
-* Operate without inbound connectivity requirements.
+* Poll network devices using SNMPv2.
+* Translate device telemetry into normalized monitoring events.
+* Buffer telemetry locally during connectivity interruptions.
+* Publish telemetry through outbound secure connections.
+* Operate without requiring inbound access from the cloud platform.
 
-### MQTT Broker
+### Message Transport Layer
 
-Runs in AWS.
+Provides secure telemetry delivery between customer environments and the cloud platform.
 
 Responsibilities:
 
-* Receive telemetry from collectors.
-* Decouple collection from ingestion.
-* Route messages to downstream consumers.
+* Receive telemetry from distributed collectors.
+* Decouple device monitoring from cloud processing.
+* Provide reliable message delivery between planes.
 
 ### Ingestion Service
 
-Runs in AWS.
+Runs as part of the cloud backend.
 
 Responsibilities:
 
 * Validate incoming telemetry.
-* Reject malformed payloads.
-* Transform raw telemetry into normalized records.
-* Persist data to PostgreSQL.
+* Reject malformed or unauthorized payloads.
+* Normalize monitoring data.
+* Persist operational state into the database.
 
 ### PostgreSQL
 
@@ -65,47 +68,49 @@ Authoritative system of record.
 Responsibilities:
 
 * Store device inventory.
-* Store telemetry and monitoring state.
-* Support dashboard and API queries.
+* Store telemetry history and current monitoring state.
+* Support backend queries for the UI/UX Cloud Plane.
 
 ### Backend API
 
-Runs in AWS.
+Provides the application interface between stored monitoring data and the UI/UX Cloud Plane.
 
 Responsibilities:
 
-* Provide read-oriented access to monitoring data.
-* Expose stable contracts for frontend consumption.
-* Enforce business logic and data access rules.
+* Provide stable contracts for frontend consumption.
+* Enforce application logic and access controls.
+* Abstract database implementation details from the frontend.
 
-### Monitoring Dashboard
+### UI/UX Cloud Plane
 
-React-based frontend.
+The centralized operational interface for users.
 
 Responsibilities:
 
-* Display monitoring information.
-* Visualize device health and status.
-* Consume data exclusively through the Backend API.
+* Display network health, device status, and telemetry.
+* Provide site and device-level visibility.
+* Present alerts, historical metrics, and operational dashboards.
+* Consume monitoring data exclusively through the Backend API.
 
 ## System of Record
 
 PostgreSQL is the authoritative source of system state.
 
-Services may cache data for performance but must not treat caches, MQTT messages, local files, or in-memory state as authoritative.
+Services may cache data for performance but must not treat caches, message queues, local files, or in-memory state as authoritative.
 
-Dashboard data must originate from the Backend API, which reads from PostgreSQL.
+The UI/UX Cloud Plane receives operational state through the Backend API, which reads from PostgreSQL.
 
 ## Design Principles
 
-* The SNMP Collector is deployable on-premises.
-* AWS receives telemetry through outbound collector connections only.
-* MQTT is a transport mechanism, not a persistence layer.
+* The SNMP Collector is deployable within customer OOB environments.
+* Cloud communication uses outbound-only collector connections.
+* The UI/UX Cloud Plane is independent from individual customer deployments.
+* Message transport is a delivery mechanism, not a persistence layer.
 * PostgreSQL is the source of truth.
 * Services communicate through well-defined contracts.
 * Components are independently deployable.
-* All runtime services are containerized.
-* Prefer simplicity over premature optimization.
+* Runtime services are containerized.
+* Prefer operational simplicity over premature optimization.
 
 ## Non-Goals
 
