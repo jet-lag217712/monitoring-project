@@ -1,0 +1,6 @@
+services:
+  snmpsim:
+    build: .
+    ports:
+      - "1161:1161/udp"
+    restart: unless-stopped
