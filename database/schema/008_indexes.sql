@@ -1,4 +1,4 @@
-CREATE INDEX idx_devices_site
+CREATE INDEX idx_devices_sitew
     ON devices(site_id);
 
 CREATE INDEX idx_interfaces_device
