@@ -4,6 +4,9 @@ import SitesGrid from '../sites/SitesGrid.jsx'
 
 export default function DashboardPage({ dashboard }) {
   const {
+    deviceDetail,
+    deviceError,
+    deviceLoading,
     getSelectedInterfaceKey,
     handleBack,
     handleDeviceBack,
@@ -11,6 +14,7 @@ export default function DashboardPage({ dashboard }) {
     handleInterfaceSelect,
     handleSiteClick,
     lastUpdated,
+    loadError,
     searchQuery,
     selectedDevice,
     selectedSite,
@@ -21,13 +25,16 @@ export default function DashboardPage({ dashboard }) {
   } = dashboard
 
   if (selectedDevice && selectedSite) {
-    const device = siteDetail?.latest?.devices?.[selectedDevice]
+    const fallback = siteDetail?.latest?.devices?.[selectedDevice]
+    const device = deviceDetail ?? fallback
 
     return (
       <DeviceDetail
         site={siteDetail}
         device={device}
         deviceIp={selectedDevice}
+        loading={deviceLoading && !device}
+        error={deviceError}
         selectedInterfaceKey={getSelectedInterfaceKey(selectedDevice)}
         onInterfaceSelect={handleInterfaceSelect}
         onNavigateAllSites={handleBack}
@@ -55,6 +62,7 @@ export default function DashboardPage({ dashboard }) {
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
       dataMode={dataMode}
+      loadError={loadError}
     />
   )
 }

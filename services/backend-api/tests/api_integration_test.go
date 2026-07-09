@@ -131,6 +131,8 @@ func TestAPI_SitesAndDetailShapes(t *testing.T) {
 			t.Fatalf("code=%q", errBody.Error.Code)
 		}
 	})
+
+	t.Run("device metrics", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/devices/api-itest-device/metrics?metric=uptime_seconds", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)

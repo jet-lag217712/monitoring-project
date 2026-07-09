@@ -13,6 +13,8 @@ export default function DeviceDetail({
   site,
   device,
   deviceIp,
+  loading,
+  error,
   selectedInterfaceKey,
   onInterfaceSelect,
   onNavigateAllSites,
@@ -34,7 +36,11 @@ export default function DeviceDetail({
         onBack={onNavigateSite}
       />
 
-      {!device || !site ? (
+      {error && !device ? (
+        <p className="page-sub" style={{ color: 'var(--status-alert)' }}>
+          {error}
+        </p>
+      ) : loading || !device || !site ? (
         <LoadingSkeleton />
       ) : (
         <>

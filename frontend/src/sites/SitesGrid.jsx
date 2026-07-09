@@ -13,6 +13,7 @@ export default function SitesGrid({
   searchQuery,
   onSearchQueryChange,
   dataMode,
+  loadError,
 }) {
   const stats = getSiteStats(sites)
 
@@ -21,10 +22,16 @@ export default function SitesGrid({
       <PageNavStack breadcrumbItems={[{ label: 'All Sites' }]} />
 
       <PageHeader
-        eyebrow={dataMode === 'live' ? 'Network Dashboard' : 'Network Dashboard'}
+        eyebrow={dataMode === 'live' ? 'Live Network Dashboard' : dataMode === 'demo' ? 'Demo Network Dashboard' : 'Network Dashboard'}
         title="All Sites"
         rightContent={<LastUpdatedLabel lastUpdated={lastUpdated} />}
       />
+
+      {loadError && (
+        <p className="page-sub" style={{ color: 'var(--status-alert)', marginBottom: 16 }}>
+          {loadError}
+        </p>
+      )}
 
       <OverviewStats stats={stats} />
 
@@ -47,7 +54,9 @@ export default function SitesGrid({
         <div className="empty-state">
           <div className="empty-state-title">No matching sites</div>
           <p className="empty-state-copy">
-            Try a different search term to find a campus, status, or site ID.
+            {loadError
+              ? 'Unable to load sites from the live API.'
+              : 'Try a different search term to find a campus, status, or site ID.'}
           </p>
         </div>
       )}

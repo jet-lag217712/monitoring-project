@@ -97,6 +97,81 @@ body {
 
 .nav-sep { color: var(--border-strong); }
 
+.nav-mode {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.nav-mode-live { color: var(--status-ok); }
+.nav-mode-demo { color: var(--status-caution); }
+.nav-mode-error { color: var(--status-alert); }
+
+.nav-user {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.nav-sign-out {
+  margin-left: 4px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.nav-sign-out:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* ── SIGN IN ── */
+.sign-in-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background:
+    radial-gradient(circle at top left, rgba(232, 115, 90, 0.12), transparent 40%),
+    linear-gradient(180deg, var(--bg-2), var(--bg));
+}
+
+.sign-in-panel {
+  width: min(440px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px 32px;
+}
+
+.sign-in-button-host {
+  margin-top: 24px;
+  min-height: 44px;
+}
+
+.sign-in-status {
+  margin-top: 20px;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.sign-in-error {
+  color: var(--status-alert);
+}
+
+.sign-in-error code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8em;
+}
+
 /* ── ALERT BANNER ── */
 .alert-banner {
   background: #fef2f2;
@@ -641,6 +716,17 @@ body {
 
 .chart-card-body {
   width: 100%;
+}
+
+.chart-card-empty {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 12px;
 }
 
 .device-info-card {

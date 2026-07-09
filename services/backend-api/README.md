@@ -9,7 +9,8 @@ UI/UX Cloud Plane.
 - Expose REST contracts for frontend clients.
 - Read monitoring state and history from PostgreSQL.
 - Translate database records into API responses.
-- Enforce application access controls (OIDC in Phase 6).
+- Enforce application access controls (Google OIDC).
+
 
 ## Non-Responsibilities
 
@@ -38,12 +39,22 @@ Requires local Postgres from `deployments/local/test-env/` with roles bootstrapp
 
 ```bash
 export DATABASE_URL='postgres://ogsd_api:api@127.0.0.1:5432/ogsd?sslmode=disable'
+export GOOGLE_CLIENT_ID='your-google-oauth-web-client-id.apps.googleusercontent.com'
 cd services/backend-api
 go run ./cmd/api -config configs/api.example.yaml
 ```
 
+With `auth.enabled: true` (default in `configs/api.example.yaml`), every `/api/*` request requires:
+
+```http
+Authorization: Bearer <Google ID token>
+```
+
+Set `auth.enabled: false` only for local unauthenticated debugging.
+
 - REST API: `http://127.0.0.1:8000`
-- Admin (`/healthz`, `/metrics`): `http://127.0.0.1:9092`
+- Admin (`/healthz`, `/metrics`): `http://127.0.0.1:9092` (unauthenticated)
+
 
 ### MVP endpoints
 

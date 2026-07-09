@@ -1,6 +1,6 @@
 import logoUrl from '../../assets/logo.svg'
 
-export default function Nav({ onLogoClick, sites, dataMode }) {
+export default function Nav({ onLogoClick, sites, dataMode, user, onSignOut }) {
   const siteCount = sites.length
   const unitCount = sites.reduce((sum, site) => sum + (site.device_count ?? 0), 0)
 
@@ -10,13 +10,20 @@ export default function Nav({ onLogoClick, sites, dataMode }) {
         <span className="logo-mark">
           <img src={logoUrl} alt="Equate Logo" />
         </span>
-          Equate
+        Equate
       </span>
 
       <div className="nav-right">
-        <span>{siteCount} sites</span>
-        <span className="nav-sep">·</span>
-        <span>{unitCount} network devices</span>
+        {user?.email && (
+          <>
+            <span className="nav-user" title={user.email}>
+              {user.name || user.email}
+            </span>
+            <button type="button" className="nav-sign-out" onClick={onSignOut}>
+              Log out
+            </button>
+          </>
+        )}
       </div>
     </nav>
   )
