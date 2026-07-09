@@ -145,8 +145,13 @@ func walkCounters(ctx context.Context, client Walker, rootOID string) (map[int]u
 		}
 		v, err := pduToUint64(pdu)
 		if err != nil {
-			// Skip unavailable instances rather than failing the whole walk.
-			return nil
+			switch pdu.Type {
+			case gosnmp.NoSuchObject, gosnmp.NoSuchInstance, gosnmp.Null, gosnmp.EndOfMibView:
+				// Skip unavailable instances rather than failing the whole walk.
+				return nil
+			default:
+				return err
+			}
 		}
 		out[idx] = v
 		return nil
