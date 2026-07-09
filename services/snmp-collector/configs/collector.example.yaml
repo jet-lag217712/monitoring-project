@@ -10,7 +10,8 @@ snmp:
   retries: 2
 
 publisher:
-    timeout: 2s
+  mode: stdout
+  timeout: 10s
 
 devices:
   - id: "dev-001"

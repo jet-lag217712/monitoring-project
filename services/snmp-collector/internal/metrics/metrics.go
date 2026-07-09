@@ -4,63 +4,71 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Collector holds Prometheus instruments for the SNMP collector.
-// MQTT and buffer metrics are registered now so Phase 2 can wire them
-// without renaming series used by alerting dashboards.
 type Collector struct {
-	PollTotal          prometheus.Counter
-	PollSuccessTotal   prometheus.Counter
-	PollFailureTotal   *prometheus.CounterVec
-	BufferDepth        prometheus.Gauge
-	BufferEnqueueTotal prometheus.Counter
-	BufferFlushTotal   prometheus.Counter
-	MQTTConnected      prometheus.Gauge
-	MQTTPublishTotal   prometheus.Counter
-	MQTTPublishFailure prometheus.Counter
+	BufferDepth                prometheus.Gauge
+	BufferEnqueueTotal         prometheus.Counter
+	BufferFlushBatchesTotal    prometheus.Counter
+	BufferFlushedMessagesTotal prometheus.Counter
+	MQTTConnected              prometheus.Gauge
+	MQTTPublishTotal           prometheus.Counter
+	MQTTPublishFailure         prometheus.Counter
+	PollTotal                  prometheus.Counter
+	PollSuccessTotal           prometheus.Counter
+	PollFailureTotal           *prometheus.CounterVec
 }
 
 // New registers all collector metrics on the default Prometheus registerer.
 func New() *Collector {
+	return NewWithRegisterer(prometheus.DefaultRegisterer)
+}
+
+// NewWithRegisterer registers collector metrics on reg (useful in tests).
+func NewWithRegisterer(reg prometheus.Registerer) *Collector {
+	factory := prometheus.WrapRegistererWith(nil, reg)
 	c := &Collector{
-		PollTotal: promauto.NewCounter(prometheus.CounterOpts{
+		PollTotal: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_poll_total",
 			Help: "Total number of device poll attempts",
 		}),
-		PollSuccessTotal: promauto.NewCounter(prometheus.CounterOpts{
+		PollSuccessTotal: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_poll_success_total",
 			Help: "Total number of successful device polls",
 		}),
-		PollFailureTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		PollFailureTotal: mustCounterVec(factory, prometheus.CounterOpts{
 			Name: "collector_poll_failure_total",
 			Help: "Total number of failed device polls",
 		}, []string{"device_id", "error_class"}),
-		BufferDepth: promauto.NewGauge(prometheus.GaugeOpts{
+		BufferDepth: mustGauge(factory, prometheus.GaugeOpts{
 			Name: "collector_buffer_depth",
-			Help: "Current local buffer depth (0 for stdout publisher)",
+			Help: "Current local buffer depth",
 		}),
-		BufferEnqueueTotal: promauto.NewCounter(prometheus.CounterOpts{
+		BufferEnqueueTotal: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_buffer_enqueue_total",
 			Help: "Total events enqueued for publish",
 		}),
-		BufferFlushTotal: promauto.NewCounter(prometheus.CounterOpts{
-			Name: "collector_buffer_flush_total",
-			Help: "Total publish flush batches",
+		BufferFlushBatchesTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_buffer_flush_batches_total",
+			Help: "Total flush batches that published at least one message",
 		}),
-		MQTTConnected: promauto.NewGauge(prometheus.GaugeOpts{
+		BufferFlushedMessagesTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_buffer_flushed_messages_total",
+			Help: "Total messages successfully flushed from the buffer",
+		}),
+		MQTTConnected: mustGauge(factory, prometheus.GaugeOpts{
 			Name: "collector_mqtt_connected",
-			Help: "Whether MQTT is connected (0 until Phase 2)",
+			Help: "Whether MQTT is connected (1=connected, 0=disconnected)",
 		}),
-		MQTTPublishTotal: promauto.NewCounter(prometheus.CounterOpts{
+		MQTTPublishTotal: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_mqtt_publish_total",
-			Help: "Total successful MQTT publishes (Phase 2)",
+			Help: "Total successful MQTT publishes",
 		}),
-		MQTTPublishFailure: promauto.NewCounter(prometheus.CounterOpts{
+		MQTTPublishFailure: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_mqtt_publish_failure_total",
-			Help: "Total failed MQTT publishes (Phase 2)",
+			Help: "Total failed MQTT publishes",
 		}),
 	}
 	c.BufferDepth.Set(0)
@@ -68,9 +76,32 @@ func New() *Collector {
 	return c
 }
 
+// SetBufferDepth updates the Prometheus gauge from the in-memory depth counter.
+func (c *Collector) SetBufferDepth(depth int64) {
+	c.BufferDepth.Set(float64(depth))
+}
+
 // Handler returns an HTTP handler for /metrics.
 func Handler() http.Handler {
 	return promhttp.Handler()
+}
+
+func mustCounter(reg prometheus.Registerer, opts prometheus.CounterOpts) prometheus.Counter {
+	c := prometheus.NewCounter(opts)
+	reg.MustRegister(c)
+	return c
+}
+
+func mustCounterVec(reg prometheus.Registerer, opts prometheus.CounterOpts, labels []string) *prometheus.CounterVec {
+	c := prometheus.NewCounterVec(opts, labels)
+	reg.MustRegister(c)
+	return c
+}
+
+func mustGauge(reg prometheus.Registerer, opts prometheus.GaugeOpts) prometheus.Gauge {
+	g := prometheus.NewGauge(opts)
+	reg.MustRegister(g)
+	return g
 }
 
 // ErrorClassTimeout is used when an SNMP operation times out.

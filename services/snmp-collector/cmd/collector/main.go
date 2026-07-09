@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/equate/ogsd/services/snmp-collector/internal/buffer"
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
 	"github.com/equate/ogsd/services/snmp-collector/internal/metrics"
 	"github.com/equate/ogsd/services/snmp-collector/internal/poller"
@@ -29,7 +31,20 @@ func main() {
 	}
 
 	m := metrics.New()
-	pub := publisher.NewStdoutPublisher()
+
+	// mqttCtx outlives the poller so we can drain the buffer after SIGTERM.
+	mqttCtx, mqttCancel := context.WithCancel(context.Background())
+	defer mqttCancel()
+
+	pollCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pub, shutdownPub, err := buildPublisher(mqttCtx, cfg, m, log)
+	if err != nil {
+		log.Error("build publisher", "err", err)
+		os.Exit(1)
+	}
+
 	p := poller.New(cfg, pub, m, log)
 
 	mux := http.NewServeMux()
@@ -45,9 +60,6 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
 		log.Info("admin server listening", "addr", cfg.Admin.Listen)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -61,16 +73,64 @@ func main() {
 		"devices", len(cfg.Devices),
 		"poll_interval", cfg.PollInterval.String(),
 		"max_workers", cfg.MaxWorkers,
+		"publisher_mode", cfg.Publisher.Mode,
 	)
 
-	go p.Run(ctx)
+	go p.Run(pollCtx)
 
-	<-ctx.Done()
+	<-pollCtx.Done()
 	log.Info("shutting down")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("admin server shutdown", "err", err)
+	}
+
+	if err := shutdownPub(shutdownCtx); err != nil {
+		log.Warn("publisher shutdown", "err", err)
+	}
+	mqttCancel()
+}
+
+func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Collector, log *slog.Logger) (publisher.Publisher, func(context.Context) error, error) {
+	switch cfg.Publisher.Mode {
+	case "stdout":
+		return publisher.NewStdoutPublisher(), func(context.Context) error { return nil }, nil
+	case "mqtt":
+		store, err := buffer.Open(buffer.Options{
+			Path:          cfg.Buffer.Path,
+			MaxEntries:    cfg.Buffer.MaxEntries,
+			BusyTimeoutMS: cfg.Buffer.BusyTimeoutMS,
+			Metrics:       m,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("open buffer: %w", err)
+		}
+
+		mqttClient, err := publisher.NewMQTTClient(mqttCtx, cfg.MQTT, cfg.MQTTPassword(), m, log)
+		if err != nil {
+			_ = store.Close()
+			return nil, nil, fmt.Errorf("mqtt client: %w", err)
+		}
+
+		flusherCtx, stopFlusher := context.WithCancel(mqttCtx)
+		bp := publisher.NewBufferedPublisher(store, mqttClient, m, log, cfg.Buffer.BatchSize, cfg.Buffer.IdleBackoff)
+		go bp.RunFlusher(flusherCtx)
+
+		shutdown := func(ctx context.Context) error {
+			stopFlusher()
+			drainErr := bp.Drain(ctx)
+			if err := store.Close(); err != nil {
+				if drainErr != nil {
+					return fmt.Errorf("drain: %v; close buffer: %w", drainErr, err)
+				}
+				return fmt.Errorf("close buffer: %w", err)
+			}
+			return drainErr
+		}
+		return bp, shutdown, nil
+	default:
+		return nil, nil, fmt.Errorf("unknown publisher mode %q", cfg.Publisher.Mode)
 	}
 }

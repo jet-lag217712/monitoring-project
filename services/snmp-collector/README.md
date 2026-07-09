@@ -30,11 +30,15 @@ Approved flow:
 SNMP Devices -> SNMP Collector -> Secure Outbound Telemetry Transport
 ```
 
-## Phase 1 status
+## Phase 2 status
 
-Phase 1 implements polling, normalization, stdout publishing, and Prometheus metrics.
-MQTT transport and SQLite buffering are Phase 2 — the `Publisher` interface and metric
-names (`collector_mqtt_*`, `collector_buffer_*`) are registered now so Phase 2 is a swap.
+Phase 2 adds:
+
+- Durable SQLite buffer (`internal/buffer`)
+- MQTT/TLS publisher with event-driven flusher
+- Prometheus buffer/MQTT metrics
+
+`publisher.mode: stdout` remains available for snmpsim-only local work.
 
 ## Build and run
 
@@ -49,7 +53,41 @@ Admin endpoints (default `:9090`):
 - `GET /metrics` — Prometheus scrape
 - `GET /healthz` — liveness
 
-Events are written as JSON lines to **stdout**. Logs go to **stderr**.
+### Publisher modes
+
+| Mode | Config | Behavior |
+|------|--------|----------|
+| `stdout` | `configs/collector.example.yaml` | JSON lines on stdout (Phase 1) |
+| `mqtt` | `configs/collector.mqtt.example.yaml` | SQLite buffer → MQTT/TLS QoS 1 |
+
+### MQTT mode
+
+**Easiest (Docker Desktop):** from the repo root, start snmpsim + Mosquitto together:
+
+```bash
+./deployments/local/phase2/up.sh      # start
+./deployments/local/phase2/down.sh    # stop
+```
+
+Then run the collector on the host:
+
+```bash
+cd services/snmp-collector
+export MQTT_PASSWORD=secret
+go run ./cmd/collector -config configs/collector.mqtt.example.yaml
+```
+
+Details: [`deployments/local/phase2/README.md`](../../deployments/local/phase2/README.md).
+
+Buffer file defaults to `./data/buffer.db` (created automatically). Mount a persistent volume at that path in containers.
+
+Optional env overrides:
+
+| Variable | Purpose |
+|----------|---------|
+| `MQTT_PASSWORD` | Broker password (required in mqtt mode) |
+| `MQTT_BROKER` | Override `mqtt.broker` |
+| `MQTT_TLS_INSECURE=1` | Skip TLS verify (local/dev only) |
 
 ### Community secrets
 
@@ -61,6 +99,18 @@ export SNMP_COMMUNITY_DEV_001=secret
 
 Device IDs are uppercased and non-alphanumeric characters become `_`.
 
+## Metrics (buffer / MQTT)
+
+| Metric | Meaning |
+|--------|---------|
+| `collector_buffer_depth` | In-memory depth (bootstrapped from SQLite) |
+| `collector_buffer_enqueue_total` | Rows inserted |
+| `collector_buffer_flush_batches_total` | Flush loops that published ≥1 message |
+| `collector_buffer_flushed_messages_total` | Messages published + deleted |
+| `collector_mqtt_connected` | 1 when connected |
+| `collector_mqtt_publish_total` | Successful publishes |
+| `collector_mqtt_publish_failure_total` | Failed publishes |
+
 ## Local validation with snmpsim
 
 Requires Docker. On macOS without Docker Desktop, Colima works:
@@ -68,7 +118,6 @@ Requires Docker. On macOS without Docker Desktop, Colima works:
 ```bash
 brew install docker docker-compose colima
 colima start
-# optional: export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
 ```
 
 ```bash
@@ -76,7 +125,7 @@ colima start
 docker compose -f deployments/local/snmpsim/docker-compose.yaml up --build
 ```
 
-**Docker Desktop / Linux:** the example config points at `127.0.0.1:1161`, so you can run the collector on the host:
+**Docker Desktop / Linux:** the example config points at `127.0.0.1:1161`:
 
 ```bash
 cd services/snmp-collector
@@ -86,17 +135,22 @@ go run ./cmd/collector -config configs/collector.example.yaml
 **Colima:** UDP port publish to the Mac host is unreliable. Run the collector on the same Docker network instead:
 
 ```bash
-# from services/snmp-collector after building the image
 docker build -t equate/snmp-collector:dev .
 docker run --rm --network snmpsim_default -p 9090:9090 \
   -v "$PWD/configs/collector.example.yaml:/configs/collector.yaml:ro" \
   equate/snmp-collector:dev -config /configs/collector.yaml
 ```
 
-When using the Docker-network path, set `devices[0].host` to `snmpsim` (the compose service name) instead of `127.0.0.1`.
+When using the Docker-network path, set `devices[0].host` to `snmpsim`.
 
-Expect JSON device/interface events on stdout and `collector_poll_success_total`
-increasing at `http://127.0.0.1:9090/metrics`.
+## Integration tests
+
+Requires a running Mosquitto with certs and passwords:
+
+```bash
+export MQTT_PASSWORD='...'
+go test -tags=integration ./tests/ -count=1 -v
+```
 
 ## Container
 
@@ -105,7 +159,8 @@ cd services/snmp-collector
 docker build -t equate/snmp-collector:dev .
 docker run --rm -p 9090:9090 \
   -v "$PWD/configs/collector.example.yaml:/configs/collector.yaml:ro" \
+  -v collector-data:/var/lib/collector \
   equate/snmp-collector:dev -config /configs/collector.yaml
 ```
 
-Mount a real device config and ensure the container can reach SNMP targets on the network.
+For MQTT mode, mount CA certs, set `MQTT_PASSWORD`, and point `buffer.path` at a writable volume (e.g. `/var/lib/collector/buffer.db`).
