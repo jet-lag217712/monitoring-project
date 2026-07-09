@@ -124,14 +124,7 @@ func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
 	publishCtx, cancel := context.WithTimeout(ctx, p.cfg.Publisher.Timeout)
 	defer cancel()
 
-	if err := p.pub.Publish(publishCtx, evs...); err != nil {
-		return err
-	}
-
-	p.metrics.BufferEnqueueTotal.Add(float64(len(evs)))
-	p.metrics.BufferFlushTotal.Inc()
-	p.metrics.BufferDepth.Set(0)
-	return nil
+	return p.pub.Publish(publishCtx, evs...)
 }
 
 func classifyError(err error) string {

@@ -18,12 +18,49 @@ type Config struct {
 	Admin     AdminConfig     `yaml:"admin"`
 	SNMP      SNMPConfig      `yaml:"snmp"`
 	Publisher PublisherConfig `yaml:"publisher"`
+	Buffer    BufferConfig    `yaml:"buffer"`
+	MQTT      MQTTConfig      `yaml:"mqtt"`
 
 	Devices []DeviceConfig `yaml:"devices"`
 }
 
+// PublisherConfig selects the publish backend and poller publish timeout.
 type PublisherConfig struct {
+	Mode    string        `yaml:"mode"` // stdout | mqtt
 	Timeout time.Duration `yaml:"timeout"`
+}
+
+// BufferConfig controls the durable local SQLite buffer (mqtt mode).
+type BufferConfig struct {
+	Path          string        `yaml:"path"`
+	MaxEntries    int           `yaml:"max_entries"`
+	BusyTimeoutMS int           `yaml:"busy_timeout_ms"`
+	BatchSize     int           `yaml:"batch_size"`
+	IdleBackoff   time.Duration `yaml:"idle_backoff"`
+}
+
+// MQTTConfig controls the outbound MQTT/TLS client.
+type MQTTConfig struct {
+	Broker      string          `yaml:"broker"`
+	ClientID    string          `yaml:"client_id"`
+	Username    string          `yaml:"username"`
+	PasswordEnv string          `yaml:"password_env"`
+	QoS         byte            `yaml:"qos"`
+	TLS         MQTTTLSConfig   `yaml:"tls"`
+	Reconnect   ReconnectConfig `yaml:"reconnect"`
+}
+
+// MQTTTLSConfig holds TLS material paths for the MQTT client.
+type MQTTTLSConfig struct {
+	CAFile   string `yaml:"ca_file"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+}
+
+// ReconnectConfig controls MQTT reconnect backoff.
+type ReconnectConfig struct {
+	Initial time.Duration `yaml:"initial"`
+	Max     time.Duration `yaml:"max"`
 }
 
 // AdminConfig controls the admin HTTP server (metrics/health).
@@ -84,6 +121,42 @@ func (c *Config) applyDefaults() {
 	if c.SNMP.Retries == 0 {
 		c.SNMP.Retries = 2
 	}
+	if c.Publisher.Mode == "" {
+		c.Publisher.Mode = "stdout"
+	}
+	if c.Publisher.Timeout == 0 {
+		c.Publisher.Timeout = 10 * time.Second
+	}
+	if c.Buffer.Path == "" {
+		c.Buffer.Path = "buffer.db"
+	}
+	if c.Buffer.MaxEntries == 0 {
+		c.Buffer.MaxEntries = 50000
+	}
+	if c.Buffer.BusyTimeoutMS == 0 {
+		c.Buffer.BusyTimeoutMS = 5000
+	}
+	if c.Buffer.BatchSize == 0 {
+		c.Buffer.BatchSize = 50
+	}
+	if c.Buffer.IdleBackoff == 0 {
+		c.Buffer.IdleBackoff = 500 * time.Millisecond
+	}
+	if c.MQTT.PasswordEnv == "" {
+		c.MQTT.PasswordEnv = "MQTT_PASSWORD"
+	}
+	if c.MQTT.QoS == 0 {
+		c.MQTT.QoS = 1
+	}
+	if c.MQTT.ClientID == "" && c.SiteID != "" {
+		c.MQTT.ClientID = "collector-" + c.SiteID
+	}
+	if c.MQTT.Reconnect.Initial == 0 {
+		c.MQTT.Reconnect.Initial = time.Second
+	}
+	if c.MQTT.Reconnect.Max == 0 {
+		c.MQTT.Reconnect.Max = 60 * time.Second
+	}
 	for i := range c.Devices {
 		if c.Devices[i].Port == 0 {
 			c.Devices[i].Port = 161
@@ -97,15 +170,16 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// applyEnvOverrides replaces community strings from SNMP_COMMUNITY_<device_id>.
-// Device IDs with non-alphanumeric characters are uppercased with those chars
-// replaced by underscores (e.g. "dev-001" → SNMP_COMMUNITY_DEV_001).
+// applyEnvOverrides replaces secrets and optional MQTT settings from the environment.
 func (c *Config) applyEnvOverrides() {
 	for i := range c.Devices {
 		key := communityEnvKey(c.Devices[i].ID)
 		if v := os.Getenv(key); v != "" {
 			c.Devices[i].Community = v
 		}
+	}
+	if v := os.Getenv("MQTT_BROKER"); v != "" {
+		c.MQTT.Broker = v
 	}
 }
 
@@ -122,6 +196,20 @@ func communityEnvKey(deviceID string) string {
 	return b.String()
 }
 
+// MQTTPassword returns the MQTT password from the configured environment variable.
+func (c *Config) MQTTPassword() string {
+	if c.MQTT.PasswordEnv == "" {
+		return ""
+	}
+	return os.Getenv(c.MQTT.PasswordEnv)
+}
+
+// MQTTInsecureSkipVerify reports whether TLS verification should be skipped (dev only).
+func MQTTInsecureSkipVerify() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("MQTT_TLS_INSECURE")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
 // Validate checks required fields and uniqueness constraints.
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.SiteID) == "" {
@@ -132,6 +220,19 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxWorkers <= 0 {
 		return fmt.Errorf("max_workers must be positive")
+	}
+	if c.Publisher.Timeout <= 0 {
+		return fmt.Errorf("publisher.timeout must be positive")
+	}
+	switch c.Publisher.Mode {
+	case "stdout", "mqtt":
+	default:
+		return fmt.Errorf("publisher.mode must be \"stdout\" or \"mqtt\"")
+	}
+	if c.Publisher.Mode == "mqtt" {
+		if err := c.validateMQTT(); err != nil {
+			return err
+		}
 	}
 	if len(c.Devices) == 0 {
 		return fmt.Errorf("at least one device is required")
@@ -146,12 +247,50 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("devices[%d].host is required", i)
 		}
 		if d.Version != "2c" {
-			return fmt.Errorf("devices[%d].version: only \"2c\" is supported in Phase 1", i)
+			return fmt.Errorf("devices[%d].version: only \"2c\" is supported", i)
 		}
 		if _, ok := seen[d.ID]; ok {
 			return fmt.Errorf("duplicate device id %q", d.ID)
 		}
 		seen[d.ID] = struct{}{}
+	}
+	return nil
+}
+
+func (c *Config) validateMQTT() error {
+	if strings.TrimSpace(c.MQTT.Broker) == "" {
+		return fmt.Errorf("mqtt.broker is required when publisher.mode is mqtt")
+	}
+	if strings.TrimSpace(c.MQTT.Username) == "" {
+		return fmt.Errorf("mqtt.username is required when publisher.mode is mqtt")
+	}
+	if strings.TrimSpace(c.MQTT.PasswordEnv) == "" {
+		return fmt.Errorf("mqtt.password_env is required when publisher.mode is mqtt")
+	}
+	if c.MQTTPassword() == "" {
+		return fmt.Errorf("environment variable %q is required when publisher.mode is mqtt", c.MQTT.PasswordEnv)
+	}
+	if c.MQTT.QoS != 1 {
+		return fmt.Errorf("mqtt.qos must be 1")
+	}
+	if c.Buffer.MaxEntries < 0 {
+		return fmt.Errorf("buffer.max_entries must be >= 0")
+	}
+	if c.Buffer.BusyTimeoutMS <= 0 {
+		return fmt.Errorf("buffer.busy_timeout_ms must be positive")
+	}
+	if c.Buffer.BatchSize <= 0 {
+		return fmt.Errorf("buffer.batch_size must be positive")
+	}
+	if c.MQTT.Reconnect.Initial <= 0 || c.MQTT.Reconnect.Max <= 0 {
+		return fmt.Errorf("mqtt.reconnect.initial and max must be positive")
+	}
+	if c.MQTT.Reconnect.Max < c.MQTT.Reconnect.Initial {
+		return fmt.Errorf("mqtt.reconnect.max must be >= initial")
+	}
+	insecure := MQTTInsecureSkipVerify()
+	if strings.TrimSpace(c.MQTT.TLS.CAFile) == "" && !insecure {
+		return fmt.Errorf("mqtt.tls.ca_file is required unless MQTT_TLS_INSECURE is set")
 	}
 	return nil
 }

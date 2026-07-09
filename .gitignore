@@ -11,3 +11,11 @@ remote-servers/keys
 # IDE Files
 .idea/
 
+# Local MQTT broker secrets / TLS material
+infrastructure/docker/mqtt-broker/certs/
+infrastructure/docker/mqtt-broker/passwords
+
+# Collector local SQLite buffer
+**/buffer.db
+**/buffer.db-*
+

@@ -108,3 +108,68 @@ func TestCommunityEnvKey(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestMQTTModeRequiresPassword(t *testing.T) {
+	path := writeTempConfig(t, `
+site_id: "site-001"
+publisher:
+  mode: mqtt
+  timeout: 5s
+mqtt:
+  broker: "tls://127.0.0.1:8883"
+  username: "collector"
+  password_env: "MQTT_PASSWORD"
+  qos: 1
+  tls:
+    ca_file: "/tmp/ca.crt"
+  reconnect:
+    initial: 1s
+    max: 60s
+devices:
+  - id: "dev-001"
+    host: "127.0.0.1"
+    version: "2c"
+`)
+	t.Setenv("MQTT_PASSWORD", "")
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected missing password error")
+	}
+}
+
+func TestMQTTModeValid(t *testing.T) {
+	path := writeTempConfig(t, `
+site_id: "site-001"
+publisher:
+  mode: mqtt
+  timeout: 5s
+mqtt:
+  broker: "tls://127.0.0.1:8883"
+  username: "collector"
+  password_env: "MQTT_PASSWORD"
+  qos: 1
+  tls:
+    ca_file: "/tmp/ca.crt"
+  reconnect:
+    initial: 1s
+    max: 60s
+devices:
+  - id: "dev-001"
+    host: "127.0.0.1"
+    version: "2c"
+`)
+	t.Setenv("MQTT_PASSWORD", "secret")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Publisher.Mode != "mqtt" {
+		t.Fatalf("mode=%q", cfg.Publisher.Mode)
+	}
+	if cfg.MQTT.ClientID != "collector-site-001" {
+		t.Fatalf("client_id=%q", cfg.MQTT.ClientID)
+	}
+	if cfg.Buffer.BusyTimeoutMS != 5000 {
+		t.Fatalf("busy_timeout_ms=%d", cfg.Buffer.BusyTimeoutMS)
+	}
+}
