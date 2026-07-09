@@ -62,11 +62,11 @@ Admin endpoints (default `:9090`):
 
 ### MQTT mode
 
-**Easiest (Docker Desktop):** from the repo root, start snmpsim + Mosquitto together:
+**Easiest (Docker Desktop):** from the repo root, start snmpsim + Mosquitto + Postgres via the canonical local test stack:
 
 ```bash
-./deployments/local/phase2/up.sh      # start
-./deployments/local/phase2/down.sh    # stop
+./deployments/local/test-env/up.sh      # start
+./deployments/local/test-env/down.sh    # stop
 ```
 
 Then run the collector on the host:
@@ -77,7 +77,7 @@ export MQTT_PASSWORD=secret
 go run ./cmd/collector -config configs/collector.mqtt.example.yaml
 ```
 
-Details: [`deployments/local/phase2/README.md`](../../deployments/local/phase2/README.md).
+Details: [`deployments/local/test-env/README.md`](../../deployments/local/test-env/README.md).
 
 Buffer file defaults to `./data/buffer.db` (created automatically). Mount a persistent volume at that path in containers.
 

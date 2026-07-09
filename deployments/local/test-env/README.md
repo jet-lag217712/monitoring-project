@@ -1,58 +1,75 @@
-# Phase 3 local stack (Docker Desktop)
+# Local test environment (Docker Desktop)
 
-One compose file runs the containers ingestion needs for local E2E:
+Canonical local stack for integration and E2E testing. All local testing should use this directory (`deployments/local/test-env/`), not phase-named folders.
 
-| Service   | Port              | Role                          |
-|-----------|-------------------|-------------------------------|
-| snmpsim   | `1161/udp`        | Simulated SNMP device         |
-| mosquitto | `8883` (MQTT/TLS) | Telemetry broker              |
-| postgres  | `5432`            | Schema 001–009 + metric seed  |
+One compose file runs the containers services need for local E2E:
+
+| Service   | Port              | Role                                      |
+|-----------|-------------------|-------------------------------------------|
+| snmpsim   | `1161/udp`        | Simulated SNMP device                     |
+| mosquitto | `8883` (MQTT/TLS) | Telemetry broker                          |
+| postgres  | `5432`            | Empty volume; schema via golang-migrate   |
+
+`up.sh` waits for Postgres, runs migrations (`database/migrations/`), and sets passwords for `ogsd_ingestion` / `ogsd_api`.
 
 Ingestion and the collector still run on the host with `go run`.
 
-**Compose network:** `ogsd-phase3_default`
+**Compose network:** `ogsd-test-env_default`
 
 ## Prerequisites
 
 1. **Docker Desktop** running.
-2. CLI context: `docker context use desktop-linux` (or whatever Desktop shows in `docker context ls`).
+2. **golang-migrate** (`brew install golang-migrate`) or Docker (script falls back to `migrate/migrate` image).
+3. CLI context: `docker context use desktop-linux` (or whatever Desktop shows in `docker context ls`).
 
 ## C0. Start dependencies
 
 From the **repo root**:
 
 ```bash
-./deployments/local/phase3/up.sh
+./deployments/local/test-env/up.sh
 ```
 
-**Check:** `docker compose -f deployments/local/phase3/docker-compose.yaml ps` shows mosquitto + postgres Up (postgres healthy).
+**Check:** `docker compose -f deployments/local/test-env/docker-compose.yaml ps` shows mosquitto + postgres Up (postgres healthy).
 
 First run generates TLS certs and a password file if missing (collector `secret`, ingestion `ingestion`).
+
+### Existing volumes from older local stacks
+
+If you previously used initdb-mounted schema (or an older compose project name) and migrate fails, reset once:
+
+```bash
+docker compose -f deployments/local/test-env/docker-compose.yaml down -v
+./deployments/local/test-env/up.sh
+```
 
 ## Environment
 
 ```bash
 export MQTT_PASSWORD=ingestion
 export MQTT_BROKER=tls://127.0.0.1:8883
-export MQTT_CA_FILE=infrastructure/docker/mqtt-broker/certs/ca.crt
-export DATABASE_URL=postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable
+export MQTT_CA_FILE="$PWD/infrastructure/docker/mqtt-broker/certs/ca.crt"
+export DATABASE_URL=postgres://ogsd_ingestion:ingestion@127.0.0.1:5432/ogsd?sslmode=disable
 ```
 
-## C1. Verify schema + seed
+Admin / migrate DSN (local only): `postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable`
+
+## C1. Verify schema + seed + roles
 
 ```bash
 psql "$DATABASE_URL" -c "\dt"
 psql "$DATABASE_URL" -c "SELECT name FROM metric_types;"
+psql postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable -c "\du ogsd*"
 ```
 
-**Check:** tables include `sites`, `devices`, `interfaces`, `metric_samples`, `interface_samples`; `uptime_seconds` is present.
+**Check:** tables include `sites`, `devices`, `interfaces`, `metric_samples`, `interface_samples`; `uptime_seconds` is present; roles `ogsd_ingestion`, `ogsd_api`, `ogsd_admin` exist.
 
 ## C2. Start ingestion (host)
 
 ```bash
 cd services/ingestion-service
 export MQTT_PASSWORD=ingestion
-export DATABASE_URL=postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable
+export DATABASE_URL=postgres://ogsd_ingestion:ingestion@127.0.0.1:5432/ogsd?sslmode=disable
 go run ./cmd/ingestion -config configs/ingestion.example.yaml
 ```
 
@@ -61,7 +78,7 @@ go run ./cmd/ingestion -config configs/ingestion.example.yaml
 ## C3. Start collector (host)
 
 ```bash
-# separate terminal — snmpsim is already up from phase3 compose
+# separate terminal — snmpsim is already up from test-env compose
 cd services/snmp-collector
 export MQTT_PASSWORD=secret
 go run ./cmd/collector -config configs/collector.mqtt.example.yaml
@@ -98,10 +115,10 @@ Publish invalid JSON to `site/site-001/device/dev-001/metric/device`.
 ## C7. DB failure / no-ACK (manual)
 
 1. Note current `metric_samples` count.
-2. Stop Postgres: `docker compose -f deployments/local/phase3/docker-compose.yaml stop postgres`
+2. Stop Postgres: `docker compose -f deployments/local/test-env/docker-compose.yaml stop postgres`
 3. Publish one new unique device metric (new timestamp).
 4. **Check:** ingestion logs `database_error`; `ingestion_db_write_failure_total` up; message **not** treated as accepted.
-5. Start Postgres again: `docker compose -f deployments/local/phase3/docker-compose.yaml start postgres`
+5. Start Postgres again: `docker compose -f deployments/local/test-env/docker-compose.yaml start postgres`
 6. Wait for MQTT session redelivery (or restart ingestion with same `client_id` and `CleanStart=false`).
 7. **Check:** sample count increased by **exactly 1** for that metric; no duplicates.
 
@@ -117,12 +134,12 @@ docker build -t equate/ingestion-service:dev .
 ## C9. Stop
 
 ```bash
-./deployments/local/phase3/down.sh
+./deployments/local/test-env/down.sh
 ```
 
 ## Integration tests (Layer B)
 
-With the phase3 stack up and env exported:
+With the test-env stack up and env exported:
 
 ```bash
 cd services/ingestion-service
