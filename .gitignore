@@ -9,7 +9,7 @@ frontend/.env.*.local
 /.DS_Store
 
 # Remote Servers
-remote-servers/keys
+remote-servers/
 
 # IDE Files
 .idea/
