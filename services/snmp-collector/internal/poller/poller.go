@@ -121,7 +121,10 @@ func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
 		Interfaces:    ifaces,
 	})
 
-	if err := p.pub.Publish(ctx, evs...); err != nil {
+	publishCtx, cancel := context.WithTimeout(ctx, p.cfg.Publisher.Timeout)
+	defer cancel()
+
+	if err := p.pub.Publish(publishCtx, evs...); err != nil {
 		return err
 	}
 

@@ -11,12 +11,19 @@ import (
 
 // Config is the collector runtime configuration.
 type Config struct {
-	SiteID       string         `yaml:"site_id"`
-	PollInterval time.Duration  `yaml:"poll_interval"`
-	MaxWorkers   int            `yaml:"max_workers"`
-	Admin        AdminConfig    `yaml:"admin"`
-	SNMP         SNMPConfig     `yaml:"snmp"`
-	Devices      []DeviceConfig `yaml:"devices"`
+	SiteID       string        `yaml:"site_id"`
+	PollInterval time.Duration `yaml:"poll_interval"`
+	MaxWorkers   int           `yaml:"max_workers"`
+
+	Admin     AdminConfig     `yaml:"admin"`
+	SNMP      SNMPConfig      `yaml:"snmp"`
+	Publisher PublisherConfig `yaml:"publisher"`
+
+	Devices []DeviceConfig `yaml:"devices"`
+}
+
+type PublisherConfig struct {
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // AdminConfig controls the admin HTTP server (metrics/health).

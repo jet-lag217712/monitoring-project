@@ -9,6 +9,9 @@ snmp:
   timeout: 5s
   retries: 2
 
+publisher:
+    timeout: 2s
+
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
