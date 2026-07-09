@@ -76,8 +76,7 @@ func (c *Client) Walk(ctx context.Context, rootOID string, walkFn gosnmp.WalkFun
 	return nil
 }
 
-// WithTimeout returns a child context bounded by the SNMP client timeout
-// plus a small margin for retries.
+// WithTimeout returns a child context bounded by the SNMP client timeout multiplied by (retries + 1).
 func (c *Client) WithTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	timeout := c.params.Timeout * time.Duration(c.params.Retries+1)
 	if timeout <= 0 {
