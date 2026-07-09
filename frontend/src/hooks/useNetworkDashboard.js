@@ -52,6 +52,7 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const siteDetailRef = useRef(siteDetail)
   const dataModeRef = useRef(dataMode)
+  const deviceFetchSeqRef = useRef(0)
   siteDetailRef.current = siteDetail
   dataModeRef.current = dataMode
 
@@ -142,18 +143,21 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
     async (siteId, deviceMapKey) => {
       if (!siteId || !deviceMapKey) return
 
+      const seq = deviceFetchSeqRef.current
       setDeviceLoading(true)
       setDeviceError(null)
 
       const summary = siteDetailRef.current?.latest?.devices?.[deviceMapKey]
       const collectorId = resolveCollectorDeviceId(summary, deviceMapKey)
 
+      const isCurrentFetch = () => seq === deviceFetchSeqRef.current
+
       try {
         if (dataModeRef.current === 'demo' && DEMO_ENABLED) {
           const scenario = getActiveDemoScenario()
           const demoDevice = scenario.details[siteId]?.latest?.devices?.[deviceMapKey] ?? null
+          if (!isCurrentFetch()) return
           setDeviceDetail(demoDevice)
-          setDeviceLoading(false)
           return
         }
 
@@ -168,6 +172,8 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
           }).catch(() => ({ points: [] })),
         ])
 
+        if (!isCurrentFetch()) return
+
         setDeviceDetail(
           adaptDeviceDetail(device, interfaces, {
             uptime: metricsToSeries(metrics.points),
@@ -180,6 +186,7 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
       } catch (err) {
         console.error('Failed to fetch device detail:', err)
         if (handleUnauthorized(err)) return
+        if (!isCurrentFetch()) return
         if (DEMO_ENABLED) {
           const scenario = getActiveDemoScenario()
           setDeviceDetail(scenario.details[siteId]?.latest?.devices?.[deviceMapKey] ?? null)
@@ -190,7 +197,9 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
           setDataMode('error')
         }
       } finally {
-        setDeviceLoading(false)
+        if (isCurrentFetch()) {
+          setDeviceLoading(false)
+        }
       }
     },
     [handleUnauthorized],
@@ -232,9 +241,16 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
   useEffect(() => {
     if (!enabled || !selectedSite || !selectedDevice) {
+      deviceFetchSeqRef.current += 1
       setDeviceDetail(null)
+      setDeviceError(null)
+      setDeviceLoading(false)
       return undefined
     }
+
+    deviceFetchSeqRef.current += 1
+    setDeviceDetail(null)
+    setDeviceError(null)
 
     fetchDeviceDetail(selectedSite, selectedDevice)
 
@@ -263,6 +279,8 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   }
 
   const handleDeviceClick = ip => {
+    setDeviceDetail(null)
+    setDeviceError(null)
     setSelectedDevice(ip)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
