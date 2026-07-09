@@ -88,7 +88,8 @@ func NewSubscriber(ctx context.Context, cfg config.MQTTConfig, password string, 
 			log.Error("mqtt connect error", "err", err)
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: cfg.ClientID,
+			ClientID:                   cfg.ClientID,
+			EnableManualAcknowledgment: true,
 			OnClientError: func(err error) {
 				log.Error("mqtt client error", "err", err)
 			},
@@ -97,7 +98,14 @@ func NewSubscriber(ctx context.Context, cfg config.MQTTConfig, password string, 
 					sub.mu.Lock()
 					defer sub.mu.Unlock()
 					ack := sub.handler.Handle(context.Background(), pr.Packet.Topic, pr.Packet.Payload)
-					return ack, nil
+					if !ack {
+						return false, nil
+					}
+					if err := pr.Client.Ack(pr.Packet); err != nil {
+						log.Error("mqtt ack failed", "topic", pr.Packet.Topic, "err", err)
+						return false, err
+					}
+					return true, nil
 				},
 			},
 		},

@@ -415,11 +415,18 @@ func startIngestionSubscriber(t *testing.T, ctx context.Context, broker, caFile,
 			}
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: clientID,
+			ClientID:                   clientID,
+			EnableManualAcknowledgment: true,
 			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
 				func(pr paho.PublishReceived) (bool, error) {
 					ack := h.Handle(context.Background(), pr.Packet.Topic, pr.Packet.Payload)
-					return ack, nil
+					if !ack {
+						return false, nil
+					}
+					if err := pr.Client.Ack(pr.Packet); err != nil {
+						return false, err
+					}
+					return true, nil
 				},
 			},
 		},
