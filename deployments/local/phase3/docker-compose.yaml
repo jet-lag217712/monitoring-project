@@ -1,0 +1,55 @@
+# Phase 3 local stack: snmpsim + Mosquitto + Postgres
+#
+# From repo root:
+#   ./deployments/local/phase3/up.sh
+#   ./deployments/local/phase3/down.sh
+
+name: ogsd-phase3
+
+services:
+  snmpsim:
+    build: ../snmpsim
+    ports:
+      - "1161:1161/udp"
+    restart: unless-stopped
+
+  mosquitto:
+    build: ../../../infrastructure/docker/mqtt-broker
+    ports:
+      - "8883:8883"
+    volumes:
+      - ../../../infrastructure/docker/mqtt-broker/certs:/mosquitto/certs:ro
+      - ../../../infrastructure/docker/mqtt-broker/passwords:/mosquitto/config/passwords:ro
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ogsd
+      POSTGRES_PASSWORD: ogsd
+      POSTGRES_DB: ogsd
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../../database/schema/001_sites.sql:/docker-entrypoint-initdb.d/001_sites.sql:ro
+      - ../../../database/schema/002_devices.sql:/docker-entrypoint-initdb.d/002_devices.sql:ro
+      - ../../../database/schema/003_metric_types.sql:/docker-entrypoint-initdb.d/003_metric_types.sql:ro
+      - ../../../database/schema/004_interfaces.sql:/docker-entrypoint-initdb.d/004_interfaces.sql:ro
+      - ../../../database/schema/005_metric_samples.sql:/docker-entrypoint-initdb.d/005_metric_samples.sql:ro
+      - ../../../database/schema/006_interface_samples.sql:/docker-entrypoint-initdb.d/006_interface_samples.sql:ro
+      - ../../../database/schema/007_alerts.sql:/docker-entrypoint-initdb.d/007_alerts.sql:ro
+      - ../../../database/schema/008_indexes.sql:/docker-entrypoint-initdb.d/008_indexes.sql:ro
+      - ../../../database/schema/009_dedup_constraints.sql:/docker-entrypoint-initdb.d/009_dedup_constraints.sql:ro
+      - ../../../database/seed/001_metric_types.sql:/docker-entrypoint-initdb.d/010_seed_metric_types.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ogsd -d ogsd"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  postgres-data:
