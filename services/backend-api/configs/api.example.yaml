@@ -1,0 +1,16 @@
+api:
+  listen: ":8000"
+  # Comma-separated origins for local frontend testing. Empty disables CORS headers.
+  cors_origins: "http://127.0.0.1:5173,http://localhost:5173"
+
+admin:
+  listen: ":9092"
+
+database:
+  url_env: "DATABASE_URL"
+  max_conns: 10
+  min_conns: 1
+  max_lifetime: 1h
+
+# Device is online when status='online' and last_seen is within this window.
+online_threshold: 5m
