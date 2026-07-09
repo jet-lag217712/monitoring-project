@@ -1,0 +1,16 @@
+site_id: "site-001"
+poll_interval: 60s
+max_workers: 1
+admin:
+  listen: ":9090"
+snmp:
+  timeout: 5s
+  retries: 1
+devices:
+  - id: "dev-001"
+    host: "snmpsim"
+    port: 1161
+    community: "public"
+    version: "2c"
+publisher:
+  timeout: 2s
