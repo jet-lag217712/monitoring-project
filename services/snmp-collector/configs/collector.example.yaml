@@ -13,6 +13,6 @@ devices:
   - id: "dev-001"
     host: "127.0.0.1"
     port: 1161 # local snmpsim (see deployments/local/snmpsim); use 161 for real devices
-    community: "public" # override with SNMP_COMMUNITY_dev-001
+    community: "public" # override with SNMP_COMMUNITY_DEV_001
     version: "2c"
     vendor: "" # selects vendors/{vendor} when implemented
