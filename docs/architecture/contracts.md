@@ -6,6 +6,8 @@ The contract between SNMP collectors and cloud ingestion is implementation-neutr
 
 MQTT/TLS is the current transport implementation. When MQTT is used, routes may be expressed as topics, but transport remains delivery only and PostgreSQL remains the system of record.
 
+Topic path `{site_id}` and `{device_id}` are authoritative. The collector may also emit `site_id` and `device_id` in the JSON body; ingestion cross-checks them when present.
+
 ### Device Metric
 
 Publisher:
@@ -27,10 +29,14 @@ Payload:
 ```json
 {
   "timestamp": "RFC3339",
-  "metric": "cpu_utilization",
-  "value": 42.5
+  "metric": "uptime_seconds",
+  "value": 12345.0
 }
 ```
+
+MVP collector metric: `uptime_seconds`. Additional metric names (for example `cpu_utilization`) may appear once seeded in `metric_types`.
+
+Optional body fields: `site_id`, `device_id` (must match topic when present).
 
 ### Interface Metric
 
@@ -60,6 +66,8 @@ Payload:
   "out_errors": 0
 }
 ```
+
+Optional body fields: `site_id`, `device_id` (must match topic when present).
 
 ## REST Contracts
 
