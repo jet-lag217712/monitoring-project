@@ -476,12 +476,13 @@ Google OIDC: frontend sign-in → backend JWT validation → protect `/api/*`.
 
 ### 6.3 Deliverables
 
-- [ ] All views on live API
-- [ ] Google OIDC end-to-end
-- [ ] Production frontend Dockerfile
-- [ ] Demo mode gated via `VITE_DEMO_ENABLED`
+- [x] All views on live API (device/interfaces/metrics clients + adapters; honest empty charts for vendor metrics)
+- [x] Google OIDC end-to-end (GIS sign-in + backend ID token validation)
+- [x] Production frontend Dockerfile (Vite build + nginx)
+- [x] Demo mode gated via `VITE_DEMO_ENABLED`
 
 **Exit criteria:** Authenticated user browses sites → devices → interfaces with live data.
+
 
 ---
 

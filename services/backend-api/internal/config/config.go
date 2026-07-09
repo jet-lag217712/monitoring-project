@@ -13,6 +13,7 @@ import (
 type Config struct {
 	API             APIConfig      `yaml:"api"`
 	Admin           AdminConfig    `yaml:"admin"`
+	Auth            AuthConfig     `yaml:"auth"`
 	Database        DatabaseConfig `yaml:"database"`
 	OnlineThreshold time.Duration  `yaml:"online_threshold"`
 }
@@ -21,6 +22,16 @@ type Config struct {
 type APIConfig struct {
 	Listen      string `yaml:"listen"`
 	CORSOrigins string `yaml:"cors_origins"`
+}
+
+// AuthConfig controls Google OIDC validation for /api/*.
+type AuthConfig struct {
+	// Enabled protects /api/* with Google ID token validation when true.
+	Enabled bool `yaml:"enabled"`
+	// GoogleClientID is the OAuth Web client ID (aud claim).
+	GoogleClientID string `yaml:"google_client_id"`
+	// GoogleClientIDEnv optionally loads the client ID from an environment variable.
+	GoogleClientIDEnv string `yaml:"google_client_id_env"`
 }
 
 // AdminConfig controls the admin HTTP server (metrics/health).
@@ -78,6 +89,22 @@ func (c *Config) applyDefaults() {
 	if c.OnlineThreshold == 0 {
 		c.OnlineThreshold = 5 * time.Minute
 	}
+	if c.Auth.GoogleClientIDEnv == "" {
+		c.Auth.GoogleClientIDEnv = "GOOGLE_CLIENT_ID"
+	}
+	if strings.TrimSpace(c.Auth.GoogleClientID) == "" {
+		c.Auth.GoogleClientID = strings.TrimSpace(os.Getenv(c.Auth.GoogleClientIDEnv))
+	}
+}
+
+// AuthEnabled reports whether Google OIDC protection is active.
+func (c *Config) AuthEnabled() bool {
+	return c.Auth.Enabled
+}
+
+// GoogleClientID returns the configured OAuth client ID.
+func (c *Config) GoogleClientID() string {
+	return strings.TrimSpace(c.Auth.GoogleClientID)
 }
 
 // DatabaseURL returns the PostgreSQL URL from the configured environment variable.
@@ -126,6 +153,9 @@ func (c *Config) Validate() error {
 	}
 	if c.OnlineThreshold <= 0 {
 		return fmt.Errorf("online_threshold must be positive")
+	}
+	if c.Auth.Enabled && c.GoogleClientID() == "" {
+		return fmt.Errorf("auth.google_client_id or %s is required when auth.enabled is true", c.Auth.GoogleClientIDEnv)
 	}
 	return nil
 }

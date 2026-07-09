@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/equate/ogsd/services/backend-api/internal/auth"
 	"github.com/equate/ogsd/services/backend-api/internal/config"
 	"github.com/equate/ogsd/services/backend-api/internal/handlers"
 	"github.com/equate/ogsd/services/backend-api/internal/store"
@@ -43,6 +44,17 @@ func main() {
 	api.Register(mux)
 
 	var apiHandler http.Handler = mux
+	if cfg.AuthEnabled() {
+		verifier, err := auth.NewGoogleVerifier(ctx, cfg.GoogleClientID())
+		if err != nil {
+			log.Error("init google oidc verifier", "err", err)
+			os.Exit(1)
+		}
+		apiHandler = auth.RequireGoogleOIDC(verifier, log, apiHandler)
+		log.Info("google oidc auth enabled")
+	} else {
+		log.Warn("google oidc auth disabled; /api/* is unauthenticated")
+	}
 	apiHandler = handlers.NormalizePath(apiHandler)
 	apiHandler = handlers.RequestLog(log, apiHandler)
 	if origins := cfg.CORSOriginList(); len(origins) > 0 {
