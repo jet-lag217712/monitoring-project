@@ -104,7 +104,33 @@ func TestAPI_SitesAndDetailShapes(t *testing.T) {
 		}
 	})
 
-	t.Run("metrics", func(t *testing.T) {
+	t.Run("device by site-scoped collector id", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/devices/api-itest-device?siteId=api-itest-site", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("ambiguous device without siteId", func(t *testing.T) {
+		seedDuplicateDevice(t, ctx, adminURL)
+		defer cleanupDuplicateDevice(t, ctx, adminURL)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/devices/api-itest-device", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var errBody models.APIError
+		if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+			t.Fatal(err)
+		}
+		if errBody.Error.Code != "VALIDATION_ERROR" {
+			t.Fatalf("code=%q", errBody.Error.Code)
+		}
+	})
 		req := httptest.NewRequest(http.MethodGet, "/api/devices/api-itest-device/metrics?metric=uptime_seconds", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -164,6 +190,55 @@ func integrationDBURL(t *testing.T) string {
 		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/test-env/up.sh")
 	}
 	return dbURL
+}
+
+func seedDuplicateDevice(t *testing.T, ctx context.Context, adminURL string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, adminURL)
+	if err != nil {
+		t.Fatalf("admin connect: %v", err)
+	}
+	defer pool.Close()
+
+	siteID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0003")
+	deviceID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0004")
+	now := time.Now().UTC()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO sites (id, name, location)
+		VALUES ($1, 'api-itest-site-2', 'API Integration Site 2')
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, location = EXCLUDED.location
+	`, siteID)
+	if err != nil {
+		t.Fatalf("seed duplicate site: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO devices (id, site_id, hostname, ip_address, vendor, model, snmp_version, status, last_seen)
+		VALUES ($1, $2, 'api-itest-device', '0.0.0.0', 'unknown', 'unknown', '2c', 'online', $3)
+		ON CONFLICT (id) DO UPDATE SET
+			hostname = EXCLUDED.hostname,
+			status = EXCLUDED.status,
+			last_seen = EXCLUDED.last_seen
+	`, deviceID, siteID, now)
+	if err != nil {
+		t.Fatalf("seed duplicate device: %v", err)
+	}
+}
+
+func cleanupDuplicateDevice(t *testing.T, ctx context.Context, adminURL string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, adminURL)
+	if err != nil {
+		t.Logf("cleanup connect: %v", err)
+		return
+	}
+	defer pool.Close()
+
+	deviceID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0004")
+	siteID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0003")
+	_, _ = pool.Exec(ctx, `DELETE FROM devices WHERE id = $1`, deviceID)
+	_, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, siteID)
 }
 
 func seedSite(t *testing.T, ctx context.Context, adminURL string) {

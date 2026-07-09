@@ -89,3 +89,14 @@ func TestLocationOrName(t *testing.T) {
 		t.Fatal("fallback to name")
 	}
 }
+
+func TestDeviceUUID_Stable(t *testing.T) {
+	a := derive.DeviceUUID("site-001", "dev-001")
+	b := derive.DeviceUUID("site-001", "dev-001")
+	if a != b {
+		t.Fatalf("%s != %s", a, b)
+	}
+	if derive.DeviceUUID("site-a", "dev-001") == derive.DeviceUUID("site-b", "dev-001") {
+		t.Fatal("device UUIDs must differ across sites")
+	}
+}

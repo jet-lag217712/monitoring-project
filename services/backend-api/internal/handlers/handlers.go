@@ -180,7 +180,8 @@ func (a *API) handleListSiteDevices(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("deviceId")
-	d, err := a.store.GetDevice(r.Context(), deviceID)
+	siteName := r.URL.Query().Get("siteId")
+	d, err := a.store.GetDevice(r.Context(), deviceID, siteName)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
@@ -205,7 +206,8 @@ func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("deviceId")
-	d, err := a.store.GetDevice(r.Context(), deviceID)
+	siteName := r.URL.Query().Get("siteId")
+	d, err := a.store.GetDevice(r.Context(), deviceID, siteName)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
@@ -242,7 +244,8 @@ func (a *API) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleListMetrics(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("deviceId")
-	d, err := a.store.GetDevice(r.Context(), deviceID)
+	siteName := r.URL.Query().Get("siteId")
+	d, err := a.store.GetDevice(r.Context(), deviceID, siteName)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
@@ -335,6 +338,10 @@ func toDeviceSummary(d store.DeviceRow, online bool) models.DeviceSummary {
 func (a *API) writeStoreError(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "RESOURCE_NOT_FOUND", "resource not found")
+		return
+	}
+	if errors.Is(err, store.ErrAmbiguous) {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "device id is ambiguous across sites; pass siteId query parameter")
 		return
 	}
 	a.log.Error("database error", "err", err)

@@ -3,7 +3,21 @@ package derive
 import (
 	"net"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// Fixed OGSD namespace for deterministic UUID v5 derivation (must match ingestion-service).
+var ogsdNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+func init() {
+	ogsdNamespace = uuid.NewSHA1(ogsdNamespace, []byte("equate-ogsd"))
+}
+
+// DeviceUUID returns the deterministic device primary key for a collector site+device pair.
+func DeviceUUID(siteID, deviceID string) uuid.UUID {
+	return uuid.NewSHA1(ogsdNamespace, []byte("device:"+siteID+"/"+deviceID))
+}
 
 const placeholderIP = "0.0.0.0"
 

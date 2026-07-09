@@ -52,9 +52,9 @@ go run ./cmd/api -config configs/api.example.yaml
 | GET | `/api/sites` | Overview object keyed by collector site ID (`sites.name`) |
 | GET | `/api/sites/{siteId}` | Site detail + `latest.devices` |
 | GET | `/api/sites/{siteId}/devices` | Device list for site |
-| GET | `/api/devices/{deviceId}` | Resolve by hostname, then UUID |
-| GET | `/api/devices/{deviceId}/interfaces` | IF-MIB inventory |
-| GET | `/api/devices/{deviceId}/metrics` | Query: `start`, `end`, `metric` (default `uptime_seconds`) |
+| GET | `/api/devices/{deviceId}` | Resolve by UUID, or collector ID with optional `?siteId=` |
+| GET | `/api/devices/{deviceId}/interfaces` | IF-MIB inventory; optional `?siteId=` |
+| GET | `/api/devices/{deviceId}/metrics` | Query: `start`, `end`, `metric` (default `uptime_seconds`); optional `?siteId=` |
 | GET | `/api/alerts` | Active alerts (`cleared_at IS NULL`) |
 | GET | `/api/test-config` | `{ "mode": "live", "polling_enabled": true }` |
 
@@ -64,7 +64,7 @@ REST prefix is `/api/...` (not `/api/v1/...`). Frontend and the MVP roadmap are 
 
 - `{siteId}` = collector string ID stored in `sites.name`
 - Site detail device map keys prefer real `ip_address`; fall back to `hostname` when IP is `0.0.0.0`
-- `{deviceId}` = `hostname` preferred, UUID accepted
+- `{deviceId}` = collector string ID (`devices.hostname`) with optional `?siteId=` (sites.name), or device UUID
 
 ### Honest defaults (MVP)
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equate/ogsd/services/backend-api/internal/derive"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,6 +14,9 @@ import (
 
 // ErrNotFound is returned when a requested resource does not exist.
 var ErrNotFound = errors.New("not found")
+
+// ErrAmbiguous is returned when a lookup matches more than one row.
+var ErrAmbiguous = errors.New("ambiguous")
 
 // Store provides read-only access to monitoring data.
 type Store struct {
@@ -216,26 +220,49 @@ func (s *Store) ListAllDevices(ctx context.Context) ([]DeviceRow, error) {
 	return scanDevices(rows)
 }
 
-// GetDevice resolves a device by hostname first, then by UUID string.
-func (s *Store) GetDevice(ctx context.Context, deviceID string) (DeviceRow, error) {
-	row, err := s.getDeviceByHostname(ctx, deviceID)
-	if err == nil {
-		return row, nil
+// GetDevice resolves a device by UUID, site-scoped collector ID, or globally unique hostname.
+// siteName is the collector site ID (sites.name); when set, deviceID is resolved via the same
+// deterministic UUID derivation used by ingestion.
+func (s *Store) GetDevice(ctx context.Context, deviceID, siteName string) (DeviceRow, error) {
+	if id, err := uuid.Parse(deviceID); err == nil {
+		return s.getDeviceByID(ctx, id)
 	}
-	if !errors.Is(err, ErrNotFound) {
-		return DeviceRow{}, err
+	if siteName != "" {
+		id := derive.DeviceUUID(siteName, deviceID)
+		return s.getDeviceByID(ctx, id)
 	}
-
-	id, parseErr := uuid.Parse(deviceID)
-	if parseErr != nil {
-		return DeviceRow{}, ErrNotFound
-	}
-	return s.getDeviceByID(ctx, id)
+	return s.getDeviceByHostnameUnique(ctx, deviceID)
 }
 
-func (s *Store) getDeviceByHostname(ctx context.Context, hostname string) (DeviceRow, error) {
-	row := s.pool.QueryRow(ctx, deviceSelect+` WHERE d.hostname = $1`, hostname)
-	return scanDevice(row)
+func (s *Store) getDeviceByHostnameUnique(ctx context.Context, hostname string) (DeviceRow, error) {
+	rows, err := s.pool.Query(ctx, deviceSelect+` WHERE d.hostname = $1 LIMIT 2`, hostname)
+	if err != nil {
+		return DeviceRow{}, fmt.Errorf("get device by hostname: %w", err)
+	}
+	defer rows.Close()
+
+	var out []DeviceRow
+	for rows.Next() {
+		var r DeviceRow
+		if err := rows.Scan(
+			&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
+			&r.Vendor, &r.Model, &r.Status, &r.LastSeen, &r.UptimeSeconds,
+		); err != nil {
+			return DeviceRow{}, fmt.Errorf("scan device: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return DeviceRow{}, fmt.Errorf("get device by hostname: %w", err)
+	}
+	switch len(out) {
+	case 0:
+		return DeviceRow{}, ErrNotFound
+	case 1:
+		return out[0], nil
+	default:
+		return DeviceRow{}, ErrAmbiguous
+	}
 }
 
 func (s *Store) getDeviceByID(ctx context.Context, id uuid.UUID) (DeviceRow, error) {
