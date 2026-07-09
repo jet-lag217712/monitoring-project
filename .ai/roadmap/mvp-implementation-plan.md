@@ -67,9 +67,9 @@ MQTT Receive → Validate → Deduplicate → DB Commit → ACK
 | Message type | Natural key |
 |--------------|-------------|
 | Device metric | `(device_id, metric_type_id, collected_at)` |
-| Interface metric | `(device_id, if_index, collected_at)` |
+| Interface metric | `(interface_id, collected_at)` (canonical FK; `if_index` resolved via `interfaces`) |
 
-Enforce via `UNIQUE` constraints on sample tables (add in Phase 4 schema) + `INSERT ... ON CONFLICT DO NOTHING` or equivalent existence check.
+Enforce via `UNIQUE` constraints on sample tables + `INSERT ... ON CONFLICT DO NOTHING` or equivalent existence check.
 
 #### MQTT consumer settings
 
@@ -156,10 +156,10 @@ Strict sequential implementation order:
 | Area | Status |
 |------|--------|
 | Architecture docs ([`.ai/`](../), [`docs/architecture/`](../../docs/architecture/)) | Complete |
-| PostgreSQL schemas ([`database/schema/`](../../database/schema/)) | Defined (8 SQL files; dedup constraints to be added) |
+| PostgreSQL schemas ([`database/schema/`](../../database/schema/), [`database/migrations/`](../../database/migrations/)) | Defined (001–009 + golang-migrate; dedup constraints included) |
 | Frontend dashboard ([`frontend/`](../../frontend/)) | Built — React 19, polling, demo fallback |
-| Go services ([`services/`](../../services/)) | Scaffold only |
-| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Placeholder only |
+| Go services ([`services/`](../../services/)) | Collector + ingestion implemented; API scaffold |
+| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Mosquitto + local test stack ([`deployments/local/test-env/`](../../deployments/local/test-env/)); Azure PostgreSQL Terraform (Phase 4) |
 
 ### Canonical decisions
 
@@ -380,17 +380,15 @@ Implement ingestion metrics listed in [Required Changes §3](#3-observability--c
 Apply existing files in [`database/schema/`](../../database/schema/) plus new dedup constraints:
 
 ```sql
--- 009_dedup_constraints.sql
+-- 009_dedup_constraints.sql / migration 000002
 ALTER TABLE metric_samples
   ADD CONSTRAINT uq_metric_sample_idempotency
   UNIQUE (device_id, metric_type_id, collected_at);
 
 ALTER TABLE interface_samples
   ADD CONSTRAINT uq_interface_sample_idempotency
-  UNIQUE (device_id, interface_id, collected_at);
+  UNIQUE (interface_id, collected_at);
 ```
-
-> Adjust column names to match `006_interface_samples.sql` — use `interface_id` FK if schema uses it, or `(device_id, if_index, collected_at)` via unique index.
 
 ### 4.2 Migration runner
 
@@ -408,17 +406,17 @@ Terraform module in [`infrastructure/terraform/modules/`](../../infrastructure/t
 
 | Role | Permissions |
 |------|-------------|
-| `ogsd_ingestion` | INSERT/UPDATE on monitoring tables; SELECT on reference tables |
+| `ogsd_ingestion` | INSERT/UPDATE on inventory tables; INSERT+SELECT on sample tables (ON CONFLICT); SELECT on reference tables |
 | `ogsd_api` | SELECT only |
 | `ogsd_admin` | Migrations only |
 
 ### 4.6 Deliverables
 
-- [ ] Migration runner + all schemas including dedup constraints
-- [ ] Seed data
-- [ ] Azure PostgreSQL Terraform (dev + prod)
-- [ ] DB role scripts
-- [ ] Local Postgres Docker Compose service
+- [x] Migration runner + all schemas including dedup constraints
+- [x] Seed data
+- [x] Azure PostgreSQL Terraform (dev + prod)
+- [x] DB role scripts
+- [x] Local Postgres Docker Compose service
 
 **Exit criteria:** Ingestion and API connect with scoped credentials; dedup constraints enforce idempotency at DB level.
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Stop Phase 3 local containers.
+# Stop the local test-env containers.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-COMPOSE="${ROOT}/deployments/local/phase3/docker-compose.yaml"
+COMPOSE="${ROOT}/deployments/local/test-env/docker-compose.yaml"
 
 cd "${ROOT}"
 
@@ -13,4 +13,4 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 docker compose -f "${COMPOSE}" down
-echo "Phase 3 containers stopped."
+echo "Local test-env containers stopped."

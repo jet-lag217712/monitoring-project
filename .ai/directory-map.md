@@ -72,6 +72,8 @@ equate-ogsd/
 │   ├── docker-compose/
 │   ├── aws/
 │   └── local/
+│       ├── test-env/          # Canonical local test stack (all local testing)
+│       └── snmpsim/           # Shared SNMP simulator image/data for test-env
 │
 ├── remote-servers/
 │   ├── configs/
@@ -113,3 +115,11 @@ equate-ogsd/
 │   └── backlog.md
 └── directory-map.md
 ```
+
+## Local testing environments
+
+All local integration / E2E test stacks live under **`deployments/local/test-env/`**.
+
+- Use `./deployments/local/test-env/up.sh` and `down.sh` for local testing.
+- Do not add new phase-named stacks under `deployments/local/` (for example `phase2/`, `phase3/`). Extend `test-env` instead.
+- Shared fixtures used by the test stack (for example `deployments/local/snmpsim/`) may live beside `test-env`, but the runnable compose stack for testing is always `test-env`.

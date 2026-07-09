@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (do not commit secrets).
+#
+# Prod expects private VNet access. Provide subnet + private DNS zone IDs.
+
+server_name = "ogsd-pg-prod-CHANGE_ME"
+location    = "eastus"
+
+# Prefer TF_VAR_administrator_password
+administrator_password = "CHANGE_ME_STRONG_PASSWORD"
+
+public_network_access_enabled = false
+delegated_subnet_id           = "/subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET/subnets/pg"
+private_dns_zone_id           = "/subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/privateDnsZones/privatelink.postgres.database.azure.com"
+
+sku_name                       = "GP_Standard_D2s_v3"
+storage_mb                     = 131072
+backup_retention_days          = 14
+geo_redundant_backup_enabled   = true

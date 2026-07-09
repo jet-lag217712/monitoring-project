@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (do not commit secrets) and fill in values.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Or export:
+#   export TF_VAR_administrator_password='...'
+#   export TF_VAR_server_name='ogsd-pg-dev-<unique>'
+
+server_name = "ogsd-pg-dev-CHANGE_ME"
+location    = "eastus"
+
+# Prefer TF_VAR_administrator_password over committing this value.
+administrator_password = "CHANGE_ME_STRONG_PASSWORD"
+
+# Dev: allow your public IP for migrate / psql.
+public_network_access_enabled = true
+firewall_rules = [
+  {
+    name             = "allow-my-ip"
+    start_ip_address = "0.0.0.0" # replace with your public IP
+    end_ip_address   = "0.0.0.0"
+  }
+]
+
+# For private access instead, set public_network_access_enabled = false and:
+# delegated_subnet_id  = "/subscriptions/.../subnets/pg"
+# private_dns_zone_id  = "/subscriptions/.../privateDnsZones/privatelink.postgres.database.azure.com"

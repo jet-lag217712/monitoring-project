@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -302,7 +303,7 @@ func integrationEnv(t *testing.T) (dbURL, broker, caFile, password string) {
 	t.Helper()
 	password = os.Getenv("MQTT_PASSWORD")
 	if password == "" {
-		t.Skip("MQTT_PASSWORD not set; start stack with ./deployments/local/phase3/up.sh")
+		t.Skip("MQTT_PASSWORD not set; start stack with ./deployments/local/test-env/up.sh")
 	}
 	broker = os.Getenv("MQTT_BROKER")
 	if broker == "" {
@@ -310,14 +311,20 @@ func integrationEnv(t *testing.T) (dbURL, broker, caFile, password string) {
 	}
 	caFile = os.Getenv("MQTT_CA_FILE")
 	if caFile == "" {
-		caFile = filepath.Join("..", "..", "..", "infrastructure", "docker", "mqtt-broker", "certs", "ca.crt")
+		// Resolve from this source file so cwd (package dir under go test) does not matter.
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("runtime.Caller failed")
+		}
+		repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
+		caFile = filepath.Join(repoRoot, "infrastructure", "docker", "mqtt-broker", "certs", "ca.crt")
 	}
 	if _, err := os.Stat(caFile); err != nil {
-		t.Skipf("ca file missing (%s); run ./deployments/local/phase3/up.sh", caFile)
+		t.Skipf("ca file missing (%s); run ./deployments/local/test-env/up.sh", caFile)
 	}
 	dbURL = os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/phase3/up.sh")
+		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/test-env/up.sh")
 	}
 	return dbURL, broker, caFile, password
 }
@@ -326,7 +333,7 @@ func openStore(t *testing.T, ctx context.Context, dbURL string) *store.Store {
 	t.Helper()
 	st, err := store.Open(ctx, dbURL, 5, 1, time.Hour)
 	if err != nil {
-		t.Fatalf("open store (is postgres up via phase3?): %v", err)
+		t.Fatalf("open store (is postgres up via test-env?): %v", err)
 	}
 	return st
 }
