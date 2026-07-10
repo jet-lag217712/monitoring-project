@@ -22,7 +22,7 @@ export DATABASE_URL=postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable
 ./infrastructure/script/migrate.sh version
 ```
 
-Local `deployments/local/test-env/up.sh` runs migrate + role password bootstrap automatically.
+Local `./deployments/local/up.sh` runs migrate + role password bootstrap automatically.
 
 ### Migration versions
 

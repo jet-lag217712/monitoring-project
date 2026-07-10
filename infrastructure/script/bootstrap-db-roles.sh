@@ -27,7 +27,7 @@ run_psql() {
   fi
 
   if command -v docker >/dev/null 2>&1; then
-    # Parse URL roughly for docker exec against test-env container when psql missing.
+    # Fall back to a one-shot postgres client container when psql is missing.
     docker run --rm --network host postgres:16-alpine \
       psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 "$@"
     return

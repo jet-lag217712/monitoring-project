@@ -62,22 +62,29 @@ Admin endpoints (default `:9090`):
 
 ### MQTT mode
 
-**Easiest (Docker Desktop):** from the repo root, start snmpsim + Mosquitto + Postgres via the canonical local test stack:
+**Easiest (day-to-day):** Mac cloud Compose + collector on the Debian VM:
 
 ```bash
-./deployments/local/test-env/up.sh      # start
-./deployments/local/test-env/down.sh    # stop
+# On Mac
+./deployments/local/up.sh
+
+# On Debian VM (after setting MQTT_BROKER to the Mac host IP)
+./deployments/local/vxrail/bootstrap.sh
 ```
 
-Then run the collector on the host:
+Or run Mosquitto/Postgres via local compose and the collector on the host:
 
 ```bash
+./deployments/local/up.sh
 cd services/snmp-collector
 export MQTT_PASSWORD=secret
+export MQTT_BROKER=tls://127.0.0.1:8883
 go run ./cmd/collector -config configs/collector.mqtt.example.yaml
 ```
 
-Details: [`deployments/local/test-env/README.md`](../../deployments/local/test-env/README.md).
+For Azure Mosquitto, see [`deployments/dev/`](../../deployments/dev/).
+
+Details: [`deployments/local/README.md`](../../deployments/local/README.md).
 
 Buffer file defaults to `./data/buffer.db` (created automatically). Mount a persistent volume at that path in containers.
 

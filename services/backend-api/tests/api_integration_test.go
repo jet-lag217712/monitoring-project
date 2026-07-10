@@ -26,7 +26,7 @@ func TestAPI_SitesAndDetailShapes(t *testing.T) {
 
 	adminURL := os.Getenv("DATABASE_ADMIN_URL")
 	if adminURL == "" {
-		// Local test-env superuser (migrations / seed only).
+		// Local E2E superuser (migrations / seed only).
 		adminURL = "postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable"
 	}
 
@@ -189,7 +189,7 @@ func integrationDBURL(t *testing.T) string {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/test-env/up.sh")
+		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/up.sh")
 	}
 	return dbURL
 }

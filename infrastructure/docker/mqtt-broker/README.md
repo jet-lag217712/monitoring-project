@@ -16,10 +16,21 @@ chmod +x scripts/gen-dev-certs.sh scripts/gen-passwords.sh
 ./scripts/gen-dev-certs.sh
 ```
 
+Optional SAN overrides (useful for Azure / GNS3 collector TLS):
+
+```bash
+MQTT_SERVER_CN=cloud.lab \
+MQTT_SERVER_DNS=mosquitto,cloud.lab \
+MQTT_SERVER_IP=20.x.x.x \
+  ./scripts/gen-dev-certs.sh
+```
+
 Creates gitignored files under `certs/`:
 
 - `ca.crt` — trust this in the collector (`mqtt.tls.ca_file`)
 - `server.crt` / `server.key` — presented by Mosquitto
+
+For laptop E2E, prefer [`deployments/local/up.sh`](../../../deployments/local/up.sh), which generates certs and starts Mosquitto with the Mac cloud stack. Collector on the Debian VM: [`deployments/local/vxrail/`](../../../deployments/local/vxrail/). Azure Mosquitto: [`deployments/dev/cloud/README.md`](../../../deployments/dev/cloud/README.md).
 
 ## 2. Create broker users
 

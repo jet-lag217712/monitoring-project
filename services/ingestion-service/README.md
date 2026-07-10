@@ -37,14 +37,15 @@ Admin endpoints (default `:9091`):
 - `GET /metrics` — Prometheus scrape
 - `GET /healthz` — liveness
 
-## Local stack (`deployments/local/test-env`)
+## Local stack (`deployments/local`)
 
 ```bash
-# From repo root
-./deployments/local/test-env/up.sh
+# From repo root — Mac cloud-plane Compose
+./deployments/local/up.sh
 ```
 
-Full manual E2E runbook (C0–C9): [`deployments/local/test-env/README.md`](../../deployments/local/test-env/README.md).
+Mac + Debian VM testing: [`deployments/local/README.md`](../../deployments/local/README.md).  
+Azure path (later): [`deployments/dev/README.md`](../../deployments/dev/README.md).
 
 ## Testing
 
@@ -57,10 +58,10 @@ go test ./... -count=1
 
 ### Layer B — Integration
 
-Requires Mosquitto + Postgres from `deployments/local/test-env`:
+Requires Mosquitto + Postgres from the local Mac cloud stack:
 
 ```bash
-./deployments/local/test-env/up.sh
+./deployments/local/up.sh
 export MQTT_PASSWORD=ingestion
 export MQTT_BROKER=tls://127.0.0.1:8883
 export MQTT_CA_FILE="$PWD/infrastructure/docker/mqtt-broker/certs/ca.crt"

@@ -1,0 +1,25 @@
+# Local VxRail (Debian VM + GNS3): SNMP collector → Mac Mosquitto
+#
+# Run on the Debian VM after ./deployments/local/up.sh on the Mac.
+# MQTT_BROKER must be the Mac host IP reachable from this VM.
+
+name: ogsd-local-vxrail
+
+services:
+  snmp-collector:
+    build: ../../../services/snmp-collector
+    command: ["-config", "/configs/collector.yaml"]
+    user: "0:0"
+    environment:
+      MQTT_BROKER: ${MQTT_BROKER:?Set MQTT_BROKER to tls://<mac-host-ip>:8883}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-secret}
+    volumes:
+      - ./configs/collector.yaml:/configs/collector.yaml:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - collector-data:/data
+    ports:
+      - "${COLLECTOR_ADMIN_PORT:-9090}:9090"
+    restart: unless-stopped
+
+volumes:
+  collector-data:

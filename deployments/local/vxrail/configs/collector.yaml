@@ -1,0 +1,82 @@
+# Live GNS3 inventory matching remote-server/seven-device-c7200.gns3.
+# SNMP ACL must allow this collector's source IP (see remote-server/README.md).
+#
+# MQTT_BROKER env overrides mqtt.broker — set it to the Mac host Mosquitto URL.
+
+site_id: "site-001"
+poll_interval: 30s
+max_workers: 10
+
+admin:
+  listen: ":9090"
+
+snmp:
+  timeout: 5s
+  retries: 2
+
+publisher:
+  mode: mqtt
+  timeout: 10s
+
+buffer:
+  path: "/data/buffer.db"
+  max_entries: 50000
+  busy_timeout_ms: 5000
+  batch_size: 50
+  idle_backoff: 500ms
+
+mqtt:
+  broker: "tls://REPLACE_WITH_MAC_HOST_IP:8883"
+  client_id: "local-vxrail-collector"
+  username: "collector"
+  password_env: "MQTT_PASSWORD"
+  qos: 1
+  tls:
+    ca_file: "/certs/ca.crt"
+  reconnect:
+    initial: 1s
+    max: 60s
+
+devices:
+  - id: "do-core"
+    host: "10.255.0.1"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-a-mdf"
+    host: "10.255.0.11"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-a-idf1"
+    host: "10.255.0.12"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-a-idf2"
+    host: "10.255.0.13"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-b-mdf"
+    host: "10.255.0.21"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-c-mdf"
+    host: "10.255.0.31"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+  - id: "site-c-idf1"
+    host: "10.255.0.32"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"

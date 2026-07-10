@@ -69,11 +69,14 @@ equate-ogsd/
 │   └── seed/
 │
 ├── deployments/
-│   ├── docker-compose/
-│   ├── aws/
-│   └── local/
-│       ├── test-env/          # Canonical local test stack (all local testing)
-│       └── snmpsim/           # Shared SNMP simulator image/data for test-env
+│   ├── local/                 # Mac cloud Compose + local/vxrail (Debian collector → Mac MQTT)
+│   │   ├── up.sh / down.sh
+│   │   ├── docker-compose.yml
+│   │   ├── vxrail/            # Collector → Mac Mosquitto (day-to-day test)
+│   │   └── snmpsim/           # Optional standalone fixture (not default stack)
+│   └── dev/                   # Azure dual-plane (later)
+│       ├── vxrail/            # Collector → Azure Mosquitto
+│       └── cloud/             # Azure runbook (no Compose)
 │
 ├── remote-servers/
 │   ├── configs/
@@ -118,8 +121,7 @@ equate-ogsd/
 
 ## Local testing environments
 
-All local integration / E2E test stacks live under **`deployments/local/test-env/`**.
+- **Day-to-day:** Mac [`deployments/local/`](../deployments/local/) Compose (Mosquitto, Postgres, apps) + [`deployments/local/vxrail/`](../deployments/local/vxrail/) on the Debian VM (GNS3 + collector → Mac MQTT)
+- **Azure path (later):** [`deployments/dev/`](../deployments/dev/) — VxRail → Azure Mosquitto + Azure cloud runbook
 
-- Use `./deployments/local/test-env/up.sh` and `down.sh` for local testing.
-- Do not add new phase-named stacks under `deployments/local/` (for example `phase2/`, `phase3/`). Extend `test-env` instead.
-- Shared fixtures used by the test stack (for example `deployments/local/snmpsim/`) may live beside `test-env`, but the runnable compose stack for testing is always `test-env`.
+Do not add phase-named stacks under `deployments/local/` (for example `phase2/`). Extend `local/` or `dev/` instead.
