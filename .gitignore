@@ -8,8 +8,12 @@ frontend/.env.local
 frontend/.env.*.local
 /.DS_Store
 
-# Remote Servers
-remote-server/
+# Remote server credentials and machine-local state
+remote-server/*
+!remote-server/configurations/
+!remote-server/README.md
+!remote-server/seven-device-c7200.gns3
+!remote-server/validate-lab.sh
 
 # IDE Files
 .idea/
@@ -33,4 +37,3 @@ infrastructure/docker/mqtt-broker/passwords
 **/override.tf.json
 **/*_override.tf
 **/*_override.tf.json
-
