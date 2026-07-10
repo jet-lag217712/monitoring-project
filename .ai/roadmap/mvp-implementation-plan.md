@@ -159,7 +159,7 @@ Strict sequential implementation order:
 | PostgreSQL schemas ([`database/schema/`](../../database/schema/), [`database/migrations/`](../../database/migrations/)) | Defined (001–009 + golang-migrate; dedup constraints included) |
 | Frontend dashboard ([`frontend/`](../../frontend/)) | Built — React 19, polling, demo fallback |
 | Go services ([`services/`](../../services/)) | Collector + ingestion implemented; API scaffold |
-| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Mac cloud Compose + local VxRail ([`deployments/local/`](../../deployments/local/)); Azure path ([`deployments/dev/`](../../deployments/dev/)); Azure PostgreSQL Terraform |
+| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Plants: [`local/`](../../deployments/local/), [`local-physical/`](../../deployments/local-physical/), [`dev/`](../../deployments/dev/); Azure PostgreSQL Terraform |
 
 ### Canonical decisions
 

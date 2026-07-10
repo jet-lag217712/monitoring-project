@@ -62,7 +62,7 @@ Admin endpoints (default `:9090`):
 
 ### MQTT mode
 
-**Easiest (day-to-day):** Mac cloud Compose + collector on the Debian VM:
+**Easiest (day-to-day GNS3):** Mac cloud Compose + collector on the Debian VM:
 
 ```bash
 # On Mac
@@ -72,7 +72,15 @@ Admin endpoints (default `:9090`):
 ./deployments/local/vxrail/bootstrap.sh
 ```
 
-Or run Mosquitto/Postgres via local compose and the collector on the host:
+**Physical network (pre-client E2E, all on Mac):**
+
+```bash
+./deployments/local/up.sh
+./deployments/local-physical/vxrail/bootstrap.sh
+# then go run as printed — see deployments/local-physical/README.md
+```
+
+Or run Mosquitto/Postgres via local compose and the collector on the host with an example config:
 
 ```bash
 ./deployments/local/up.sh
@@ -84,7 +92,7 @@ go run ./cmd/collector -config configs/collector.mqtt.example.yaml
 
 For Azure Mosquitto, see [`deployments/dev/`](../../deployments/dev/).
 
-Details: [`deployments/local/README.md`](../../deployments/local/README.md).
+Details: [`deployments/local/README.md`](../../deployments/local/README.md), [`deployments/local-physical/README.md`](../../deployments/local-physical/README.md).
 
 Buffer file defaults to `./data/buffer.db` (created automatically). Mount a persistent volume at that path in containers.
 

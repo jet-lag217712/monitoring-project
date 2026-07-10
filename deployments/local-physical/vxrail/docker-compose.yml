@@ -1,0 +1,22 @@
+# Optional containerized collector for local-physical.
+# Prefer host go run on macOS (see README). network_mode: host is for Linux.
+
+name: ogsd-local-physical-vxrail
+
+services:
+  snmp-collector:
+    build: ../../../services/snmp-collector
+    command: ["-config", "/configs/collector.yaml"]
+    user: "0:0"
+    network_mode: host
+    environment:
+      MQTT_BROKER: ${MQTT_BROKER:-tls://127.0.0.1:8883}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-secret}
+    volumes:
+      - ./configs/collector.yaml:/configs/collector.yaml:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - collector-data:/data
+    restart: unless-stopped
+
+volumes:
+  collector-data:

@@ -1,8 +1,16 @@
 # Dev deployments (GNS3 + Azure)
 
+One of three deployment plants:
+
+| Plant | Purpose |
+|-------|---------|
+| [`../local/`](../local/) | Mac cloud Compose + Debian VM / GNS3 collector |
+| [`../local-physical/`](../local-physical/) | Mac cloud + Mac collector → physical SNMP (pre-client E2E) |
+| **`dev/`** (this) | Azure cloud + collector → Azure MQTT |
+
 Path for running the **cloud plane on Azure** while the collector stays on-prem / GNS3.
 
-Day-to-day testing (Mac Compose + Debian VM) lives under [`../local/`](../local/) — use that first.
+Day-to-day testing (Mac Compose + Debian VM) lives under [`../local/`](../local/) — use that first. Physical-network E2E before a client site: [`../local-physical/`](../local-physical/).
 
 | Plane | Location | Artifact |
 |-------|----------|----------|
@@ -27,5 +35,6 @@ GNS3 / Debian VM                      Azure
 ## Related
 
 - Local testing (Mac + Debian): [`../local/README.md`](../local/README.md)
+- Physical-network E2E (Mac collector): [`../local-physical/README.md`](../local-physical/README.md)
 - C7200 lab: [`remote-server/README.md`](../../remote-server/README.md)
 - Postgres Terraform: [`infrastructure/terraform/README.md`](../../infrastructure/terraform/README.md)
