@@ -52,6 +52,7 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const siteDetailRef = useRef(siteDetail)
   const dataModeRef = useRef(dataMode)
+  const siteFetchSeqRef = useRef(0)
   const deviceFetchSeqRef = useRef(0)
   siteDetailRef.current = siteDetail
   dataModeRef.current = dataMode
@@ -117,14 +118,19 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
   const fetchSiteDetail = useCallback(
     async siteId => {
+      const seq = siteFetchSeqRef.current
+      const isCurrentFetch = () => seq === siteFetchSeqRef.current
+
       try {
         const data = await fetchSiteDetailFromApi(siteId)
+        if (!isCurrentFetch()) return
         setSiteDetail(data)
         setDataMode('live')
         setLoadError(null)
       } catch (err) {
         console.error('Failed to fetch site detail:', err)
         if (handleUnauthorized(err)) return
+        if (!isCurrentFetch()) return
         if (DEMO_ENABLED) {
           const scenario = getActiveDemoScenario()
           setSiteDetail(scenario.details[siteId] ?? emptySiteDetail(siteId))
@@ -224,20 +230,32 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
     fetchTestConfig()
     fetchSites()
-    if (selectedSite) {
-      fetchSiteDetail(selectedSite)
-    }
 
     const id = setInterval(() => {
       fetchTestConfig()
       fetchSites()
-      if (selectedSite) {
-        fetchSiteDetail(selectedSite)
-      }
     }, POLL_INTERVAL_MS)
 
     return () => clearInterval(id)
-  }, [enabled, fetchSites, fetchSiteDetail, fetchTestConfig, selectedSite])
+  }, [enabled, fetchSites, fetchTestConfig])
+
+  useEffect(() => {
+    if (!enabled || !selectedSite) {
+      siteFetchSeqRef.current += 1
+      setSiteDetail(null)
+      return undefined
+    }
+
+    siteFetchSeqRef.current += 1
+    setSiteDetail(null)
+    fetchSiteDetail(selectedSite)
+
+    const id = setInterval(() => {
+      fetchSiteDetail(selectedSite)
+    }, POLL_INTERVAL_MS)
+
+    return () => clearInterval(id)
+  }, [enabled, selectedSite, fetchSiteDetail])
 
   useEffect(() => {
     if (!enabled || !selectedSite || !selectedDevice) {
@@ -265,8 +283,6 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
     setSelectedSite(siteId)
     setSelectedDevice(null)
     setDeviceDetail(null)
-    setSiteDetail(null)
-    fetchSiteDetail(siteId)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
