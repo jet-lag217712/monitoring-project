@@ -69,11 +69,13 @@ equate-ogsd/
 │   └── seed/
 │
 ├── deployments/
-│   ├── local/                 # Mac cloud Compose + local/vxrail (Debian collector → Mac MQTT)
+│   ├── local/                 # Mac cloud Compose + local/vxrail (Debian → Mac MQTT)
 │   │   ├── up.sh / down.sh
 │   │   ├── docker-compose.yml
-│   │   ├── vxrail/            # Collector → Mac Mosquitto (day-to-day test)
+│   │   ├── vxrail/            # Collector → Mac Mosquitto (GNS3 day-to-day)
 │   │   └── snmpsim/           # Optional standalone fixture (not default stack)
+│   ├── local-physical/        # Pre-client E2E: Mac collector → physical SNMP
+│   │   └── vxrail/            # Host go run → tls://127.0.0.1:8883 (reuses local cloud)
 │   └── dev/                   # Azure dual-plane (later)
 │       ├── vxrail/            # Collector → Azure Mosquitto
 │       └── cloud/             # Azure runbook (no Compose)
@@ -121,7 +123,10 @@ equate-ogsd/
 
 ## Local testing environments
 
-- **Day-to-day:** Mac [`deployments/local/`](../deployments/local/) Compose (Mosquitto, Postgres, apps) + [`deployments/local/vxrail/`](../deployments/local/vxrail/) on the Debian VM (GNS3 + collector → Mac MQTT)
-- **Azure path (later):** [`deployments/dev/`](../deployments/dev/) — VxRail → Azure Mosquitto + Azure cloud runbook
+Three deployment plants:
 
-Do not add phase-named stacks under `deployments/local/` (for example `phase2/`). Extend `local/` or `dev/` instead.
+- **`deployments/local/`** — Mac Compose (Mosquitto, Postgres, apps) + [`local/vxrail/`](../deployments/local/vxrail/) on Debian VM (GNS3 → Mac MQTT)
+- **`deployments/local-physical/`** — same Mac cloud stack + Mac host collector against a **physical** network (pre-client E2E)
+- **`deployments/dev/`** — Azure cloud runbook + VxRail → Azure MQTT
+
+Do not add phase-named stacks under `deployments/local/` (for example `phase2/`). Extend `local/`, `local-physical/`, or `dev/` instead.

@@ -1,6 +1,14 @@
 # Local testing (Mac + Debian VM)
 
-Canonical day-to-day test environment:
+One of three deployment plants:
+
+| Plant | Purpose |
+|-------|---------|
+| **`local/`** (this) | Mac cloud Compose + Debian VM / GNS3 collector |
+| [`../local-physical/`](../local-physical/) | Mac cloud + Mac collector → **physical** SNMP (pre-client E2E) |
+| [`../dev/`](../dev/) | Azure cloud + collector → Azure MQTT |
+
+Canonical day-to-day GNS3 lab:
 
 | Host | Role | Path |
 |------|------|------|
@@ -15,8 +23,6 @@ Mac (deployments/local)
 Debian VM + GNS3 (deployments/local/vxrail)
   snmp-collector → live C7200 SNMP
 ```
-
-For Azure dual-plane (later), see [`../dev/`](../dev/).
 
 ## Quick start (Mac)
 
