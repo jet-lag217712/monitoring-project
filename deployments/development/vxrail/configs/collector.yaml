@@ -1,0 +1,44 @@
+# Production on-site inventory template. Replace hosts and community before deploy.
+# Prefer SNMP_COMMUNITY_{DEVICE_ID} env overrides for secrets in real deployments.
+
+site_id: "site-CHANGE_ME"
+poll_interval: 30s
+max_workers: 10
+
+admin:
+  listen: ":9090"
+
+snmp:
+  timeout: 5s
+  retries: 2
+
+publisher:
+  mode: mqtt
+  timeout: 10s
+
+buffer:
+  path: "/data/buffer.db"
+  max_entries: 50000
+  busy_timeout_ms: 5000
+  batch_size: 50
+  idle_backoff: 500ms
+
+mqtt:
+  broker: "tls://CHANGE_ME.example.com:8883"
+  client_id: "production-vxrail-collector"
+  username: "collector"
+  password_env: "MQTT_PASSWORD"
+  qos: 1
+  tls:
+    ca_file: "/certs/ca.crt"
+  reconnect:
+    initial: 1s
+    max: 60s
+
+devices:
+  - id: "core-switch"
+    host: "CHANGE_ME"
+    port: 161
+    community: "CHANGE_ME"
+    version: "2c"
+    vendor: "cisco"
