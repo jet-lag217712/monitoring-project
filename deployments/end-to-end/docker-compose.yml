@@ -1,0 +1,109 @@
+# End-to-end: every service in one Compose project for client-site smoke testing.
+# No SNMP simulator. Point configs/collector.yaml at real devices.
+#
+# Health waits for distroless Go services are performed by up.sh / smoke.sh
+# (those images have no shell/wget for Docker HEALTHCHECK).
+
+name: ogsd-e2e
+
+services:
+  mosquitto:
+    build: ../../infrastructure/docker/mqtt-broker
+    ports:
+      - "${MQTT_HOST_PORT:-8883}:8883"
+    volumes:
+      - ../../infrastructure/docker/mqtt-broker/certs:/mosquitto/certs:ro
+      - ../../infrastructure/docker/mqtt-broker/passwords:/mosquitto/config/passwords:ro
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ogsd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ogsd}
+      POSTGRES_DB: ${POSTGRES_DB:-ogsd}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ogsd} -d ${POSTGRES_DB:-ogsd}"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  ingestion:
+    build: ../../services/ingestion-service
+    command: ["-config", "/configs/ingestion.yaml"]
+    environment:
+      MQTT_BROKER: tls://mosquitto:8883
+      MQTT_PASSWORD: ${MQTT_INGESTION_PASSWORD:-ingestion}
+      DATABASE_URL: postgres://${OGSD_INGESTION_USER:-ogsd_ingestion}:${OGSD_INGESTION_PASSWORD:-ingestion}@postgres:5432/${POSTGRES_DB:-ogsd}?sslmode=disable
+    volumes:
+      - ./configs/ingestion.yaml:/configs/ingestion.yaml:ro
+      - ../../infrastructure/docker/mqtt-broker/certs/ca.crt:/certs/ca.crt:ro
+    ports:
+      - "${INGESTION_ADMIN_PORT:-9091}:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+  backend-api:
+    build: ../../services/backend-api
+    command: ["-config", "/configs/api.yaml"]
+    environment:
+      DATABASE_URL: postgres://${OGSD_API_USER:-ogsd_api}:${OGSD_API_PASSWORD:-api}@postgres:5432/${POSTGRES_DB:-ogsd}?sslmode=disable
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    volumes:
+      - ./configs/api.yaml:/configs/api.yaml:ro
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+      - "${API_ADMIN_PORT:-9092}:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        VITE_DEMO_ENABLED: ${VITE_DEMO_ENABLED:-false}
+    volumes:
+      - ./nginx-frontend.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${FRONTEND_HOST_PORT:-80}:80"
+    depends_on:
+      - backend-api
+    restart: unless-stopped
+
+  snmp-collector:
+    build: ../../services/snmp-collector
+    command: ["-config", "/configs/collector.yaml"]
+    # Volume /data must be writable for SQLite buffer (image defaults to nonroot).
+    user: "0:0"
+    environment:
+      MQTT_BROKER: tls://mosquitto:8883
+      MQTT_PASSWORD: ${MQTT_COLLECTOR_PASSWORD:-secret}
+    volumes:
+      - ./configs/collector.yaml:/configs/collector.yaml:ro
+      - ../../infrastructure/docker/mqtt-broker/certs/ca.crt:/certs/ca.crt:ro
+      - collector-data:/data
+    ports:
+      - "${COLLECTOR_ADMIN_PORT:-9090}:9090"
+    depends_on:
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  postgres-data:
+  collector-data:

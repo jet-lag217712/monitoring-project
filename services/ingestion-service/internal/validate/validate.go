@@ -26,6 +26,7 @@ type TopicParts struct {
 type DeviceMessage struct {
 	SiteID    string
 	DeviceID  string
+	IPAddress string
 	Timestamp time.Time
 	Metric    string
 	Value     float64
@@ -54,6 +55,7 @@ type devicePayload struct {
 	Timestamp string   `json:"timestamp"`
 	SiteID    string   `json:"site_id"`
 	DeviceID  string   `json:"device_id"`
+	IPAddress string   `json:"ip_address"`
 	Metric    string   `json:"metric"`
 	Value     *float64 `json:"value"`
 }
@@ -142,6 +144,7 @@ func validateDevice(tp TopicParts, payload []byte) (DeviceMessage, error) {
 	return DeviceMessage{
 		SiteID:    tp.SiteID,
 		DeviceID:  tp.DeviceID,
+		IPAddress: strings.TrimSpace(p.IPAddress),
 		Timestamp: ts,
 		Metric:    p.Metric,
 		Value:     *p.Value,

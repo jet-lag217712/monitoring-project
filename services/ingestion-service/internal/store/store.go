@@ -77,7 +77,7 @@ func (s *Store) PersistDeviceSample(ctx context.Context, sample transform.Device
 	if err := upsertSite(ctx, tx, sample.SiteUUID, sample.SiteName); err != nil {
 		return 0, err
 	}
-	if err := upsertDevice(ctx, tx, sample.DeviceUUID, sample.SiteUUID, sample.DeviceHostname, sample.CollectedAt); err != nil {
+	if err := upsertDevice(ctx, tx, sample.DeviceUUID, sample.SiteUUID, sample.DeviceHostname, sample.DeviceIPAddress, sample.CollectedAt); err != nil {
 		return 0, err
 	}
 
@@ -115,7 +115,7 @@ func (s *Store) PersistInterfaceSample(ctx context.Context, sample transform.Int
 	if err := upsertSite(ctx, tx, sample.SiteUUID, sample.SiteName); err != nil {
 		return 0, err
 	}
-	if err := upsertDevice(ctx, tx, sample.DeviceUUID, sample.SiteUUID, sample.DeviceHostname, sample.CollectedAt); err != nil {
+	if err := upsertDevice(ctx, tx, sample.DeviceUUID, sample.SiteUUID, sample.DeviceHostname, "", sample.CollectedAt); err != nil {
 		return 0, err
 	}
 	ifaceID, err := upsertInterface(ctx, tx, sample.InterfaceUUID, sample.DeviceUUID, sample.IfIndex)
@@ -154,18 +154,19 @@ func upsertSite(ctx context.Context, tx pgx.Tx, id uuid.UUID, name string) error
 	return nil
 }
 
-func upsertDevice(ctx context.Context, tx pgx.Tx, id, siteID uuid.UUID, hostname string, lastSeen time.Time) error {
+func upsertDevice(ctx context.Context, tx pgx.Tx, id, siteID uuid.UUID, hostname, ipAddress string, lastSeen time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO devices (
 			id, site_id, hostname, ip_address, vendor, model, snmp_version, status, last_seen
 		) VALUES (
-			$1, $2, $3, '0.0.0.0', 'unknown', 'unknown', '2c', 'online', $4
+		$1, $2, $3, COALESCE(NULLIF($4, ''), '0.0.0.0')::inet, 'unknown', 'unknown', '2c', 'online', $5
 		)
 		ON CONFLICT (id) DO UPDATE SET
 			last_seen = EXCLUDED.last_seen,
-			status = 'online',
-			hostname = EXCLUDED.hostname
-	`, id, siteID, hostname, lastSeen)
+		status = 'online',
+		hostname = EXCLUDED.hostname,
+		ip_address = CASE WHEN $4 <> '' THEN EXCLUDED.ip_address ELSE devices.ip_address END
+	`, id, siteID, hostname, ipAddress, lastSeen)
 	if err != nil {
 		return fmt.Errorf("upsert device: %w", err)
 	}

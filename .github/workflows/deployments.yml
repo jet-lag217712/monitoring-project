@@ -1,0 +1,75 @@
+name: Deployments
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unit-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shell + compose validate + Go unit + frontend build
+        run: ./deployments/test.sh --no-builds
+
+  image-builds:
+    runs-on: ubuntu-latest
+    needs: unit-and-validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build cloud-plane images
+        run: |
+          cp deployments/development/.env.example deployments/development/.env
+          docker compose --env-file deployments/development/.env \
+            -f deployments/development/docker-compose.yml build
+
+      - name: Build collector image
+        run: docker build -t ogsd-snmp-collector:ci ./services/snmp-collector
+
+      - name: Build end-to-end compose images
+        run: |
+          cp deployments/end-to-end/.env.example deployments/end-to-end/.env
+          docker compose --env-file deployments/end-to-end/.env \
+            -f deployments/end-to-end/docker-compose.yml build
+
+  cloud-smoke:
+    runs-on: ubuntu-latest
+    needs: image-builds
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - name: Start development cloud plane and smoke
+        run: |
+          cp deployments/development/.env.example deployments/development/.env
+          ./deployments/development/up.sh
+          ./deployments/development/smoke.sh
+
+      - name: Integration tests (required)
+        run: ./deployments/test.sh --quick --no-builds --with-integration
+
+      - name: Tear down
+        if: always()
+        run: ./deployments/development/down.sh -v

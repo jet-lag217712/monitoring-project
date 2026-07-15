@@ -1,4 +1,5 @@
 import { UtilizationBar } from '../common/UtilizationBar.jsx'
+import { formatUptime } from '../utils/formatters.js'
 
 const monoTextStyle = {
   fontFamily: "'JetBrains Mono', monospace",
@@ -31,7 +32,7 @@ export default function DeviceRow({ ip, device, renderStatus, onClick }) {
       <td><UtilizationBar pct={device.memory_pct ?? 0} /></td>
       <td>
         <span style={monoTextStyle}>
-          {device.uptime_days ?? '—'} days
+          {formatUptime(device.uptime_days)}
         </span>
       </td>
       <td>

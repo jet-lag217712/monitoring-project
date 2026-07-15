@@ -145,9 +145,20 @@ The system is not intended to:
 * Perform packet capture or packet analysis.
 * Replace existing network management systems.
 
+## Deployment profiles
+
+Operational stacks live under `deployments/`:
+
+* **end-to-end** — single Compose project with every service for client-site validation (real SNMP targets; no simulator).
+* **development** — Mac cloud plane plus a separate OrbStack VM collector attached to GNS3 via a Cloud node.
+* **production** — hybrid skeleton: Azure-hosted cloud services and an on-site VxRail collector (Terraform deferred).
+
+See `deployments/README.md` and `network-topology.md` for plane boundaries and commands.
+
 ## Related Documents
 
 * `network-topology.md`
 * `service-boundaries.md`
 * `docs/diagrams/system-design.md`
 * `docs/architecture/*`
+* `deployments/README.md`

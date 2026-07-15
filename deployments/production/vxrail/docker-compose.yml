@@ -1,0 +1,24 @@
+# Production VxRail: on-site SNMP collector → Azure Mosquitto.
+# Skeleton: builds from repo path; switch to registry images before real deploy.
+
+name: ogsd-production-vxrail
+
+services:
+  snmp-collector:
+    build: ../../../services/snmp-collector
+    command: ["-config", "/configs/collector.yaml"]
+    # Volume /data must be writable for SQLite buffer (image defaults to nonroot).
+    user: "0:0"
+    environment:
+      MQTT_BROKER: ${MQTT_BROKER:?}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?}
+    volumes:
+      - ./configs/collector.yaml:/configs/collector.yaml:ro
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - collector-data:/data
+    ports:
+      - "${COLLECTOR_ADMIN_PORT:-9090}:9090"
+    restart: unless-stopped
+
+volumes:
+  collector-data:

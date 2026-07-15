@@ -11,6 +11,7 @@ import (
 type DeviceReading struct {
 	SiteID        string
 	DeviceID      string
+	IPAddress     string
 	Timestamp     time.Time
 	UptimeSeconds float64
 	Interfaces    []core.InterfaceReading
@@ -24,6 +25,7 @@ func ToEvents(r DeviceReading) []events.Event {
 	out = append(out, events.DeviceMetricEvent{
 		SiteID:    r.SiteID,
 		DeviceID:  r.DeviceID,
+		IPAddress: r.IPAddress,
 		Timestamp: ts,
 		Metric:    "uptime_seconds",
 		Value:     r.UptimeSeconds,

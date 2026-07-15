@@ -159,7 +159,7 @@ Strict sequential implementation order:
 | PostgreSQL schemas ([`database/schema/`](../../database/schema/), [`database/migrations/`](../../database/migrations/)) | Defined (001–009 + golang-migrate; dedup constraints included) |
 | Frontend dashboard ([`frontend/`](../../frontend/)) | Built — React 19, polling, demo fallback |
 | Go services ([`services/`](../../services/)) | Collector + ingestion implemented; API scaffold |
-| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Plants: [`local/`](../../deployments/local/), [`local-physical/`](../../deployments/local-physical/), [`dev/`](../../deployments/dev/); Azure PostgreSQL Terraform |
+| Infrastructure ([`infrastructure/`](../../infrastructure/), [`deployments/`](../../deployments/)) | Profiles: [`end-to-end/`](../../deployments/end-to-end/), [`development/`](../../deployments/development/), [`production/`](../../deployments/production/); Azure PostgreSQL Terraform (deferred for app stack) |
 
 ### Canonical decisions
 
@@ -492,9 +492,11 @@ Google OIDC: frontend sign-in → backend JWT validation → protect `/api/*`.
 |---|---|
 | **Goal** | Containerized Azure deployment with TLS, monitoring, backups, operational hardening |
 
-### 7.1 Local dev stack
+### 7.1 Local / client stacks
 
-[`deployments/docker-compose/`](../../deployments/docker-compose/): postgres, mosquitto, ingestion, backend-api, frontend, collector profile.
+- [`deployments/end-to-end/`](../../deployments/end-to-end/): postgres, mosquitto, ingestion, backend-api, frontend, **and** SNMP collector in one Compose project
+- [`deployments/development/`](../../deployments/development/): Mac cloud plane (no collector) + [`development/vxrail/`](../../deployments/development/vxrail/) collector on OrbStack/GNS3
+- [`deployments/production/`](../../deployments/production/): hybrid Azure cloud + on-site VxRail skeleton
 
 ### 7.2 Azure topology
 
@@ -517,9 +519,9 @@ Separate: Azure PostgreSQL Flexible Server
 
 ### 7.4 Deliverables
 
-- [ ] Docker Compose local stack
-- [ ] Terraform dev + prod
-- [ ] CI: build, test, deploy to dev
+- [x] Docker Compose stacks (`end-to-end`, `development`, `production` skeleton)
+- [ ] Terraform app/VM provisioning (Postgres Terraform exists; full stack deferred)
+- [x] CI: build, test, cloud smoke (`.github/workflows/deployments.yml`)
 - [ ] Reverse proxy (Caddy/NGINX) with TLS
 - [ ] Runbooks: deploy, rollback, backup restore, collector onboarding
 - [ ] Azure Monitor dashboards

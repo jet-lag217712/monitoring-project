@@ -18,13 +18,14 @@ func init() {
 
 // DeviceSample is a transformed device metric ready for persistence.
 type DeviceSample struct {
-	SiteUUID       uuid.UUID
-	SiteName       string
-	DeviceUUID     uuid.UUID
-	DeviceHostname string
-	MetricName     string
-	Value          float64
-	CollectedAt    time.Time
+	SiteUUID        uuid.UUID
+	SiteName        string
+	DeviceUUID      uuid.UUID
+	DeviceHostname  string
+	DeviceIPAddress string
+	MetricName      string
+	Value           float64
+	CollectedAt     time.Time
 }
 
 // InterfaceSample is a transformed interface metric ready for persistence.
@@ -60,13 +61,14 @@ func InterfaceUUID(deviceUUID uuid.UUID, ifIndex int) uuid.UUID {
 // DeviceSampleFromValidated maps a validated device message to a store sample.
 func DeviceSampleFromValidated(msg validate.DeviceMessage) DeviceSample {
 	return DeviceSample{
-		SiteUUID:       SiteUUID(msg.SiteID),
-		SiteName:       msg.SiteID,
-		DeviceUUID:     DeviceUUID(msg.SiteID, msg.DeviceID),
-		DeviceHostname: msg.DeviceID,
-		MetricName:     msg.Metric,
-		Value:          msg.Value,
-		CollectedAt:    msg.Timestamp,
+		SiteUUID:        SiteUUID(msg.SiteID),
+		SiteName:        msg.SiteID,
+		DeviceUUID:      DeviceUUID(msg.SiteID, msg.DeviceID),
+		DeviceHostname:  msg.DeviceID,
+		DeviceIPAddress: msg.IPAddress,
+		MetricName:      msg.Metric,
+		Value:           msg.Value,
+		CollectedAt:     msg.Timestamp,
 	}
 }
 

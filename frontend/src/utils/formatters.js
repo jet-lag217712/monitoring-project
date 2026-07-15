@@ -8,8 +8,9 @@ export function formatBytes(bytes) {
 }
 
 export function formatUptime(days) {
-  if (days == null) return '—'
-  return `${days} days`
+  const value = Number(days)
+  if (days == null || Number.isNaN(value)) return '—'
+  return `${value.toFixed(2)} days`
 }
 
 export function formatSysUpTime(centiseconds) {

@@ -16,6 +16,7 @@ func TestToEventsJSONShape(t *testing.T) {
 	evs := ToEvents(DeviceReading{
 		SiteID:        "site-001",
 		DeviceID:      "dev-001",
+		IPAddress:     "10.255.0.1",
 		Timestamp:     ts,
 		UptimeSeconds: 86400,
 		Interfaces: []core.InterfaceReading{
@@ -42,7 +43,7 @@ func TestToEventsJSONShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &deviceMap); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"site_id", "device_id", "timestamp", "metric", "value"} {
+	for _, key := range []string{"site_id", "device_id", "ip_address", "timestamp", "metric", "value"} {
 		if _, ok := deviceMap[key]; !ok {
 			t.Fatalf("missing device field %q in %s", key, raw)
 		}

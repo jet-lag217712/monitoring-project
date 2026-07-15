@@ -303,7 +303,7 @@ func integrationEnv(t *testing.T) (dbURL, broker, caFile, password string) {
 	t.Helper()
 	password = os.Getenv("MQTT_PASSWORD")
 	if password == "" {
-		t.Skip("MQTT_PASSWORD not set; start stack with ./deployments/local/up.sh")
+		t.Skip("MQTT_PASSWORD not set; start stack with ./deployments/development/up.sh")
 	}
 	broker = os.Getenv("MQTT_BROKER")
 	if broker == "" {
@@ -320,11 +320,11 @@ func integrationEnv(t *testing.T) (dbURL, broker, caFile, password string) {
 		caFile = filepath.Join(repoRoot, "infrastructure", "docker", "mqtt-broker", "certs", "ca.crt")
 	}
 	if _, err := os.Stat(caFile); err != nil {
-		t.Skipf("ca file missing (%s); run ./deployments/local/up.sh", caFile)
+		t.Skipf("ca file missing (%s); run ./deployments/development/up.sh", caFile)
 	}
 	dbURL = os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/up.sh")
+		t.Skip("DATABASE_URL not set; start stack with ./deployments/development/up.sh")
 	}
 	return dbURL, broker, caFile, password
 }

@@ -116,6 +116,7 @@ func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
 	evs := normalize.ToEvents(normalize.DeviceReading{
 		SiteID:        p.cfg.SiteID,
 		DeviceID:      device.ID,
+		IPAddress:     device.Host,
 		Timestamp:     time.Now().UTC(),
 		UptimeSeconds: uptime,
 		Interfaces:    ifaces,

@@ -245,6 +245,20 @@ Initial deployments optimize for:
 
 ---
 
+# Deployments
+
+Operational stacks live under [`deployments/`](deployments/):
+
+| Profile | Purpose |
+|---------|---------|
+| [`end-to-end/`](deployments/end-to-end/) | Single-host Compose with every service (client-site smoke; real SNMP) |
+| [`development/`](deployments/development/) | Mac cloud plane + OrbStack VM collector (GNS3 Cloud) |
+| [`production/`](deployments/production/) | Hybrid skeleton: Azure cloud + on-site VxRail |
+
+See [`deployments/README.md`](deployments/README.md) for commands, ports, and the promotion checklist.
+
+---
+
 # Development Status
 
 Equate OGSD is currently under active development.

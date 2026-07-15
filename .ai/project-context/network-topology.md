@@ -59,3 +59,13 @@ Application:
 Raw device access remains inside the Customer OOB Monitoring Plane.
 
 Monitoring state and historical telemetry are stored in PostgreSQL in the UI/UX Cloud Plane.
+
+## Deployment topology (profiles)
+
+| Profile | Customer / collector plane | Cloud plane |
+|---------|----------------------------|-------------|
+| `deployments/end-to-end/` | Collector in the same Compose project as cloud services | Same host |
+| `deployments/development/` | OrbStack Ubuntu VM + GNS3 Cloud (macvlan); sync via `vxrail/sync.sh` | Mac Docker Compose |
+| `deployments/production/` | On-site VxRail Ubuntu VM | Azure VM Compose |
+
+Collectors always initiate **outbound-only** MQTT/TLS to the cloud Mosquitto endpoint. Do not place the collector on a GNS3 Docker node; use a GNS3 Cloud adapter attached to the VM bridge.

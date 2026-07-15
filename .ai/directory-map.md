@@ -69,16 +69,16 @@ equate-ogsd/
 │   └── seed/
 │
 ├── deployments/
-│   ├── local/                 # Mac cloud Compose + local/vxrail (Debian → Mac MQTT)
+│   ├── end-to-end/            # Single-host: all services including collector
+│   ├── development/           # Mac cloud Compose + development/vxrail (OrbStack/GNS3)
 │   │   ├── up.sh / down.sh
 │   │   ├── docker-compose.yml
-│   │   ├── vxrail/            # Collector → Mac Mosquitto (GNS3 day-to-day)
-│   │   └── snmpsim/           # Optional standalone fixture (not default stack)
-│   ├── local-physical/        # Pre-client E2E: Mac collector → physical SNMP
-│   │   └── vxrail/            # Host go run → tls://127.0.0.1:8883 (reuses local cloud)
-│   └── dev/                   # Azure dual-plane (later)
-│       ├── vxrail/            # Collector → Azure Mosquitto
-│       └── cloud/             # Azure runbook (no Compose)
+│   │   └── vxrail/            # Collector on VM → Mac Mosquitto (GNS3 Cloud)
+│   ├── production/            # Hybrid skeleton (no Terraform yet)
+│   │   ├── cloud/             # Azure VM Compose
+│   │   └── vxrail/            # On-site collector → Azure Mosquitto
+│   ├── lib/                   # Shared shell helpers
+│   └── test.sh                # Aggregate validation runner
 │
 ├── remote-servers/
 │   ├── configs/
@@ -121,12 +121,12 @@ equate-ogsd/
 └── directory-map.md
 ```
 
-## Local testing environments
+## Deployment profiles
 
-Three deployment plants:
+Three deployment profiles under [`deployments/`](../deployments/):
 
-- **`deployments/local/`** — Mac Compose (Mosquitto, Postgres, apps) + [`local/vxrail/`](../deployments/local/vxrail/) on Debian VM (GNS3 → Mac MQTT)
-- **`deployments/local-physical/`** — same Mac cloud stack + Mac host collector against a **physical** network (pre-client E2E)
-- **`deployments/dev/`** — Azure cloud runbook + VxRail → Azure MQTT
+- **`deployments/end-to-end/`** — one Compose project with every service (including collector) for client-site smoke; no SNMP simulator
+- **`deployments/development/`** — Mac cloud Compose (Mosquitto, Postgres, apps) + [`development/vxrail/`](../deployments/development/vxrail/) on OrbStack Ubuntu VM (GNS3 Cloud → Mac MQTT)
+- **`deployments/production/`** — hybrid skeleton: Azure cloud Compose + on-site VxRail collector (Terraform deferred)
 
-Do not add phase-named stacks under `deployments/local/` (for example `phase2/`). Extend `local/`, `local-physical/`, or `dev/` instead.
+Do not add phase-named stacks under these profiles. Extend `end-to-end/`, `development/`, or `production/` instead.

@@ -30,7 +30,7 @@ Creates gitignored files under `certs/`:
 - `ca.crt` — trust this in the collector (`mqtt.tls.ca_file`)
 - `server.crt` / `server.key` — presented by Mosquitto
 
-For laptop E2E, prefer [`deployments/local/up.sh`](../../../deployments/local/up.sh), which generates certs and starts Mosquitto with the Mac cloud stack. Collector on the Debian VM: [`deployments/local/vxrail/`](../../../deployments/local/vxrail/). Azure Mosquitto: [`deployments/dev/cloud/README.md`](../../../deployments/dev/cloud/README.md).
+For local/dev stacks, prefer [`deployments/development/up.sh`](../../../deployments/development/up.sh), which generates certs and starts Mosquitto with the Mac cloud stack. Collector on the OrbStack VM: [`deployments/development/vxrail/`](../../../deployments/development/vxrail/). Single-host all-in-one: [`deployments/end-to-end/`](../../../deployments/end-to-end/). Production Mosquitto: [`deployments/production/cloud/`](../../../deployments/production/cloud/).
 
 ## 2. Create broker users
 

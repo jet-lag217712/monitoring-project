@@ -189,7 +189,7 @@ func integrationDBURL(t *testing.T) string {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; start stack with ./deployments/local/up.sh")
+		t.Skip("DATABASE_URL not set; start stack with ./deployments/development/up.sh")
 	}
 	return dbURL
 }

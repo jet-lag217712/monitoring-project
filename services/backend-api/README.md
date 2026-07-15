@@ -34,7 +34,7 @@ PostgreSQL -> Backend API -> UI/UX Cloud Plane
 
 ## Run locally
 
-Requires local Postgres from `./deployments/local/up.sh` (Mac cloud stack) with roles bootstrapped
+Requires local Postgres from `./deployments/development/up.sh` (Mac cloud stack) with roles bootstrapped
 (`ogsd_api` SELECT-only).
 
 ```bash

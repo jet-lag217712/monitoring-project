@@ -46,6 +46,7 @@ func TestValidateDevice_OK(t *testing.T) {
 		"timestamp":"2026-06-01T18:00:00Z",
 		"site_id":"site-001",
 		"device_id":"dev-001",
+		"ip_address":"10.255.0.1",
 		"metric":"uptime_seconds",
 		"value":123
 	}`)
@@ -53,7 +54,7 @@ func TestValidateDevice_OK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Device == nil || msg.Device.Metric != "uptime_seconds" || msg.Device.Value != 123 {
+	if msg.Device == nil || msg.Device.Metric != "uptime_seconds" || msg.Device.Value != 123 || msg.Device.IPAddress != "10.255.0.1" {
 		t.Fatalf("%+v", msg.Device)
 	}
 	want := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)

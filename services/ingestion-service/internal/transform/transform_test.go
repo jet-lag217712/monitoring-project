@@ -44,11 +44,12 @@ func TestDeviceSample_FromValidated(t *testing.T) {
 	sample := transform.DeviceSampleFromValidated(validate.DeviceMessage{
 		SiteID:    "site-001",
 		DeviceID:  "dev-001",
+		IPAddress: "10.255.0.1",
 		Timestamp: ts,
 		Metric:    "uptime_seconds",
 		Value:     42,
 	})
-	if sample.SiteName != "site-001" || sample.DeviceHostname != "dev-001" {
+	if sample.SiteName != "site-001" || sample.DeviceHostname != "dev-001" || sample.DeviceIPAddress != "10.255.0.1" {
 		t.Fatalf("%+v", sample)
 	}
 	if sample.SiteUUID != transform.SiteUUID("site-001") {

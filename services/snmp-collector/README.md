@@ -62,37 +62,36 @@ Admin endpoints (default `:9090`):
 
 ### MQTT mode
 
-**Easiest (day-to-day GNS3):** Mac cloud Compose + collector on the Debian VM:
+**Day-to-day GNS3 lab:** Mac cloud Compose + collector on the OrbStack Ubuntu VM:
 
 ```bash
 # On Mac
-./deployments/local/up.sh
+./deployments/development/up.sh
+./deployments/development/vxrail/sync.sh
 
-# On Debian VM (after setting MQTT_BROKER to the Mac host IP)
-./deployments/local/vxrail/bootstrap.sh
+# On VM (after setting MQTT_BROKER to the Mac host IP)
+./bootstrap.sh
 ```
 
-**Physical network (pre-client E2E, all on Mac):**
+**Single-host client smoke (all services including collector):**
 
 ```bash
-./deployments/local/up.sh
-./deployments/local-physical/vxrail/bootstrap.sh
-# then go run as printed — see deployments/local-physical/README.md
+./deployments/end-to-end/up.sh
 ```
 
-Or run Mosquitto/Postgres via local compose and the collector on the host with an example config:
+Or run Mosquitto/Postgres via development compose and the collector on the host with an example config:
 
 ```bash
-./deployments/local/up.sh
+./deployments/development/up.sh
 cd services/snmp-collector
 export MQTT_PASSWORD=secret
 export MQTT_BROKER=tls://127.0.0.1:8883
 go run ./cmd/collector -config configs/collector.mqtt.example.yaml
 ```
 
-For Azure Mosquitto, see [`deployments/dev/`](../../deployments/dev/).
+For production hybrid topology, see [`deployments/production/`](../../deployments/production/).
 
-Details: [`deployments/local/README.md`](../../deployments/local/README.md), [`deployments/local-physical/README.md`](../../deployments/local-physical/README.md).
+Details: [`deployments/development/README.md`](../../deployments/development/README.md), [`deployments/end-to-end/README.md`](../../deployments/end-to-end/README.md).
 
 Buffer file defaults to `./data/buffer.db` (created automatically). Mount a persistent volume at that path in containers.
 
@@ -126,47 +125,24 @@ Device IDs are uppercased and non-alphanumeric characters become `_`.
 | `collector_mqtt_publish_total` | Successful publishes |
 | `collector_mqtt_publish_failure_total` | Failed publishes |
 
-## Local validation with snmpsim
+## Local validation without deployment stacks
 
-Requires Docker. On macOS without Docker Desktop, Colima works:
-
-```bash
-brew install docker docker-compose colima
-colima start
-```
-
-```bash
-# Terminal 1 — simulated SNMP agent on UDP 1161
-docker compose -f deployments/local/snmpsim/docker-compose.yaml up --build
-```
-
-**Docker Desktop / Linux:** the example config points at `127.0.0.1:1161`:
+Deployment profiles do **not** include an SNMP simulator. For collector-only unit/dev work you may run any local SNMP agent (for example snmpsim) on UDP `1161` and point `configs/collector.example.yaml` at it:
 
 ```bash
 cd services/snmp-collector
 go run ./cmd/collector -config configs/collector.example.yaml
 ```
 
-**Colima:** UDP port publish to the Mac host is unreliable. Run the collector on the same Docker network instead:
-
-```bash
-docker build -t equate/snmp-collector:dev .
-docker run --rm --network snmpsim_default -p 9090:9090 \
-  -v "$PWD/configs/collector.example.yaml:/configs/collector.yaml:ro" \
-  equate/snmp-collector:dev -config /configs/collector.yaml
-```
-
-When using the Docker-network path, set `devices[0].host` to `snmpsim`.
-
 ## Integration tests
 
-Requires a running Mosquitto with certs and passwords:
+Requires a running Mosquitto with certs and passwords (start `./deployments/development/up.sh` first):
 
 ```bash
-export MQTT_PASSWORD='...'
+export MQTT_PASSWORD='secret'
+export MQTT_BROKER=tls://127.0.0.1:8883
 go test -tags=integration ./tests/ -count=1 -v
 ```
-
 ## Container
 
 ```bash

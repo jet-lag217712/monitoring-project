@@ -15,6 +15,7 @@ type Event interface {
 type DeviceMetricEvent struct {
 	SiteID    string    `json:"site_id"`
 	DeviceID  string    `json:"device_id"`
+	IPAddress string    `json:"ip_address"`
 	Timestamp time.Time `json:"timestamp"`
 	Metric    string    `json:"metric"`
 	Value     float64   `json:"value"`
