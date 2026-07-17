@@ -331,21 +331,27 @@ func upsertDeviceV2(ctx context.Context, tx pgx.Tx, sample transform.DeviceTelem
 			NULLIF($8, ''), $9, $10, $11, $12, $13, $14, $15, $7
 		)
 		ON CONFLICT (id) DO UPDATE SET
-			last_seen = EXCLUDED.last_seen,
-			status = 'online',
-			hostname = EXCLUDED.hostname,
-			vendor = CASE WHEN $4 <> 'unknown' THEN EXCLUDED.vendor ELSE devices.vendor END,
-			model = CASE WHEN $5 <> 'unknown' THEN EXCLUDED.model ELSE devices.model END,
-			snmp_version = EXCLUDED.snmp_version,
-			serial = COALESCE(EXCLUDED.serial, devices.serial),
-			sys_object_id = EXCLUDED.sys_object_id,
-			sys_name = EXCLUDED.sys_name,
-			sys_descr = EXCLUDED.sys_descr,
-			profile_name = EXCLUDED.profile_name,
-			capabilities = EXCLUDED.capabilities,
-			collector_id = EXCLUDED.collector_id,
-			config_revision = EXCLUDED.config_revision,
-			last_observed_at = EXCLUDED.last_observed_at
+			last_seen = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.last_seen ELSE devices.last_seen END,
+			status = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN 'online' ELSE devices.status END,
+			hostname = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.hostname ELSE devices.hostname END,
+			vendor = CASE
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $4 <> 'unknown' THEN EXCLUDED.vendor
+				ELSE devices.vendor
+			END,
+			model = CASE
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $5 <> 'unknown' THEN EXCLUDED.model
+				ELSE devices.model
+			END,
+			snmp_version = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.snmp_version ELSE devices.snmp_version END,
+			serial = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN COALESCE(EXCLUDED.serial, devices.serial) ELSE devices.serial END,
+			sys_object_id = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.sys_object_id ELSE devices.sys_object_id END,
+			sys_name = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.sys_name ELSE devices.sys_name END,
+			sys_descr = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.sys_descr ELSE devices.sys_descr END,
+			profile_name = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.profile_name ELSE devices.profile_name END,
+			capabilities = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.capabilities ELSE devices.capabilities END,
+			collector_id = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.collector_id ELSE devices.collector_id END,
+			config_revision = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.config_revision ELSE devices.config_revision END,
+			last_observed_at = GREATEST(devices.last_observed_at, EXCLUDED.last_observed_at)
 	`, sample.DeviceUUID, sample.SiteUUID, sample.Hostname, vendor, model, sample.SNMPVersion, sample.ObservedAt,
 		sample.Serial, sample.SysObjectID, sample.SysName, sample.SysDescr, sample.ProfileName, sample.Capabilities,
 		sample.CollectorID, sample.ConfigRevision)
@@ -365,14 +371,14 @@ func upsertInterfaceV2(ctx context.Context, tx pgx.Tx, sample transform.Interfac
 			$1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, NULLIF($5, ''), NULLIF($9, ''), $10
 		)
 		ON CONFLICT (device_id, if_index) DO UPDATE SET
-			name = EXCLUDED.name,
-			description = COALESCE(EXCLUDED.description, interfaces.description),
-			admin_status = EXCLUDED.admin_status,
-			oper_status = EXCLUDED.oper_status,
-			speed_bps = EXCLUDED.speed_bps,
-			if_alias = EXCLUDED.if_alias,
-			if_type = EXCLUDED.if_type,
-			last_observed_at = EXCLUDED.last_observed_at
+			name = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.name ELSE interfaces.name END,
+			description = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN COALESCE(EXCLUDED.description, interfaces.description) ELSE interfaces.description END,
+			admin_status = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.admin_status ELSE interfaces.admin_status END,
+			oper_status = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.oper_status ELSE interfaces.oper_status END,
+			speed_bps = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.speed_bps ELSE interfaces.speed_bps END,
+			if_alias = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.if_alias ELSE interfaces.if_alias END,
+			if_type = CASE WHEN interfaces.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.if_type ELSE interfaces.if_type END,
+			last_observed_at = GREATEST(interfaces.last_observed_at, EXCLUDED.last_observed_at)
 		RETURNING id
 	`, sample.InterfaceUUID, sample.DeviceUUID, sample.IfIndex, sample.Name, sample.Alias,
 		sample.AdminStatus, sample.OperStatus, sample.SpeedBps, sample.Type, sample.ObservedAt).Scan(&resolved)

@@ -139,6 +139,42 @@ func TestIngestV2_StaleHeartbeat_DoesNotOverwrite(t *testing.T) {
 	}
 }
 
+func TestIngestV2_StaleDeviceTelemetry_DoesNotOverwrite(t *testing.T) {
+	dbURL, _, _, _ := integrationEnv(t)
+	ctx := context.Background()
+	st := openStore(t, ctx, dbURL)
+	defer st.Close()
+
+	deviceID := "dev-stale"
+	newer := time.Now().UTC().Truncate(time.Second)
+	older := newer.Add(-2 * time.Minute)
+	topic := "site/site-itest/device/" + deviceID + "/telemetry/v2/device"
+
+	h := handler.New(st, metrics.NewWithRegisterer(prometheus.NewRegistry()), discardLog())
+	if !h.Handle(ctx, topic, deviceTelemetryPayload(t, uuid.New(), deviceID, newer, "newer-host")) {
+		t.Fatal("newer should ACK")
+	}
+	if !h.Handle(ctx, topic, deviceTelemetryPayload(t, uuid.New(), deviceID, older, "stale-host")) {
+		t.Fatal("older should ACK")
+	}
+
+	deviceUUID := transform.DeviceUUID("site-itest", deviceID)
+	var hostname string
+	var lastObserved time.Time
+	err := st.Pool().QueryRow(ctx, `
+		SELECT hostname, last_observed_at FROM devices WHERE id = $1
+	`, deviceUUID).Scan(&hostname, &lastObserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hostname != "newer-host" {
+		t.Fatalf("hostname=%q want newer-host", hostname)
+	}
+	if !lastObserved.Equal(newer) {
+		t.Fatalf("last_observed_at=%s want %s", lastObserved, newer)
+	}
+}
+
 func TestIngestV2_HealthHappyPath(t *testing.T) {
 	dbURL, _, _, _ := integrationEnv(t)
 	ctx := context.Background()
@@ -270,6 +306,31 @@ func TestIngest_MixedV1AndV2(t *testing.T) {
 	if !eventIngested(t, ctx, st, eventID) {
 		t.Fatal("expected v2 event_id ledger entry")
 	}
+}
+
+func deviceTelemetryPayload(t *testing.T, eventID uuid.UUID, deviceID string, observedAt time.Time, hostname string) []byte {
+	t.Helper()
+	return mustJSON(t, map[string]any{
+		"schema_version":  "2.0",
+		"event_id":        eventID.String(),
+		"event_type":      "device_telemetry",
+		"site_id":         "site-itest",
+		"collector_id":    "collector-itest",
+		"device_id":       deviceID,
+		"observed_at":     observedAt.Format(time.RFC3339),
+		"emitted_at":      observedAt.Add(time.Second).Format(time.RFC3339),
+		"config_revision": "revision-itest",
+		"payload": map[string]any{
+			"identity": map[string]any{
+				"hostname": hostname, "sys_object_id": "1.2.3", "sys_name": deviceID,
+				"sys_descr": "integration", "snmp_version": "2c",
+			},
+			"profile":                map[string]any{"name": "core", "capabilities": []string{}},
+			"readings":               map[string]any{"uptime_seconds": 42},
+			"temperature_components": []any{},
+			"power_components":       []any{},
+		},
+	})
 }
 
 func heartbeatPayload(t *testing.T, eventID uuid.UUID, siteID, collectorID string, observedAt time.Time) []byte {
