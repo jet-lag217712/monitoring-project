@@ -37,7 +37,49 @@ mqtt:
 
 devices:
   - id: "do-core"
-    host: "REPLACE_WITH_DEVICE_IP"
+    host: "10.255.0.1"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-a-mdf"
+    host: "10.255.0.11"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-a-idf1"
+    host: "10.255.0.12"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-a-idf2"
+    host: "10.255.0.13"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-b-mdf"
+    host: "10.255.0.21"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-c-mdf"
+    host: "10.255.0.31"
+    port: 161
+    community: "EquateMonitor"
+    version: "2c"
+    vendor: "cisco"
+
+  - id: "site-c-idf1"
+    host: "10.255.0.32"
     port: 161
     community: "EquateMonitor"
     version: "2c"

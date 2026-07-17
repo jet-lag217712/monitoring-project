@@ -13,7 +13,7 @@ for device in "${configs[@]}"; do
   rg -q '^ip cef$' "$config"
   rg -q '^snmp-server community EquateMonitor RO 10$' "$config"
   rg -q '^ permit 10\.255\.0\.0 0\.0\.0\.255$' "$config"
-  rg -q '^ permit host 10\.254\.254\.2$' "$config"
+  rg -q '^ permit host 192\.168\.103\.1$' "$config"
   rg -q '^interface Loopback0$' "$config"
   rg -q '^ description OOB management loopback$' "$config"
 done
@@ -21,10 +21,8 @@ done
 rg -q '^ip nat inside source list NAT-INSIDE-10 interface GigabitEthernet0/0 overload$' "$lab_dir/configurations/DO-CORE.cfg"
 rg -q '^ip route 0\.0\.0\.0 0\.0\.0\.0 dhcp$' "$lab_dir/configurations/DO-CORE.cfg"
 rg -q '^ network 0\.0\.0\.0$' "$lab_dir/configurations/DO-CORE.cfg"
-rg -q '^interface GigabitEthernet6/0$' "$lab_dir/configurations/DO-CORE.cfg"
-rg -q '^ description VxRail Docker collector transit via GNS3 Cloud$' "$lab_dir/configurations/DO-CORE.cfg"
-rg -q '^ ip address 10\.254\.254\.1 255\.255\.255\.252$' "$lab_dir/configurations/DO-CORE.cfg"
-rg -q '^ ip nat inside$' "$lab_dir/configurations/DO-CORE.cfg"
+rg -U -q '^interface GigabitEthernet5/0\n description MacBook GNS3 Cloud management handoff\n ip address 192\.168\.103\.2 255\.255\.255\.0\n no shutdown\n!$' "$lab_dir/configurations/DO-CORE.cfg"
+! rg -q '^interface GigabitEthernet6/0$' "$lab_dir/configurations/DO-CORE.cfg"
 
 rg -qx '^ip route 0\.0\.0\.0 0\.0\.0\.0 10\.254\.0\.0$' "$lab_dir/configurations/SITE-A-MDF.cfg"
 rg -qx '^ip route 0\.0\.0\.0 0\.0\.0\.0 10\.254\.1\.1$' "$lab_dir/configurations/SITE-A-IDF1.cfg"

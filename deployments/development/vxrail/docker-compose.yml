@@ -5,7 +5,7 @@ name: ogsd-production-vxrail
 
 services:
   snmp-collector:
-    build: ../../../services/snmp-collector
+    build: snmp-collector
     command: ["-config", "/configs/collector.yaml"]
     # Volume /data must be writable for SQLite buffer (image defaults to nonroot).
     user: "0:0"
