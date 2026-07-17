@@ -27,6 +27,8 @@ require_file "${ROOT}/services/backend-api/Dockerfile"
 require_file "${ROOT}/frontend/Dockerfile"
 require_file "${ROOT}/infrastructure/docker/mqtt-broker/Dockerfile"
 
+mkdir -p "${SCRIPT_DIR}/run"
+
 if grep -q 'REPLACE_WITH_DEVICE_IP' "${SCRIPT_DIR}/configs/collector.yaml"; then
   echo "NOTE: configs/collector.yaml still has REPLACE_WITH_DEVICE_IP (OK for synthetic smoke; required for acceptance)."
 fi

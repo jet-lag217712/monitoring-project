@@ -23,8 +23,21 @@ OGSD_API_PASSWORD="${OGSD_API_PASSWORD:-api}"
 
 ensure_mqtt_material "${ROOT}"
 
+mkdir -p "${SCRIPT_DIR}/run"
+# Distroless nonroot (65532) must own the control-socket bind mount and state volume.
+if command -v docker >/dev/null 2>&1; then
+  docker run --rm -v "${SCRIPT_DIR}/run:/run/snmp-collector" busybox:1.36 \
+    chown -R 65532:65532 /run/snmp-collector >/dev/null 2>&1 || true
+fi
+
 echo "Starting end-to-end Compose project..."
 compose_cmd "${ENV_FILE}" "${COMPOSE}" up --build -d
+
+# Fix named volume ownership after first create (idempotent).
+docker run --rm -v ogsd-e2e_collector-state:/var/lib/snmp-collector busybox:1.36 \
+  chown -R 65532:65532 /var/lib/snmp-collector >/dev/null 2>&1 || true
+# Restart collector so it can write after chown if it raced on first boot.
+compose_cmd "${ENV_FILE}" "${COMPOSE}" up -d snmp-collector
 
 echo "Waiting for Postgres..."
 wait_postgres "${COMPOSE}" "${ENV_FILE}" "${POSTGRES_USER:-ogsd}" "${POSTGRES_DB:-ogsd}"

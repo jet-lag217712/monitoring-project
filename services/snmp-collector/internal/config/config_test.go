@@ -46,6 +46,9 @@ devices:
 	if cfg.SiteID != "site-001" {
 		t.Fatalf("site_id=%q", cfg.SiteID)
 	}
+	if cfg.Publisher.TelemetryVersion != "v2" {
+		t.Fatalf("telemetry_version default=%q, want v2", cfg.Publisher.TelemetryVersion)
+	}
 	if cfg.PollInterval != 30*time.Second {
 		t.Fatalf("poll_interval=%v", cfg.PollInterval)
 	}

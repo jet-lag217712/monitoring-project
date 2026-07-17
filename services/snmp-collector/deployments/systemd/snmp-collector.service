@@ -37,6 +37,7 @@ Restart=on-failure
 RestartSec=5s
 
 # Suggested config values (set in collector.yaml):
+#   publisher.telemetry_version: v2
 #   admin.control_socket: /run/snmp-collector/control.sock
 #   inventory.managed_path: /var/lib/snmp-collector/managed-inventory.yaml
 #   buffer.path: /var/lib/snmp-collector/buffer.db

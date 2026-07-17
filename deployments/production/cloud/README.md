@@ -36,10 +36,12 @@ Terraform is deferred; see `infrastructure/terraform/` only as a future Postgres
 1. Provision VM + firewall
 2. Place TLS material under `./certs/` (or mount from secret store)
 3. Copy `.env.example` → `.env` and fill secrets
-4. `docker compose up -d` (or pull pre-built images)
-5. Run migrations + role bootstrap against Postgres
+4. Start Postgres (and Mosquitto if co-located), then **run migrations + role bootstrap before app services**
+5. `docker compose up -d` for ingestion, backend-api, and frontend (or pull pre-built images)
 6. Verify health endpoints (below)
-7. Start on-site collector ([`../vxrail/`](../vxrail/))
+7. Start on-site collector ([`../vxrail/`](../vxrail/)) only after migrations succeed
+
+See [`../../runbooks/install-and-validate.md`](../../runbooks/install-and-validate.md).
 
 ## Verification
 

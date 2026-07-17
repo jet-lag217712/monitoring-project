@@ -7,8 +7,8 @@ services:
   snmp-collector:
     build: ../../../services/snmp-collector
     command: ["-config", "/configs/collector.yaml"]
-    # Volume /data must be writable for SQLite buffer (image defaults to nonroot).
-    user: "0:0"
+    # Image USER is distroless nonroot (65532). State volume must be writable by that UID.
+    user: "65532:65532"
     environment:
       MQTT_BROKER: ${MQTT_BROKER:?}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?}
@@ -16,10 +16,12 @@ services:
     volumes:
       - ./configs/collector.yaml:/configs/collector.yaml:ro
       - ./certs/ca.crt:/certs/ca.crt:ro
-      - collector-data:/data
+      - collector-state:/var/lib/snmp-collector
+      - ./run:/run/snmp-collector
     ports:
+      # Optional scrape/liveness only; control socket is Unix and not published.
       - "${COLLECTOR_ADMIN_PORT:-9090}:9090"
     restart: unless-stopped
 
 volumes:
-  collector-data:
+  collector-state:

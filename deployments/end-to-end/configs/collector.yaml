@@ -4,11 +4,13 @@
 site_id: "site-001"
 collector:
   id: "collector-e2e"
+  heartbeat_interval: 60s
 poll_interval: 30s
 max_workers: 10
 
 admin:
   listen: ":9090"
+  control_socket: "/run/snmp-collector/control.sock"
 
 snmp:
   timeout: 5s
@@ -17,9 +19,10 @@ snmp:
 publisher:
   mode: mqtt
   timeout: 10s
+  telemetry_version: v2
 
 buffer:
-  path: "/data/buffer.db"
+  path: "/var/lib/snmp-collector/buffer.db"
   max_entries: 50000
   busy_timeout_ms: 5000
   batch_size: 50
@@ -38,7 +41,7 @@ mqtt:
     max: 60s
 
 inventory:
-  managed_path: "/data/managed-inventory.yaml"
+  managed_path: "/var/lib/snmp-collector/managed-inventory.yaml"
 
 devices:
   - id: "do-core"

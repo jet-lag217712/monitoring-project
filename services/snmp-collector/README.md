@@ -58,7 +58,7 @@ Phase 3 adds health and reachability correlation:
 Phase 4 adds MQTT v2 telemetry and heartbeat publishing:
 
 - enveloped v2 device, interface, health, and heartbeat events on versioned routes
-- `publisher.telemetry_version: v1 | v2 | both` (default `both`) for dual-publish migration
+- `publisher.telemetry_version: v1 | v2 | both` (default `v2`; `v1`/`both` emergency/lab only)
 - durable outbox reuse for all event families; `event_id` allocated before enqueue
 - startup + periodic heartbeats with build metadata (`unknown` fallback) and outbox depth sampled before enqueue
 - heartbeat publish success/failure/duration metrics
@@ -144,7 +144,7 @@ inventory writer and requires a subsequent reload to become active.
 |-------|----------|
 | `v1` | Flat `metric/device` and `metric/interface` only |
 | `v2` | Enveloped `telemetry/v2/{device,interface,health}` + heartbeat |
-| `both` | Dual-publish v1 and v2 (default during Phase 4 migration) |
+| `both` | Dual-publish v1 and v2 (emergency/lab override; unsupported in deployments) |
 
 ### MQTT mode
 

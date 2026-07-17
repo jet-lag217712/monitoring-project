@@ -14,8 +14,10 @@ The durable processing pipeline is:
 MQTT receive → validate → deduplicate → transaction → MQTT acknowledge
 ```
 
-Phase 4 implements this pipeline for both retained v1 `metric/#` routes and v2
-`telemetry/v2` device, interface, health, and heartbeat routes. For a new event
+Phase 4 implements this pipeline for v2 `telemetry/v2` device, interface,
+health, and heartbeat routes (production default per
+[`collector-7.md`](../../.ai/decisions/collector-7.md)). Legacy v1 `metric/#`
+handlers remain for emergency dual-publish labs only. For a new event
 the single transaction upserts required inventory/current state, writes history
 and samples, and commits before acknowledgment. Invalid or non-retryable
 unsupported events are acknowledged and logged as rejected. Duplicates are

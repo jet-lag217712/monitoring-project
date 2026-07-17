@@ -523,7 +523,7 @@ func (c *Config) applyDefaults() {
 		c.Publisher.Timeout = defaultPublisherTimeout
 	}
 	if c.Publisher.TelemetryVersion == "" {
-		c.Publisher.TelemetryVersion = "both"
+		c.Publisher.TelemetryVersion = "v2"
 	}
 	if c.Buffer.Path == "" {
 		c.Buffer.Path = "buffer.db"
