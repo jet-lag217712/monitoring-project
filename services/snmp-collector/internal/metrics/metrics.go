@@ -31,6 +31,11 @@ type Collector struct {
 	DiscoveryRateLimitWaits    prometheus.Counter
 	ConfigReloadSuccessTotal   prometheus.Counter
 	ConfigReloadFailureTotal   prometheus.Counter
+	HealthTransitionsTotal     *prometheus.CounterVec
+	HealthDevices              *prometheus.GaugeVec
+	DependencyImpactedDevices  prometheus.Gauge
+	HealthPendingFailures      prometheus.Gauge
+	Ready                      prometheus.Gauge
 }
 
 // New registers all collector metrics on the default Prometheus registerer.
@@ -104,6 +109,26 @@ func NewWithRegisterer(reg prometheus.Registerer) *Collector {
 			Name: "collector_config_reload_failure_total",
 			Help: "Total number of failed configuration reloads",
 		}),
+		HealthTransitionsTotal: mustCounterVec(factory, prometheus.CounterOpts{
+			Name: "collector_health_transitions_total",
+			Help: "Total committed health state transitions",
+		}, []string{"state", "reason", "transition"}),
+		HealthDevices: mustGaugeVec(factory, prometheus.GaugeOpts{
+			Name: "collector_health_devices",
+			Help: "Current devices by committed terminal health state",
+		}, []string{"state"}),
+		DependencyImpactedDevices: mustGauge(factory, prometheus.GaugeOpts{
+			Name: "collector_dependency_impacted_devices",
+			Help: "Current devices in unknown/upstream_unreachable state",
+		}),
+		HealthPendingFailures: mustGauge(factory, prometheus.GaugeOpts{
+			Name: "collector_health_pending_failures",
+			Help: "Devices with pending failures below the critical threshold",
+		}),
+		Ready: mustGauge(factory, prometheus.GaugeOpts{
+			Name: "collector_ready",
+			Help: "Whether the collector is ready (1) or not (0)",
+		}),
 		BufferDepth: mustGauge(factory, prometheus.GaugeOpts{
 			Name: "collector_buffer_depth",
 			Help: "Current local buffer depth",
@@ -135,12 +160,41 @@ func NewWithRegisterer(reg prometheus.Registerer) *Collector {
 	}
 	c.BufferDepth.Set(0)
 	c.MQTTConnected.Set(0)
+	c.Ready.Set(0)
+	c.DependencyImpactedDevices.Set(0)
+	c.HealthPendingFailures.Set(0)
+	for _, state := range []string{"healthy", "warning", "critical", "unknown"} {
+		c.HealthDevices.WithLabelValues(state).Set(0)
+	}
 	return c
 }
 
 // SetBufferDepth updates the Prometheus gauge from the in-memory depth counter.
 func (c *Collector) SetBufferDepth(depth int64) {
 	c.BufferDepth.Set(float64(depth))
+}
+
+// SetReady updates the readiness gauge (1=ready, 0=not ready).
+func (c *Collector) SetReady(ready bool) {
+	if ready {
+		c.Ready.Set(1)
+		return
+	}
+	c.Ready.Set(0)
+}
+
+// ObserveHealthTransition increments the health transition counter.
+func (c *Collector) ObserveHealthTransition(state, reason, transition string) {
+	c.HealthTransitionsTotal.WithLabelValues(state, reason, transition).Inc()
+}
+
+// SetHealthSnapshot updates gauges from committed tracker state only.
+func (c *Collector) SetHealthSnapshot(devicesByState map[string]float64, dependencyImpacted, pendingFailures float64) {
+	for state, value := range devicesByState {
+		c.HealthDevices.WithLabelValues(state).Set(value)
+	}
+	c.DependencyImpactedDevices.Set(dependencyImpacted)
+	c.HealthPendingFailures.Set(pendingFailures)
 }
 
 // Handler returns an HTTP handler for /metrics.
@@ -162,6 +216,12 @@ func mustCounterVec(reg prometheus.Registerer, opts prometheus.CounterOpts, labe
 
 func mustGauge(reg prometheus.Registerer, opts prometheus.GaugeOpts) prometheus.Gauge {
 	g := prometheus.NewGauge(opts)
+	reg.MustRegister(g)
+	return g
+}
+
+func mustGaugeVec(reg prometheus.Registerer, opts prometheus.GaugeOpts, labels []string) *prometheus.GaugeVec {
+	g := prometheus.NewGaugeVec(opts, labels)
 	reg.MustRegister(g)
 	return g
 }

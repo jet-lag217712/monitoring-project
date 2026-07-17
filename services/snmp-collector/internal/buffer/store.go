@@ -46,6 +46,7 @@ type Store struct {
 	max     int
 	wake    chan struct{}
 	metrics *metrics.Collector
+	closed  atomic.Bool
 }
 
 // Open creates or opens a SQLite buffer database.
@@ -262,8 +263,14 @@ func (s *Store) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Available reports whether the store is open and usable for readiness checks.
+func (s *Store) Available() bool {
+	return s != nil && !s.closed.Load()
+}
+
 // Close closes the underlying database.
 func (s *Store) Close() error {
+	s.closed.Store(true)
 	return s.db.Close()
 }
 

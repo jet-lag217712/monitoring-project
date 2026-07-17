@@ -24,7 +24,20 @@ A bounded, context-aware worker pool independently polls every configured device
 
 Interface filtering occurs after inventory read and before emission. Ordered rules can match index, name/alias regex, IF-MIB type, and admin/operational status. Defaults exclude virtual interfaces; explicit includes can restore one, and a final exclusion wins.
 
-Health states are `healthy`, `warning`, `critical`, and `unknown`. A successful poll is Healthy or Warning according to the active temperature threshold (default 65°C). A failed root, or a failed device with a responding upstream, becomes Critical after the configured failure threshold (default two). A failed dependent is Unknown with reason `upstream_unreachable` only when every configured upstream is Critical or upstream-unreachable. When an upstream is still pending, the device retains its prior terminal state. The collector still polls every dependent; a responding dependent is Healthy/Warning regardless of failed upstreams.
+Health states are `healthy`, `warning`, `critical`, and `unknown`. Evaluation
+runs only after a completed due-device poll batch commits outcomes into the
+local failure ledger; cancelled/incomplete batches leave the ledger and health
+gauges unchanged. A successful poll is Healthy or Warning according to the
+active temperature threshold (default 65°C), using the maximum valid vendor
+temperature reading. A failed root, or a failed device with a responding
+upstream, becomes Critical after the configured failure threshold (default
+two). A failed dependent is Unknown with reason `upstream_unreachable` only
+when every configured upstream is Critical or upstream-unreachable. When an
+upstream is still pending, the device retains its prior terminal state. The
+collector still polls every dependent; a responding dependent is
+Healthy/Warning regardless of failed upstreams. Local health events use
+transitions `initial`, `entered`, and `recovered` only; MQTT v2 health
+publishing remains Phase 4.
 
 ## Discovery and local administration
 

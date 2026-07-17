@@ -48,6 +48,13 @@ Phase 2 adds polling, profiles, and isolated discovery:
 - interface filter annotations (`selected` / `excluded_default` / `excluded_rule`)
 - operator-invoked `collector discover` with token-bucket rate limiting; never auto-enrolls devices
 
+Phase 3 adds health and reachability correlation:
+
+- consecutive failure ledger and post-cycle temperature / dependency-DAG evaluation
+- local health transitions (`initial` / `entered` / `recovered` only; no MQTT v2 publish yet)
+- health, dependency-impacted, pending-failure, and readiness Prometheus metrics
+- `GET /readyz` (config + buffer + usable publisher; MQTT must be connected in mqtt mode)
+
 The managed inventory file contains only a `devices` list. A configured but
 missing file is treated as empty. Existing managed files must be owner-only
 (`0600`). Publisher, MQTT, buffer, admin, site, and collector identity settings
@@ -86,6 +93,7 @@ Admin endpoints (default `:9090`):
 
 - `GET /metrics` — Prometheus scrape
 - `GET /healthz` — liveness
+- `GET /readyz` — readiness (active config, buffer available, usable publisher)
 
 ### Discovery
 
