@@ -55,12 +55,23 @@ func TestHealthStatusCode(t *testing.T) {
 		{"unknown", false, derive.StatusUnknown},
 		{"", true, derive.StatusHealthy},
 		{"", false, derive.StatusCritical},
+		{"healthy", false, derive.StatusCritical},
+		{"warning", false, derive.StatusCritical},
+		{"critical", true, derive.StatusCritical},
+		{"unknown", true, derive.StatusUnknown},
 	}
 	for _, tt := range tests {
 		got := derive.HealthStatusCode(tt.state, tt.online)
 		if got != tt.want {
 			t.Fatalf("state=%q online=%v got %d want %d", tt.state, tt.online, got, tt.want)
 		}
+	}
+}
+
+func TestProjectDeviceStatus_StaleHealthyFallsBackToCritical(t *testing.T) {
+	proj := derive.ProjectDeviceStatus("healthy", true, "", 0, nil, nil, nil, false)
+	if proj.Status != derive.StatusCritical {
+		t.Fatalf("stale healthy device should be critical, got %d", proj.Status)
 	}
 }
 

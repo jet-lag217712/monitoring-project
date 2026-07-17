@@ -52,8 +52,21 @@ func DeviceStatusCode(online bool) int {
 
 // HealthStatusCode maps persisted collector health state to numeric compatibility.
 // Empty/unknown state strings fall back to the online-derived code.
+// When last_seen is stale, only critical and unknown health evidence is trusted;
+// healthy/warning rows are treated as offline so the MVP last_seen guard still applies.
 func HealthStatusCode(state string, online bool) int {
-	switch strings.ToLower(strings.TrimSpace(state)) {
+	s := strings.ToLower(strings.TrimSpace(state))
+	if !online {
+		switch s {
+		case "critical":
+			return StatusCritical
+		case "unknown":
+			return StatusUnknown
+		default:
+			return DeviceStatusCode(false)
+		}
+	}
+	switch s {
 	case "healthy":
 		return StatusHealthy
 	case "warning":
