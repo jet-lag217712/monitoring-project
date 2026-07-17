@@ -24,6 +24,12 @@ type Row struct {
 	Payload []byte
 }
 
+// PendingEvent is a topic/payload pair for atomic batch enqueue.
+type PendingEvent struct {
+	Topic   string
+	Payload []byte
+}
+
 // Options configures a Store.
 type Options struct {
 	Path          string
@@ -149,6 +155,56 @@ func (s *Store) Enqueue(ctx context.Context, topic string, payload []byte) error
 	n := s.depth.Add(1)
 	s.metrics.SetBufferDepth(n)
 	s.metrics.BufferEnqueueTotal.Inc()
+	s.signal()
+	return nil
+}
+
+// EnqueueBatch persists multiple telemetry events atomically and wakes the flusher.
+func (s *Store) EnqueueBatch(ctx context.Context, events []PendingEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return nil
+	}
+	for i, ev := range events {
+		if ev.Topic == "" {
+			return fmt.Errorf("event %d: topic is required", i)
+		}
+		if len(ev.Payload) == 0 {
+			return fmt.Errorf("event %d: payload is required", i)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	n := int64(len(events))
+	if s.max > 0 && s.depth.Load()+n > int64(s.max) {
+		return ErrBufferFull
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, ev := range events {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO pending_events (topic, payload) VALUES (?, ?)`,
+			ev.Topic, ev.Payload,
+		); err != nil {
+			return fmt.Errorf("insert pending event: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	depth := s.depth.Add(n)
+	s.metrics.SetBufferDepth(depth)
+	s.metrics.BufferEnqueueTotal.Add(float64(n))
 	s.signal()
 	return nil
 }

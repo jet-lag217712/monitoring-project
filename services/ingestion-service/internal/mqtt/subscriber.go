@@ -22,12 +22,13 @@ import (
 
 // Subscriber consumes MQTT telemetry with deferred (manual) ACK.
 type Subscriber struct {
-	cm        *autopaho.ConnectionManager
-	handler   *handler.Handler
-	metrics   *metrics.Ingestion
-	log       *slog.Logger
-	connected atomic.Bool
-	mu        sync.Mutex // serializes message handling for ACK ordering
+	cm         *autopaho.ConnectionManager
+	handler    *handler.Handler
+	metrics    *metrics.Ingestion
+	log        *slog.Logger
+	connected  atomic.Bool
+	subscribed atomic.Bool
+	mu         sync.Mutex // serializes message handling for ACK ordering
 }
 
 // NewSubscriber starts an autopaho connection that subscribes and processes messages.
@@ -75,12 +76,20 @@ func NewSubscriber(ctx context.Context, cfg config.MQTTConfig, password string, 
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{{Topic: cfg.Topic, QoS: cfg.QoS}},
 			}); err != nil {
+				sub.subscribed.Store(false)
+				m.MQTTSubscribed.Set(0)
 				log.Error("mqtt subscribe failed", "topic", cfg.Topic, "err", err)
+				return
 			}
+			sub.subscribed.Store(true)
+			m.MQTTSubscribed.Set(1)
+			log.Info("mqtt subscribed", "topic", cfg.Topic)
 		},
 		OnConnectionDown: func() bool {
 			sub.connected.Store(false)
+			sub.subscribed.Store(false)
 			m.MQTTConnected.Set(0)
+			m.MQTTSubscribed.Set(0)
 			log.Warn("mqtt disconnected", "broker", cfg.Broker)
 			return true
 		},
@@ -124,9 +133,36 @@ func (s *Subscriber) IsConnected() bool {
 	return s.connected.Load()
 }
 
+// IsReady reports whether MQTT is connected and the telemetry topic is subscribed.
+func (s *Subscriber) IsReady() bool {
+	return s.connected.Load() && s.subscribed.Load()
+}
+
 // AwaitConnection blocks until MQTT is connected or ctx is done.
 func (s *Subscriber) AwaitConnection(ctx context.Context) error {
 	return s.cm.AwaitConnection(ctx)
+}
+
+// AwaitReady blocks until MQTT is connected and subscribed or ctx is done.
+func (s *Subscriber) AwaitReady(ctx context.Context) error {
+	if s.IsReady() {
+		return nil
+	}
+	if err := s.AwaitConnection(ctx); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if s.IsReady() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 // Done returns a channel closed when the connection manager has shut down.

@@ -52,6 +52,10 @@ func NewBufferedPublisher(store *buffer.Store, mqtt mqttTransport, m *metrics.Co
 
 // Publish marshals events and enqueues them for durable delivery.
 func (p *BufferedPublisher) Publish(ctx context.Context, evs ...events.Event) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	batch := make([]buffer.PendingEvent, 0, len(evs))
 	for _, ev := range evs {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -60,11 +64,9 @@ func (p *BufferedPublisher) Publish(ctx context.Context, evs ...events.Event) er
 		if err != nil {
 			return fmt.Errorf("marshal event: %w", err)
 		}
-		if err := p.store.Enqueue(ctx, ev.Topic(), payload); err != nil {
-			return err
-		}
+		batch = append(batch, buffer.PendingEvent{Topic: ev.Topic(), Payload: payload})
 	}
-	return nil
+	return p.store.EnqueueBatch(ctx, batch)
 }
 
 // RunFlusher drains the buffer to MQTT until ctx is cancelled.

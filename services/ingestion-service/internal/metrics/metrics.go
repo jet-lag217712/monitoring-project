@@ -16,6 +16,7 @@ type Ingestion struct {
 	DBWriteFailure       prometheus.Counter
 	ProcessingDuration   prometheus.Histogram
 	MQTTConnected        prometheus.Gauge
+	MQTTSubscribed       prometheus.Gauge
 }
 
 // New registers all ingestion metrics on the default Prometheus registerer.
@@ -56,8 +57,13 @@ func NewWithRegisterer(reg prometheus.Registerer) *Ingestion {
 			Name: "ingestion_mqtt_connected",
 			Help: "Whether MQTT is connected (1=connected, 0=disconnected)",
 		}),
+		MQTTSubscribed: mustGauge(factory, prometheus.GaugeOpts{
+			Name: "ingestion_mqtt_subscribed",
+			Help: "Whether MQTT telemetry topic subscription is active (1=subscribed, 0=not subscribed)",
+		}),
 	}
 	m.MQTTConnected.Set(0)
+	m.MQTTSubscribed.Set(0)
 	return m
 }
 

@@ -55,6 +55,15 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if !sub.IsReady() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("not ready\n"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.Admin.Listen,
@@ -71,8 +80,8 @@ func main() {
 	}()
 
 	go func() {
-		if err := sub.AwaitConnection(ctx); err != nil {
-			log.Error("await mqtt connection", "err", err)
+		if err := sub.AwaitReady(ctx); err != nil {
+			log.Error("await mqtt ready", "err", err)
 			stop()
 			return
 		}
