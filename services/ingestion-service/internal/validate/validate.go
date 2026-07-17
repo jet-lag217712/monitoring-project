@@ -46,9 +46,13 @@ type InterfaceMessage struct {
 
 // Message is the result of validating a topic + payload.
 type Message struct {
-	Kind      Kind
-	Device    *DeviceMessage
-	Interface *InterfaceMessage
+	Kind         Kind
+	Device       *DeviceMessage
+	Interface    *InterfaceMessage
+	DeviceV2     *DeviceTelemetryV2
+	InterfaceV2  *InterfaceTelemetryV2
+	HealthV2     *HealthStateV2
+	HeartbeatV2  *HeartbeatV2
 }
 
 type devicePayload struct {
@@ -95,8 +99,12 @@ func ParseTopic(topic string) (TopicParts, error) {
 	return TopicParts{SiteID: siteID, DeviceID: deviceID, Kind: kind}, nil
 }
 
-// Validate parses and validates an MQTT topic and JSON payload.
+// Validate parses and validates an MQTT topic and JSON payload (v1 or v2).
 func Validate(topic string, payload []byte) (Message, error) {
+	if strings.Contains(topic, "/telemetry/v2/") {
+		return ValidateV2(topic, payload)
+	}
+
 	tp, err := ParseTopic(topic)
 	if err != nil {
 		return Message{}, err

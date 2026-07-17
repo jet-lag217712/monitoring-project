@@ -43,7 +43,7 @@ Phase 1 adds strict runtime configuration and inventory foundations:
 Phase 2 adds polling, profiles, and isolated discovery:
 
 - core SNMPv2-MIB identity + IF-MIB inventory/counters (including `ifLastChange`)
-- stage-owned `DevicePollResult` pipeline: Core → Profile → Filter → Normalize → v1 Publisher
+- stage-owned `DevicePollResult` pipeline: Core → Profile → Filter → Normalize → Publisher (v1/v2/both)
 - Cisco/Arista `sysObjectID` detection with static capability flags and fixture-tested enrichment
 - interface filter annotations (`selected` / `excluded_default` / `excluded_rule`)
 - operator-invoked `collector discover` with token-bucket rate limiting; never auto-enrolls devices
@@ -51,9 +51,17 @@ Phase 2 adds polling, profiles, and isolated discovery:
 Phase 3 adds health and reachability correlation:
 
 - consecutive failure ledger and post-cycle temperature / dependency-DAG evaluation
-- local health transitions (`initial` / `entered` / `recovered` only; no MQTT v2 publish yet)
+- local health transitions (`initial` / `entered` / `recovered` only)
 - health, dependency-impacted, pending-failure, and readiness Prometheus metrics
 - `GET /readyz` (config + buffer + usable publisher; MQTT must be connected in mqtt mode)
+
+Phase 4 adds MQTT v2 telemetry and heartbeat publishing:
+
+- enveloped v2 device, interface, health, and heartbeat events on versioned routes
+- `publisher.telemetry_version: v1 | v2 | both` (default `both`) for dual-publish migration
+- durable outbox reuse for all event families; `event_id` allocated before enqueue
+- startup + periodic heartbeats with build metadata (`unknown` fallback) and outbox depth sampled before enqueue
+- heartbeat publish success/failure/duration metrics
 
 The managed inventory file contains only a `devices` list. A configured but
 missing file is treated as empty. Existing managed files must be owner-only
@@ -107,8 +115,16 @@ inventory writer and requires a subsequent reload to become active.
 
 | Mode | Config | Behavior |
 |------|--------|----------|
-| `stdout` | `configs/collector.example.yaml` | JSON lines on stdout (Phase 1) |
+| `stdout` | `configs/collector.example.yaml` | JSON lines on stdout |
 | `mqtt` | `configs/collector.mqtt.example.yaml` | SQLite buffer → MQTT/TLS QoS 1 |
+
+`publisher.telemetry_version` controls which families are emitted:
+
+| Value | Behavior |
+|-------|----------|
+| `v1` | Flat `metric/device` and `metric/interface` only |
+| `v2` | Enveloped `telemetry/v2/{device,interface,health}` + heartbeat |
+| `both` | Dual-publish v1 and v2 (default during Phase 4 migration) |
 
 ### MQTT mode
 

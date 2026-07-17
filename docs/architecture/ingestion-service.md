@@ -14,7 +14,14 @@ The durable processing pipeline is:
 MQTT receive → validate → deduplicate → transaction → MQTT acknowledge
 ```
 
-For a new event the single transaction upserts required inventory/current state, writes history and samples, and commits before acknowledgment. Invalid or non-retryable unsupported events are acknowledged and logged as rejected. Duplicates are acknowledged without changing state. Database failure is not acknowledged, so QoS 1 redelivery occurs. `event_id` is the primary v2 deduplication key; natural sample uniqueness remains an additional safeguard.
+Phase 4 implements this pipeline for both retained v1 `metric/#` routes and v2
+`telemetry/v2` device, interface, health, and heartbeat routes. For a new event
+the single transaction upserts required inventory/current state, writes history
+and samples, and commits before acknowledgment. Invalid or non-retryable
+unsupported events are acknowledged and logged as rejected. Duplicates are
+acknowledged without changing state. Database failure is not acknowledged, so
+QoS 1 redelivery occurs. `event_id` is the primary v2 deduplication key;
+natural sample uniqueness remains an additional safeguard.
 
 ## Persistence model
 

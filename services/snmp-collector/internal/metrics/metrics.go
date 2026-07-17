@@ -36,6 +36,9 @@ type Collector struct {
 	DependencyImpactedDevices  prometheus.Gauge
 	HealthPendingFailures      prometheus.Gauge
 	Ready                      prometheus.Gauge
+	HeartbeatPublishTotal      prometheus.Counter
+	HeartbeatPublishFailure    prometheus.Counter
+	HeartbeatDuration          prometheus.Histogram
 }
 
 // New registers all collector metrics on the default Prometheus registerer.
@@ -156,6 +159,19 @@ func NewWithRegisterer(reg prometheus.Registerer) *Collector {
 		MQTTPublishFailure: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_mqtt_publish_failure_total",
 			Help: "Total failed MQTT publishes",
+		}),
+		HeartbeatPublishTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_heartbeat_publish_total",
+			Help: "Total successful collector heartbeat publishes",
+		}),
+		HeartbeatPublishFailure: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_heartbeat_publish_failure_total",
+			Help: "Total failed collector heartbeat publishes",
+		}),
+		HeartbeatDuration: mustHistogram(factory, prometheus.HistogramOpts{
+			Name:    "collector_heartbeat_duration_seconds",
+			Help:    "Collector heartbeat publish duration in seconds",
+			Buckets: prometheus.DefBuckets,
 		}),
 	}
 	c.BufferDepth.Set(0)

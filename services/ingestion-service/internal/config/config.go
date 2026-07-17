@@ -28,7 +28,8 @@ type MQTTConfig struct {
 	Username    string          `yaml:"username"`
 	PasswordEnv string          `yaml:"password_env"`
 	QoS         byte            `yaml:"qos"`
-	Topic       string          `yaml:"topic"`
+	Topic       string          `yaml:"topic"`   // legacy single-topic form
+	Topics      []string        `yaml:"topics"`  // preferred multi-topic form
 	TLS         MQTTTLSConfig   `yaml:"tls"`
 	Reconnect   ReconnectConfig `yaml:"reconnect"`
 }
@@ -88,8 +89,17 @@ func (c *Config) applyDefaults() {
 	if c.MQTT.ClientID == "" {
 		c.MQTT.ClientID = "ingestion"
 	}
-	if c.MQTT.Topic == "" {
-		c.MQTT.Topic = "site/+/device/+/metric/#"
+	if len(c.MQTT.Topics) == 0 && c.MQTT.Topic == "" {
+		c.MQTT.Topics = []string{
+			"site/+/device/+/metric/#",
+			"site/+/device/+/telemetry/v2/#",
+			"site/+/collector/+/telemetry/v2/heartbeat",
+		}
+	} else if len(c.MQTT.Topics) == 0 && c.MQTT.Topic != "" {
+		c.MQTT.Topics = []string{c.MQTT.Topic}
+	}
+	if c.MQTT.Topic == "" && len(c.MQTT.Topics) > 0 {
+		c.MQTT.Topic = c.MQTT.Topics[0]
 	}
 	if c.MQTT.Username == "" {
 		c.MQTT.Username = "ingestion"
@@ -159,8 +169,14 @@ func (c *Config) Validate() error {
 	if c.MQTT.QoS != 1 {
 		return fmt.Errorf("mqtt.qos must be 1")
 	}
-	if strings.TrimSpace(c.MQTT.Topic) == "" {
-		return fmt.Errorf("mqtt.topic is required")
+	topics := c.MQTT.SubscribeTopics()
+	if len(topics) == 0 {
+		return fmt.Errorf("mqtt.topics or mqtt.topic is required")
+	}
+	for _, topic := range topics {
+		if strings.TrimSpace(topic) == "" {
+			return fmt.Errorf("mqtt.topics entries must be non-empty")
+		}
 	}
 	if c.MQTT.Reconnect.Initial <= 0 || c.MQTT.Reconnect.Max <= 0 {
 		return fmt.Errorf("mqtt.reconnect.initial and max must be positive")
@@ -183,6 +199,29 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.MinConns < 0 {
 		return fmt.Errorf("database.min_conns must be >= 0")
+	}
+	return nil
+}
+
+// SubscribeTopics returns the MQTT subscription topic list.
+func (c *Config) SubscribeTopics() []string {
+	return c.MQTT.SubscribeTopics()
+}
+
+// SubscribeTopics returns configured MQTT topics.
+func (m MQTTConfig) SubscribeTopics() []string {
+	if len(m.Topics) > 0 {
+		out := make([]string, 0, len(m.Topics))
+		for _, t := range m.Topics {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	if strings.TrimSpace(m.Topic) != "" {
+		return []string{m.Topic}
 	}
 	return nil
 }

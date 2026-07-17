@@ -32,6 +32,12 @@ Local `./deployments/development/up.sh` (and `./deployments/end-to-end/up.sh`) r
 | 2 | Dedup unique constraints |
 | 3 | `uptime_seconds` metric type seed |
 | 4 | Roles `ogsd_admin`, `ogsd_ingestion`, `ogsd_api` + grants |
+| 5 | v2 metric type seeds (CPU, memory, temperature, power) |
+| 6 | Additive device/interface identity and metadata columns |
+| 7 | Temperature/power component inventory and reading tables |
+| 8 | Device health current state and history |
+| 9 | Collector inventory, current status, and heartbeat history |
+| 10 | `ingested_events` event_id dedup + v2 role grants |
 
 ### Idempotency keys
 
@@ -39,6 +45,11 @@ Local `./deployments/development/up.sh` (and `./deployments/end-to-end/up.sh`) r
 |-------|-------------------|
 | `metric_samples` | `(device_id, metric_type_id, collected_at)` |
 | `interface_samples` | `(interface_id, collected_at)` |
+| `ingested_events` | `event_id` (v2 primary dedup) |
+| `device_health_history` | `event_id` |
+| `collector_heartbeat_history` | `event_id` |
+| `device_temperature_readings` | `(device_id, component_id, observed_at)` |
+| `device_power_readings` | `(device_id, component_id, observed_at)` |
 
 ## Roles
 

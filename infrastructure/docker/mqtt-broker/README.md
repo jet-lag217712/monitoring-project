@@ -71,7 +71,11 @@ go run ./cmd/collector -config configs/collector.mqtt.example.yaml
 | User | Permission | Topic |
 |------|------------|-------|
 | `collector` | write | `site/+/device/+/metric/#` |
+| `collector` | write | `site/+/device/+/telemetry/v2/#` |
+| `collector` | write | `site/+/collector/+/telemetry/v2/heartbeat` |
 | `ingestion` | read | `site/+/device/+/metric/#` |
+| `ingestion` | read | `site/+/device/+/telemetry/v2/#` |
+| `ingestion` | read | `site/+/collector/+/telemetry/v2/heartbeat` |
 
 Anonymous access is disabled. TLS is required on port 8883.
 
@@ -93,5 +97,6 @@ Anonymous access is disabled. TLS is required on port 8883.
 mosquitto_sub -h 127.0.0.1 -p 8883 \
   --cafile certs/ca.crt \
   -u ingestion -P ingestion \
-  -t 'site/+/device/+/metric/#' -v
+  -t 'site/+/device/+/metric/#' -t 'site/+/device/+/telemetry/v2/#' \
+  -t 'site/+/collector/+/telemetry/v2/heartbeat' -v
 ```

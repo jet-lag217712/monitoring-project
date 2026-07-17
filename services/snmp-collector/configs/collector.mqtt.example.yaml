@@ -1,6 +1,7 @@
 site_id: "site-001"
 collector:
   id: "collector-mqtt-example"
+  heartbeat_interval: 60s
 poll_interval: 30s
 max_workers: 10
 
@@ -14,6 +15,7 @@ snmp:
 publisher:
   mode: mqtt
   timeout: 10s
+  telemetry_version: both
 
 buffer:
   path: "./data/buffer.db"

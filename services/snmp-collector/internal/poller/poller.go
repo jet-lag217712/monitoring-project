@@ -12,7 +12,6 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
 	"github.com/equate/ogsd/services/snmp-collector/internal/health"
 	"github.com/equate/ogsd/services/snmp-collector/internal/metrics"
-	"github.com/equate/ogsd/services/snmp-collector/internal/normalize"
 	"github.com/equate/ogsd/services/snmp-collector/internal/publisher"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/core"
@@ -20,6 +19,7 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/profile"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/readings"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/vendors"
+	"github.com/equate/ogsd/services/snmp-collector/internal/telemetry"
 )
 
 // profileWalkBudget covers the largest vendor profile walk count in the registry.
@@ -236,6 +236,26 @@ func (p *Poller) pollAll(ctx context.Context, cfg *config.Config, devices []conf
 
 	events := p.health.ApplyBatch(cfg, collected)
 	p.observeHealth(events)
+	p.publishHealth(ctx, cfg, events)
+}
+
+func (p *Poller) publishHealth(ctx context.Context, cfg *config.Config, healthEvents []health.Event) {
+	mode := telemetry.ModeFromConfig(cfg)
+	telCtx := telemetry.Context{
+		SiteID:         cfg.SiteID,
+		CollectorID:    cfg.Collector.ID,
+		ConfigRevision: config.ConfigRevision(cfg),
+		EmittedAt:      time.Now().UTC(),
+	}
+	evs := telemetry.HealthEvents(mode, telCtx, cfg.SiteID, healthEvents)
+	if len(evs) == 0 {
+		return
+	}
+	publishCtx, cancel := context.WithTimeout(ctx, cfg.Publisher.Timeout)
+	defer cancel()
+	if err := p.pub.Publish(publishCtx, evs...); err != nil {
+		p.log.Error("health publish failed", "err", err, "events", len(evs))
+	}
 }
 
 func (p *Poller) observeHealth(events []health.Event) {
@@ -354,7 +374,12 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedDefault)).Add(float64(result.Filter.ExcludedDefault))
 	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedRule)).Add(float64(result.Filter.ExcludedRule))
 
-	evs := normalize.ToEvents(result)
+	evs := telemetry.DeviceEvents(telemetry.ModeFromConfig(cfg), telemetry.Context{
+		SiteID:         cfg.SiteID,
+		CollectorID:    cfg.Collector.ID,
+		ConfigRevision: config.ConfigRevision(cfg),
+		EmittedAt:      time.Now().UTC(),
+	}, result)
 
 	publishCtx, cancel := context.WithTimeout(ctx, cfg.Publisher.Timeout)
 	defer cancel()

@@ -73,17 +73,22 @@ func NewSubscriber(ctx context.Context, cfg config.MQTTConfig, password string, 
 			sub.connected.Store(true)
 			m.MQTTConnected.Set(1)
 			log.Info("mqtt connected", "broker", cfg.Broker, "client_id", cfg.ClientID)
+			topics := cfg.SubscribeTopics()
+			subs := make([]paho.SubscribeOptions, 0, len(topics))
+			for _, topic := range topics {
+				subs = append(subs, paho.SubscribeOptions{Topic: topic, QoS: cfg.QoS})
+			}
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
-				Subscriptions: []paho.SubscribeOptions{{Topic: cfg.Topic, QoS: cfg.QoS}},
+				Subscriptions: subs,
 			}); err != nil {
 				sub.subscribed.Store(false)
 				m.MQTTSubscribed.Set(0)
-				log.Error("mqtt subscribe failed", "topic", cfg.Topic, "err", err)
+				log.Error("mqtt subscribe failed", "topics", topics, "err", err)
 				return
 			}
 			sub.subscribed.Store(true)
 			m.MQTTSubscribed.Set(1)
-			log.Info("mqtt subscribed", "topic", cfg.Topic)
+			log.Info("mqtt subscribed", "topics", topics)
 		},
 		OnConnectionDown: func() bool {
 			sub.connected.Store(false)

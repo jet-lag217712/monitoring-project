@@ -7,11 +7,22 @@ UI/UX Cloud Plane.
 ## Responsibilities
 
 - Consume telemetry from Secure Outbound Telemetry Transport (MQTT/TLS).
-- Validate telemetry payloads.
+- Validate v1 flat metric payloads and v2 enveloped telemetry/health/heartbeat events.
 - Normalize collector string IDs to deterministic UUID v5 keys.
 - Write monitoring state and history to PostgreSQL (idempotent).
+- Deduplicate v2 events by `event_id` (natural keys remain defense in depth).
 - ACK MQTT messages only after commit (or safe reject/dedup).
 - Reject malformed or unauthorized messages.
+
+## Subscribed topics
+
+Default `mqtt.topics` covers the migration window:
+
+```text
+site/+/device/+/metric/#
+site/+/device/+/telemetry/v2/#
+site/+/collector/+/telemetry/v2/heartbeat
+```
 
 ## Non-Responsibilities
 

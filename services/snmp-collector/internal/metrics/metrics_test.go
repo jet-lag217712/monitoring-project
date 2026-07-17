@@ -39,6 +39,9 @@ func TestPhase2MetricsRegisteredAndObserved(t *testing.T) {
 		"collector_dependency_impacted_devices",
 		"collector_health_pending_failures",
 		"collector_ready",
+		"collector_heartbeat_publish_total",
+		"collector_heartbeat_publish_failure_total",
+		"collector_heartbeat_duration_seconds",
 	} {
 		if !seen[name] {
 			t.Fatalf("metric %q was not registered", name)
