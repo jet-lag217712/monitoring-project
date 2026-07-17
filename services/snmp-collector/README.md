@@ -63,7 +63,15 @@ Phase 4 adds MQTT v2 telemetry and heartbeat publishing:
 - startup + periodic heartbeats with build metadata (`unknown` fallback) and outbox depth sampled before enqueue
 - heartbeat publish success/failure/duration metrics
 
-The managed inventory file contains only a `devices` list. A configured but
+Phase 6 adds the local operator control plane and Bubble Tea TUI:
+
+- Unix NDJSON control socket (`admin.control_socket`) with protocol version `1`, stable error codes, size/timeout limits
+- revision-bound prepare/commit mutations for thresholds and dependencies; secret-free audit log
+- managed overlays for temperature, upstreams, interface filters, and discovery rate/burst
+- `collector tui` client with inventory, device, discovery, thresholds, transport, and configuration views
+- systemd least-privilege unit under `deployments/systemd/`
+
+The managed inventory file contains only policy overlays and a `devices` list. A configured but
 missing file is treated as empty. Existing managed files must be owner-only
 (`0600`). Publisher, MQTT, buffer, admin, site, and collector identity settings
 remain startup-only.
@@ -88,13 +96,16 @@ go run ./cmd/collector -config configs/collector.example.yaml
 # Validate without requiring secret values.
 go run ./cmd/collector validate -config configs/collector.example.yaml
 
+# Local operator TUI (requires a running collector with admin.control_socket set).
+go run ./cmd/collector tui -socket /run/snmp-collector/control.sock
+
 # Operator-invoked discovery (isolated from the poll scheduler).
 export SNMP_DISCOVERY_COMMUNITY=REPLACE_ME_LOCALLY
 go run ./cmd/collector discover -config configs/collector.example.yaml -output discovery-candidates.json
 # Review candidates, then either:
 #   go run ./cmd/collector discover export -from reviewed.json -to discovery-export.yaml
 #   go run ./cmd/collector discover accept -config configs/collector.example.yaml -from reviewed.json
-# Accept writes managed inventory only; send SIGHUP to activate.
+# Accept writes managed inventory only; send SIGHUP or use TUI/control config.reload to activate.
 ```
 
 Admin endpoints (default `:9090`):
@@ -102,6 +113,15 @@ Admin endpoints (default `:9090`):
 - `GET /metrics` — Prometheus scrape
 - `GET /healthz` — liveness
 - `GET /readyz` — readiness (active config, buffer available, usable publisher)
+
+Control plane (when `admin.control_socket` is set):
+
+- Versioned NDJSON over a Unix socket (`0600`)
+- Status methods: `status.summary`, `inventory.list`, `device.get`, `transport.get`, `config.get`, `discovery.status`
+- Mutations: revision-bound `thresholds`/`dependencies` prepare+commit, then `config.reload`
+- Audit log beside the managed inventory (`*.audit.log`), secret-free
+
+See [`deployments/`](deployments/) for the systemd unit and permission/rollback notes.
 
 ### Discovery
 

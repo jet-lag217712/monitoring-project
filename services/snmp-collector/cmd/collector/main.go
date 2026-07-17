@@ -13,11 +13,13 @@ import (
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/buffer"
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
+	"github.com/equate/ogsd/services/snmp-collector/internal/control"
 	"github.com/equate/ogsd/services/snmp-collector/internal/heartbeat"
 	"github.com/equate/ogsd/services/snmp-collector/internal/metrics"
 	"github.com/equate/ogsd/services/snmp-collector/internal/poller"
 	"github.com/equate/ogsd/services/snmp-collector/internal/publisher"
 	"github.com/equate/ogsd/services/snmp-collector/internal/readiness"
+	"github.com/equate/ogsd/services/snmp-collector/internal/status"
 )
 
 // Build metadata injected via -ldflags; defaults keep local builds explicit.
@@ -34,6 +36,8 @@ func main() {
 			os.Exit(runValidate(os.Args[2:]))
 		case "discover":
 			os.Exit(runDiscover(os.Args[2:]))
+		case "tui":
+			os.Exit(runTUI(os.Args[2:]))
 		}
 	}
 
@@ -72,6 +76,8 @@ func main() {
 	}
 
 	p := poller.NewWithConfigSource(configManager, pub, m, log)
+	statusStore := p.StatusStore()
+	statusStore.SetRevision(config.ConfigRevision(cfg))
 
 	readyCheck := readiness.Func(func() bool {
 		status := readiness.Evaluate(
@@ -114,6 +120,38 @@ func main() {
 		}
 	}()
 
+	var controlServer *control.Server
+	if cfg.Admin.ControlSocket != "" {
+		auditPath := ""
+		if managed := cfg.ManagedInventoryPath(); managed != "" {
+			auditPath = managed + ".audit.log"
+		}
+		controlServer, err = control.NewServer(control.Options{
+			SocketPath: cfg.Admin.ControlSocket,
+			Manager:    configManager,
+			Status:     statusStore,
+			Health:     p.Tracker(),
+			Transport:  ready,
+			AuditPath:  auditPath,
+			Log:        log,
+		})
+		if err != nil {
+			log.Error("create control server", "err", err)
+			os.Exit(1)
+		}
+		if err := controlServer.Listen(); err != nil {
+			log.Error("listen control socket", "err", err)
+			os.Exit(1)
+		}
+		go func() {
+			log.Info("control server listening", "socket", cfg.Admin.ControlSocket)
+			if err := controlServer.Serve(pollCtx); err != nil {
+				log.Error("control server failed", "err", err)
+				stop()
+			}
+		}()
+	}
+
 	log.Info("collector starting",
 		"site_id", cfg.SiteID,
 		"collector_id", cfg.Collector.ID,
@@ -122,6 +160,7 @@ func main() {
 		"max_workers", cfg.MaxWorkers,
 		"publisher_mode", cfg.Publisher.Mode,
 		"telemetry_version", cfg.Publisher.TelemetryVersion,
+		"control_socket", cfg.Admin.ControlSocket,
 	)
 
 	go p.Run(pollCtx)
@@ -146,11 +185,15 @@ func main() {
 			case <-reloadCh:
 				if err := configManager.Reload(); err != nil {
 					m.ConfigReloadFailureTotal.Inc()
+					statusStore.RecordReload(false, err.Error(), config.ConfigRevision(configManager.Current()))
 					log.Error("configuration reload failed", "err", err)
 					continue
 				}
 				m.ConfigReloadSuccessTotal.Inc()
 				active := configManager.Current()
+				rev := config.ConfigRevision(active)
+				statusStore.RecordReload(true, "", rev)
+				statusStore.SetRevision(rev)
 				log.Info("configuration reloaded", "devices", len(active.Devices), "poll_interval", active.PollInterval.String())
 			}
 		}
@@ -161,6 +204,11 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if controlServer != nil {
+		if err := controlServer.Close(); err != nil {
+			log.Error("control server shutdown", "err", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("admin server shutdown", "err", err)
 	}
@@ -229,6 +277,21 @@ func (r publisherReadiness) publisherReady() bool {
 	default:
 		return false
 	}
+}
+
+func (r publisherReadiness) Snapshot() status.TransportSnapshot {
+	snap := status.TransportSnapshot{
+		PublisherMode:   r.mode,
+		BufferAvailable: r.bufferReady(),
+	}
+	if r.store != nil {
+		snap.BufferDepth = r.store.Depth()
+	}
+	if r.mode == "mqtt" && r.mqtt != nil {
+		connected := r.mqtt.IsConnected()
+		snap.MQTTConnected = &connected
+	}
+	return snap
 }
 
 func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Collector, log *slog.Logger) (publisher.Publisher, func(context.Context) error, publisherReadiness, error) {
