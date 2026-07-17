@@ -176,3 +176,36 @@ func TestHealthEvents_SkippedForV1(t *testing.T) {
 		t.Fatalf("v1 should skip health publish, got %d", len(evs))
 	}
 }
+
+func TestPowerComponents_NormalizeAristaUnits(t *testing.T) {
+	result := readings.NewDevicePollResult("site-001", "arista-01", "10.0.0.1", time.Now().UTC(), core.DeviceIdentity{
+		SysObjectID:   "1.2.3",
+		SysName:       "arista-01",
+		SysDescr:      "lab",
+		UptimeSeconds: 10,
+	}, nil)
+	result.Vendor = readings.VendorReadings{
+		Profile: "arista",
+		Power: []readings.ComponentReading{
+			{Index: 1, Name: "psu1", Unit: "volts_ac", Status: "ok"},
+			{Index: 2, Name: "psu2", Unit: "volts_dc", Status: "ok"},
+			{Index: 3, Name: "psu3", Unit: "amperes", Status: "ok"},
+		},
+	}
+	ev := telemetry.DeviceTelemetry(telemetry.Context{
+		SiteID:      "site-001",
+		CollectorID: "collector-1",
+		EmittedAt:   time.Now().UTC(),
+	}, result)
+
+	units := make([]string, 0, len(ev.Payload.PowerComponents))
+	for _, c := range ev.Payload.PowerComponents {
+		units = append(units, c.Unit)
+	}
+	want := []string{"volts", "volts", "amps"}
+	for i, u := range want {
+		if units[i] != u {
+			t.Fatalf("unit[%d]=%q want %q (all=%v)", i, units[i], u, units)
+		}
+	}
+}

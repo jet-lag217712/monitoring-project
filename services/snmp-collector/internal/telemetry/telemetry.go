@@ -369,10 +369,7 @@ func powerComponents(comps []readings.ComponentReading, observedAt time.Time) []
 		if status == "" {
 			status = "unknown"
 		}
-		unit := c.Unit
-		if unit == "" {
-			unit = "state"
-		}
+		unit := normalizePowerUnit(c.Unit)
 		out = append(out, events.ComponentPayload{
 			ComponentID: "power-" + strconv.Itoa(c.Index),
 			Name:        c.Name,
@@ -384,4 +381,18 @@ func powerComponents(comps []readings.ComponentReading, observedAt time.Time) []
 		})
 	}
 	return out
+}
+
+// normalizePowerUnit maps vendor-internal sensor units to v2 contract values.
+func normalizePowerUnit(unit string) string {
+	switch unit {
+	case "":
+		return "state"
+	case "volts_ac", "volts_dc":
+		return "volts"
+	case "amperes":
+		return "amps"
+	default:
+		return unit
+	}
 }
