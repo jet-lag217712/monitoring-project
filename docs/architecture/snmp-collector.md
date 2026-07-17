@@ -37,3 +37,12 @@ The TUI provides inventory, device/interface, discovery, thresholds, transport, 
 The collector retains MQTT/TLS QoS 1, a durable SQLite outbox, and at-least-once delivery. Device, interface, health, and heartbeat events use the v2 contract in [`contracts.md`](contracts.md). The periodic heartbeat carries collector identity/build/runtime information and outbox depth without secrets.
 
 `/readyz` requires a valid active configuration, available buffer, and usable publisher (connected MQTT in MQTT mode); polling and buffering continue during a broker outage. Logs are structured and redact communities, certificates, credentials, payloads, and secret-derived values. Metrics retain polling/buffer/MQTT coverage and add bounded-cardinality coverage for configuration reload, profiles, discovery, interface selection, health/dependency impact, heartbeat, and readiness.
+
+## Phase 0 contract artifacts
+
+The formal envelope and event schemas are in
+[`docs/schemas/snmp-collector-v2/`](../schemas/snmp-collector-v2/). The
+collector decision record is [`collector-1.md`](../../.ai/decisions/collector-1.md),
+and Cisco/Arista evidence is tracked in
+[`snmp-vendor-mappings.md`](snmp-vendor-mappings.md). These artifacts define
+the producer boundary before runtime profile or health code is added.
