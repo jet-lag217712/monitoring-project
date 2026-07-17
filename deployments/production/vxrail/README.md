@@ -9,7 +9,6 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 - Outbound TCP to Azure Mosquitto `:8883` (no inbound from cloud required)
 - Production CA certificate for Mosquitto trust (`certs/ca.crt`)
 - Device inventory in [`configs/collector.yaml`](configs/collector.yaml)
-- SNMP community values supplied through the `SNMP_COMMUNITY_*` environment references in `.env`
 - MQTT username/password matching cloud Mosquitto ACL (`collector` publish-only)
 
 ## Layout
@@ -24,10 +23,9 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 ## Rollout order
 
 1. Cloud plane healthy and Mosquitto reachable from site
-2. Install CA, fill `.env` and the `SNMP_COMMUNITY_*` references, then review inventory
-3. `collector validate -config /configs/collector.yaml` (or run the equivalent image command)
-4. `docker compose up -d --build` (or pull registry image)
-5. Verify `GET /healthz` on collector admin port
+2. Install CA + fill `.env` + inventory
+3. `docker compose up -d --build` (or pull registry image)
+4. Verify `GET /healthz` on collector admin port
 5. Confirm samples appear in cloud API/UI
 
 ## Verification
@@ -41,6 +39,5 @@ docker compose logs -f snmp-collector
 ## Notes
 
 - Buffer volume `collector-data` retains telemetry during MQTT outages
-- Managed inventory is stored at `/data/managed-inventory.yaml` and is owner-only
 - Prefer registry image tags in production; build-from-source is a skeleton default
 - Do not commit community strings or production passwords

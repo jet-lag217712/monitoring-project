@@ -225,15 +225,6 @@ Use structured logs with site/device identifiers, profile, state transition, rea
 - Capture Cisco and Arista lab fixtures and confirm model-specific OID mappings before coding profiles.
 - Exit: contract and database/API/collector migration sequence are reviewed; all producers/consumers have compatibility tests planned.
 
-Phase 0 artifacts:
-
-- [`collector-1.md`](../decisions/collector-1.md) — envelope, health taxonomy, transition model, ownership, migration, and test decisions.
-- [`docs/schemas/snmp-collector-v2/`](../../docs/schemas/snmp-collector-v2/) — Draft 2020-12 event schemas and sanitized examples.
-- [`docs/architecture/contracts.md`](../../docs/architecture/contracts.md) — transport contract, units, compatibility, and security rules.
-- [`docs/architecture/snmp-vendor-mappings.md`](../../docs/architecture/snmp-vendor-mappings.md) — official evidence matrix and lab-fixture gate.
-
-Official MIB documentation is sufficient for the Phase 0 mapping matrix. Sanitized Cisco and Arista lab fixtures remain a required gate before Phase 2 profile implementation; no live credentials or device-sensitive captures are committed.
-
 ### Phase 1 — Runtime configuration and inventory foundation
 
 - Introduce merged static/managed inventories, `community_env` references, atomic managed writes, full validation CLI, and reload snapshots.

@@ -19,8 +19,6 @@ type Collector struct {
 	PollTotal                  prometheus.Counter
 	PollSuccessTotal           prometheus.Counter
 	PollFailureTotal           *prometheus.CounterVec
-	ConfigReloadSuccessTotal   prometheus.Counter
-	ConfigReloadFailureTotal   prometheus.Counter
 }
 
 // New registers all collector metrics on the default Prometheus registerer.
@@ -44,14 +42,6 @@ func NewWithRegisterer(reg prometheus.Registerer) *Collector {
 			Name: "collector_poll_failure_total",
 			Help: "Total number of failed device polls",
 		}, []string{"device_id", "error_class"}),
-		ConfigReloadSuccessTotal: mustCounter(factory, prometheus.CounterOpts{
-			Name: "collector_config_reload_success_total",
-			Help: "Total number of successful configuration reloads",
-		}),
-		ConfigReloadFailureTotal: mustCounter(factory, prometheus.CounterOpts{
-			Name: "collector_config_reload_failure_total",
-			Help: "Total number of failed configuration reloads",
-		}),
 		BufferDepth: mustGauge(factory, prometheus.GaugeOpts{
 			Name: "collector_buffer_depth",
 			Help: "Current local buffer depth",

@@ -12,7 +12,6 @@ services:
     environment:
       MQTT_BROKER: ${MQTT_BROKER:?}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?}
-      SNMP_COMMUNITY_CORE_SWITCH: ${SNMP_COMMUNITY_CORE_SWITCH:?}
     volumes:
       - ./configs/collector.yaml:/configs/collector.yaml:ro
       - ./certs/ca.crt:/certs/ca.crt:ro

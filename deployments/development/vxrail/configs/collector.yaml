@@ -1,8 +1,7 @@
-# On-site inventory template. Replace hosts and set SNMP_COMMUNITY_* env refs before deploy.
+# Production on-site inventory template. Replace hosts and community before deploy.
+# Prefer SNMP_COMMUNITY_{DEVICE_ID} env overrides for secrets in real deployments.
 
 site_id: "site-CHANGE_ME"
-collector:
-  id: "collector-development-vxrail"
 poll_interval: 30s
 max_workers: 10
 
@@ -36,55 +35,52 @@ mqtt:
     initial: 1s
     max: 60s
 
-inventory:
-  managed_path: "/data/managed-inventory.yaml"
-
 devices:
   - id: "do-core"
     host: "10.255.0.1"
     port: 161
-    community_env: "SNMP_COMMUNITY_DO_CORE"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-a-mdf"
     host: "10.255.0.11"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_MDF"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-a-idf1"
     host: "10.255.0.12"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_IDF1"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-a-idf2"
     host: "10.255.0.13"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_IDF2"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-b-mdf"
     host: "10.255.0.21"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_B_MDF"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-c-mdf"
     host: "10.255.0.31"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_C_MDF"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"
 
   - id: "site-c-idf1"
     host: "10.255.0.32"
     port: 161
-    community_env: "SNMP_COMMUNITY_SITE_C_IDF1"
+    community: "EquateMonitor"
     version: "2c"
     vendor: "cisco"

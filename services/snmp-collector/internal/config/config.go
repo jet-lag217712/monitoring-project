@@ -1,47 +1,12 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"math"
-	"net"
-	"net/url"
 	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
-)
-
-const (
-	defaultPollInterval       = 60 * time.Second
-	defaultMaxWorkers         = 10
-	defaultSNMPTimeout        = 5 * time.Second
-	defaultSNMPRetries        = 2
-	defaultPublisherTimeout   = 10 * time.Second
-	defaultHeartbeatInterval  = 60 * time.Second
-	defaultTemperatureWarning = 65.0
-	defaultFailureThreshold   = 2
-
-	maxPollInterval       = 24 * time.Hour
-	maxSNMPTimeout        = 5 * time.Minute
-	maxRetries            = 10
-	maxWorkers            = 1024
-	maxDiscoveryTargets   = 1_000_000
-	maxDiscoveryRate      = 100_000.0
-	maxDiscoveryBurst     = 100_000
-	maxTemperatureCelsius = 250.0
-	minTemperatureCelsius = -100.0
-)
-
-var (
-	identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	envNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 // Config is the collector runtime configuration.
@@ -50,10 +15,6 @@ type Config struct {
 	PollInterval time.Duration `yaml:"poll_interval"`
 	MaxWorkers   int           `yaml:"max_workers"`
 
-	Collector CollectorConfig `yaml:"collector"`
-	Inventory InventoryConfig `yaml:"inventory"`
-	Health    HealthConfig    `yaml:"health"`
-	Discovery DiscoveryConfig `yaml:"discovery"`
 	Admin     AdminConfig     `yaml:"admin"`
 	SNMP      SNMPConfig      `yaml:"snmp"`
 	Publisher PublisherConfig `yaml:"publisher"`
@@ -61,36 +22,6 @@ type Config struct {
 	MQTT      MQTTConfig      `yaml:"mqtt"`
 
 	Devices []DeviceConfig `yaml:"devices"`
-
-	configPath string
-}
-
-// CollectorConfig contains stable collector identity and heartbeat settings.
-type CollectorConfig struct {
-	ID                string        `yaml:"id"`
-	HeartbeatInterval time.Duration `yaml:"heartbeat_interval"`
-}
-
-// InventoryConfig controls the optional TUI-managed inventory source.
-type InventoryConfig struct {
-	ManagedPath string `yaml:"managed_path"`
-}
-
-// HealthConfig contains policies consumed by the later health phase.
-type HealthConfig struct {
-	TemperatureWarningC float64 `yaml:"temperature_warning_c"`
-	FailureThreshold    int     `yaml:"failure_threshold"`
-}
-
-// DiscoveryConfig contains validated discovery policy without implementing scans.
-type DiscoveryConfig struct {
-	AllowedCIDRs       []string      `yaml:"allowed_cidrs"`
-	MaxTargets         int           `yaml:"max_targets"`
-	Timeout            time.Duration `yaml:"timeout"`
-	Retries            int           `yaml:"retries"`
-	MaxWorkers         int           `yaml:"max_workers"`
-	MaxProbesPerSecond float64       `yaml:"max_probes_per_second"`
-	ProbeBurst         int           `yaml:"probe_burst"`
 }
 
 // PublisherConfig selects the publish backend and poller publish timeout.
@@ -145,220 +76,56 @@ type SNMPConfig struct {
 
 // DeviceConfig describes a single SNMP poll target.
 type DeviceConfig struct {
-	ID           string `yaml:"id"`
-	Host         string `yaml:"host"`
-	Port         uint16 `yaml:"port"`
-	CommunityEnv string `yaml:"community_env"`
-	Version      string `yaml:"version"`
-	Vendor       string `yaml:"vendor"`
-
-	PollInterval        time.Duration         `yaml:"poll_interval"`
-	Timeout             time.Duration         `yaml:"timeout"`
-	Retries             int                   `yaml:"retries"`
-	TemperatureWarningC *float64              `yaml:"temperature_warning_c"`
-	UpstreamDeviceIDs   []string              `yaml:"upstream_device_ids"`
-	InterfaceFilters    InterfaceFilterConfig `yaml:"interface_filters"`
+	ID        string `yaml:"id"`
+	Host      string `yaml:"host"`
+	Port      uint16 `yaml:"port"`
+	Community string `yaml:"community"`
+	Version   string `yaml:"version"`
+	Vendor    string `yaml:"vendor"`
 }
 
-// InterfaceFilterConfig contains ordered rules and roadmap shorthand filters.
-type InterfaceFilterConfig struct {
-	Rules []InterfaceFilterRule `yaml:"rules"`
-
-	IncludeIfIndexes     []int    `yaml:"include_if_indexes"`
-	ExcludeIfIndexes     []int    `yaml:"exclude_if_indexes"`
-	IncludeNameRegex     []string `yaml:"include_name_regex"`
-	ExcludeNameRegex     []string `yaml:"exclude_name_regex"`
-	IncludeAliasRegex    []string `yaml:"include_alias_regex"`
-	ExcludeAliasRegex    []string `yaml:"exclude_alias_regex"`
-	IncludeTypes         []string `yaml:"include_types"`
-	ExcludeTypes         []string `yaml:"exclude_types"`
-	IncludeAdminStatuses []string `yaml:"include_admin_statuses"`
-	ExcludeAdminStatuses []string `yaml:"exclude_admin_statuses"`
-	IncludeOperStatuses  []string `yaml:"include_oper_statuses"`
-	ExcludeOperStatuses  []string `yaml:"exclude_oper_statuses"`
-}
-
-// InterfaceFilterRule is an ordered include/exclude matcher.
-type InterfaceFilterRule struct {
-	Action      string `yaml:"action"`
-	IfIndex     *int   `yaml:"if_index"`
-	NameRegex   string `yaml:"name_regex"`
-	AliasRegex  string `yaml:"alias_regex"`
-	IfType      string `yaml:"if_type"`
-	AdminStatus string `yaml:"admin_status"`
-	OperStatus  string `yaml:"oper_status"`
-}
-
-// ManagedInventory is the on-disk shape written by local operator tooling.
-type ManagedInventory struct {
-	Devices []DeviceConfig `yaml:"devices"`
-}
-
-// Load reads and validates a collector config file for daemon startup.
+// Load reads and validates a collector config file.
 func Load(path string) (*Config, error) {
-	return load(path, true)
-}
-
-// LoadForValidation reads and validates a config without requiring secret values.
-func LoadForValidation(path string) (*Config, error) {
-	return load(path, false)
-}
-
-func load(path string, requireRuntimeSecrets bool) (*Config, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("config path is required")
-	}
-	if err := validateSourceFile(path, false); err != nil {
-		return nil, fmt.Errorf("config file: %w", err)
-	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
 	var cfg Config
-	if err := decodeYAML(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	cfg.configPath, err = filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("resolve config path: %w", err)
-	}
 	cfg.applyDefaults()
 	cfg.applyEnvOverrides()
 
-	staticDevices := append([]DeviceConfig(nil), cfg.Devices...)
-	if err := validateDeviceSource(staticDevices, "devices"); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
-	}
-
-	managedDevices, err := loadManagedInventory(cfg.Inventory.ManagedPath, cfg.configPath)
-	if err != nil {
-		return nil, err
-	}
-	applyDeviceDefaults(managedDevices)
-	if err := validateDeviceSource(managedDevices, "managed devices"); err != nil {
-		return nil, err
-	}
-
-	cfg.Devices = mergeInventories(staticDevices, managedDevices)
-	if err := cfg.validate(false); err != nil {
-		return nil, err
-	}
-	if requireRuntimeSecrets {
-		if err := cfg.validateRuntimeSecrets(); err != nil {
-			return nil, err
-		}
 	}
 	return &cfg, nil
 }
 
-func decodeYAML(data []byte, dst any) error {
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(dst); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err == nil {
-		return errors.New("multiple YAML documents are not supported")
-	} else if !errors.Is(err, io.EOF) {
-		return err
-	}
-	return nil
-}
-
-func loadManagedInventory(path, configPath string) ([]DeviceConfig, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, nil
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(filepath.Dir(configPath), path)
-	}
-	path = filepath.Clean(path)
-
-	if err := validateSourceFile(path, true); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("managed inventory: %w", err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read managed inventory: %w", err)
-	}
-	var inventory ManagedInventory
-	if err := decodeYAML(data, &inventory); err != nil {
-		return nil, fmt.Errorf("parse managed inventory: %w", err)
-	}
-	return inventory.Devices, nil
-}
-
-func validateSourceFile(path string, managed bool) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("must be a regular file")
-	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("must not be group/world writable")
-	}
-	if managed && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("managed inventory must be owner-only (0600)")
-	}
-	return nil
-}
-
-func mergeInventories(staticDevices, managedDevices []DeviceConfig) []DeviceConfig {
-	merged := make([]DeviceConfig, 0, len(staticDevices)+len(managedDevices))
-	staticIDs := make(map[string]struct{}, len(staticDevices))
-	for _, device := range staticDevices {
-		merged = append(merged, device)
-		staticIDs[device.ID] = struct{}{}
-	}
-	for _, device := range managedDevices {
-		if _, exists := staticIDs[device.ID]; exists {
-			continue
-		}
-		merged = append(merged, device)
-	}
-	return merged
-}
-
 func (c *Config) applyDefaults() {
 	if c.PollInterval == 0 {
-		c.PollInterval = defaultPollInterval
+		c.PollInterval = 60 * time.Second
 	}
 	if c.MaxWorkers == 0 {
-		c.MaxWorkers = defaultMaxWorkers
-	}
-	if c.Collector.HeartbeatInterval == 0 {
-		c.Collector.HeartbeatInterval = defaultHeartbeatInterval
-	}
-	if c.Health.TemperatureWarningC == 0 {
-		c.Health.TemperatureWarningC = defaultTemperatureWarning
-	}
-	if c.Health.FailureThreshold == 0 {
-		c.Health.FailureThreshold = defaultFailureThreshold
+		c.MaxWorkers = 10
 	}
 	if c.Admin.Listen == "" {
 		c.Admin.Listen = ":9090"
 	}
 	if c.SNMP.Timeout == 0 {
-		c.SNMP.Timeout = defaultSNMPTimeout
+		c.SNMP.Timeout = 5 * time.Second
 	}
 	if c.SNMP.Retries == 0 {
-		c.SNMP.Retries = defaultSNMPRetries
+		c.SNMP.Retries = 2
 	}
 	if c.Publisher.Mode == "" {
 		c.Publisher.Mode = "stdout"
 	}
 	if c.Publisher.Timeout == 0 {
-		c.Publisher.Timeout = defaultPublisherTimeout
+		c.Publisher.Timeout = 10 * time.Second
 	}
 	if c.Buffer.Path == "" {
 		c.Buffer.Path = "buffer.db"
@@ -390,28 +157,43 @@ func (c *Config) applyDefaults() {
 	if c.MQTT.Reconnect.Max == 0 {
 		c.MQTT.Reconnect.Max = 60 * time.Second
 	}
-	if c.Discovery.ProbeBurst == 0 && c.Discovery.MaxProbesPerSecond > 0 {
-		c.Discovery.ProbeBurst = 1
-	}
-	applyDeviceDefaults(c.Devices)
-}
-
-func applyDeviceDefaults(devices []DeviceConfig) {
-	for i := range devices {
-		if devices[i].Port == 0 {
-			devices[i].Port = 161
+	for i := range c.Devices {
+		if c.Devices[i].Port == 0 {
+			c.Devices[i].Port = 161
 		}
-		if devices[i].Version == "" {
-			devices[i].Version = "2c"
+		if c.Devices[i].Version == "" {
+			c.Devices[i].Version = "2c"
+		}
+		if c.Devices[i].Community == "" {
+			c.Devices[i].Community = "public"
 		}
 	}
 }
 
-// applyEnvOverrides replaces non-secret MQTT settings from the environment.
+// applyEnvOverrides replaces secrets and optional MQTT settings from the environment.
 func (c *Config) applyEnvOverrides() {
+	for i := range c.Devices {
+		key := communityEnvKey(c.Devices[i].ID)
+		if v := os.Getenv(key); v != "" {
+			c.Devices[i].Community = v
+		}
+	}
 	if v := os.Getenv("MQTT_BROKER"); v != "" {
 		c.MQTT.Broker = v
 	}
+}
+
+func communityEnvKey(deviceID string) string {
+	var b strings.Builder
+	b.WriteString("SNMP_COMMUNITY_")
+	for _, r := range strings.ToUpper(deviceID) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
 }
 
 // MQTTPassword returns the MQTT password from the configured environment variable.
@@ -428,47 +210,19 @@ func MQTTInsecureSkipVerify() bool {
 	return v == "1" || v == "true" || v == "yes"
 }
 
-// Validate checks the configuration without requiring secret values.
+// Validate checks required fields and uniqueness constraints.
 func (c *Config) Validate() error {
-	return c.validate(false)
-}
-
-func (c *Config) validate(requireRuntimeSecrets bool) error {
 	if strings.TrimSpace(c.SiteID) == "" {
 		return fmt.Errorf("site_id is required")
 	}
-	if !identifierPattern.MatchString(c.SiteID) {
-		return fmt.Errorf("site_id has invalid format")
+	if c.PollInterval <= 0 {
+		return fmt.Errorf("poll_interval must be positive")
 	}
-	if strings.TrimSpace(c.Collector.ID) == "" {
-		return fmt.Errorf("collector.id is required")
+	if c.MaxWorkers <= 0 {
+		return fmt.Errorf("max_workers must be positive")
 	}
-	if !identifierPattern.MatchString(c.Collector.ID) {
-		return fmt.Errorf("collector.id has invalid format")
-	}
-	if c.PollInterval <= 0 || c.PollInterval > maxPollInterval {
-		return fmt.Errorf("poll_interval must be between 1ns and %s", maxPollInterval)
-	}
-	if c.MaxWorkers <= 0 || c.MaxWorkers > maxWorkers {
-		return fmt.Errorf("max_workers must be between 1 and %d", maxWorkers)
-	}
-	if c.Collector.HeartbeatInterval <= 0 || c.Collector.HeartbeatInterval > maxPollInterval {
-		return fmt.Errorf("collector.heartbeat_interval must be between 1ns and %s", maxPollInterval)
-	}
-	if c.Health.TemperatureWarningC < minTemperatureCelsius || c.Health.TemperatureWarningC > maxTemperatureCelsius {
-		return fmt.Errorf("health.temperature_warning_c must be between %.0f and %.0f", minTemperatureCelsius, maxTemperatureCelsius)
-	}
-	if c.Health.FailureThreshold <= 0 || c.Health.FailureThreshold > maxRetries+1 {
-		return fmt.Errorf("health.failure_threshold must be between 1 and %d", maxRetries+1)
-	}
-	if c.SNMP.Timeout <= 0 || c.SNMP.Timeout > maxSNMPTimeout {
-		return fmt.Errorf("snmp.timeout must be between 1ns and %s", maxSNMPTimeout)
-	}
-	if c.SNMP.Retries < 0 || c.SNMP.Retries > maxRetries {
-		return fmt.Errorf("snmp.retries must be between 0 and %d", maxRetries)
-	}
-	if c.Publisher.Timeout <= 0 || c.Publisher.Timeout > maxSNMPTimeout {
-		return fmt.Errorf("publisher.timeout must be between 1ns and %s", maxSNMPTimeout)
+	if c.Publisher.Timeout <= 0 {
+		return fmt.Errorf("publisher.timeout must be positive")
 	}
 	switch c.Publisher.Mode {
 	case "stdout", "mqtt":
@@ -480,27 +234,25 @@ func (c *Config) validate(requireRuntimeSecrets bool) error {
 			return err
 		}
 	}
-	if err := validateDiscovery(c.Discovery); err != nil {
-		return err
-	}
 	if len(c.Devices) == 0 {
 		return fmt.Errorf("at least one device is required")
 	}
-	if err := validateDeviceSource(c.Devices, "devices"); err != nil {
-		return err
-	}
-	if err := validateInventoryUniqueness(c.Devices); err != nil {
-		return err
-	}
-	if err := validateDependencies(c.Devices); err != nil {
-		return err
-	}
-	return nil
-}
 
-func (c *Config) validateRuntimeSecrets() error {
-	if c.Publisher.Mode == "mqtt" && c.MQTTPassword() == "" {
-		return fmt.Errorf("environment variable %q is required when publisher.mode is mqtt", c.MQTT.PasswordEnv)
+	seen := make(map[string]struct{}, len(c.Devices))
+	for i, d := range c.Devices {
+		if strings.TrimSpace(d.ID) == "" {
+			return fmt.Errorf("devices[%d].id is required", i)
+		}
+		if strings.TrimSpace(d.Host) == "" {
+			return fmt.Errorf("devices[%d].host is required", i)
+		}
+		if d.Version != "2c" {
+			return fmt.Errorf("devices[%d].version: only \"2c\" is supported", i)
+		}
+		if _, ok := seen[d.ID]; ok {
+			return fmt.Errorf("duplicate device id %q", d.ID)
+		}
+		seen[d.ID] = struct{}{}
 	}
 	return nil
 }
@@ -509,15 +261,14 @@ func (c *Config) validateMQTT() error {
 	if strings.TrimSpace(c.MQTT.Broker) == "" {
 		return fmt.Errorf("mqtt.broker is required when publisher.mode is mqtt")
 	}
-	u, err := url.Parse(c.MQTT.Broker)
-	if err != nil || u.Scheme != "tls" || u.Hostname() == "" {
-		return fmt.Errorf("mqtt.broker must be a tls URL with a host")
-	}
 	if strings.TrimSpace(c.MQTT.Username) == "" {
 		return fmt.Errorf("mqtt.username is required when publisher.mode is mqtt")
 	}
-	if err := validateEnvName(c.MQTT.PasswordEnv, "mqtt.password_env"); err != nil {
-		return err
+	if strings.TrimSpace(c.MQTT.PasswordEnv) == "" {
+		return fmt.Errorf("mqtt.password_env is required when publisher.mode is mqtt")
+	}
+	if c.MQTTPassword() == "" {
+		return fmt.Errorf("environment variable %q is required when publisher.mode is mqtt", c.MQTT.PasswordEnv)
 	}
 	if c.MQTT.QoS != 1 {
 		return fmt.Errorf("mqtt.qos must be 1")
@@ -531,397 +282,15 @@ func (c *Config) validateMQTT() error {
 	if c.Buffer.BatchSize <= 0 {
 		return fmt.Errorf("buffer.batch_size must be positive")
 	}
-	if c.Buffer.IdleBackoff <= 0 {
-		return fmt.Errorf("buffer.idle_backoff must be positive")
-	}
 	if c.MQTT.Reconnect.Initial <= 0 || c.MQTT.Reconnect.Max <= 0 {
 		return fmt.Errorf("mqtt.reconnect.initial and max must be positive")
 	}
 	if c.MQTT.Reconnect.Max < c.MQTT.Reconnect.Initial {
 		return fmt.Errorf("mqtt.reconnect.max must be >= initial")
 	}
-	if strings.TrimSpace(c.MQTT.TLS.CAFile) == "" && !MQTTInsecureSkipVerify() {
+	insecure := MQTTInsecureSkipVerify()
+	if strings.TrimSpace(c.MQTT.TLS.CAFile) == "" && !insecure {
 		return fmt.Errorf("mqtt.tls.ca_file is required unless MQTT_TLS_INSECURE is set")
-	}
-	if (c.MQTT.TLS.CertFile == "") != (c.MQTT.TLS.KeyFile == "") {
-		return fmt.Errorf("mqtt.tls.cert_file and key_file must be configured together")
-	}
-	return nil
-}
-
-func validateDeviceSource(devices []DeviceConfig, source string) error {
-	seenIDs := make(map[string]struct{}, len(devices))
-	seenHosts := make(map[string]struct{}, len(devices))
-	for i, d := range devices {
-		prefix := fmt.Sprintf("%s[%d]", source, i)
-		if strings.TrimSpace(d.ID) == "" {
-			return fmt.Errorf("%s.id is required", prefix)
-		}
-		if !identifierPattern.MatchString(d.ID) {
-			return fmt.Errorf("%s.id has invalid format", prefix)
-		}
-		if strings.TrimSpace(d.Host) == "" {
-			return fmt.Errorf("%s.host is required", prefix)
-		}
-		if d.Port == 0 {
-			return fmt.Errorf("%s.port must be between 1 and 65535", prefix)
-		}
-		if d.Version != "2c" {
-			return fmt.Errorf("%s.version: only \"2c\" is supported", prefix)
-		}
-		if err := validateEnvName(d.CommunityEnv, prefix+".community_env"); err != nil {
-			return err
-		}
-		switch strings.ToLower(strings.TrimSpace(d.Vendor)) {
-		case "", "core", "cisco", "arista":
-		default:
-			return fmt.Errorf("%s.vendor must be empty, core, cisco, or arista", prefix)
-		}
-		if _, ok := seenIDs[d.ID]; ok {
-			return fmt.Errorf("duplicate device id %q in %s", d.ID, source)
-		}
-		seenIDs[d.ID] = struct{}{}
-		host := canonicalHost(d.Host)
-		if _, ok := seenHosts[host]; ok {
-			return fmt.Errorf("duplicate device host %q in %s", d.Host, source)
-		}
-		seenHosts[host] = struct{}{}
-		if d.PollInterval < 0 || d.PollInterval > maxPollInterval {
-			return fmt.Errorf("%s.poll_interval must be between 0 and %s", prefix, maxPollInterval)
-		}
-		if d.Timeout < 0 || d.Timeout > maxSNMPTimeout {
-			return fmt.Errorf("%s.timeout must be between 0 and %s", prefix, maxSNMPTimeout)
-		}
-		if d.Retries < 0 || d.Retries > maxRetries {
-			return fmt.Errorf("%s.retries must be between 0 and %d", prefix, maxRetries)
-		}
-		if d.TemperatureWarningC != nil && (*d.TemperatureWarningC < minTemperatureCelsius || *d.TemperatureWarningC > maxTemperatureCelsius) {
-			return fmt.Errorf("%s.temperature_warning_c must be between %.0f and %.0f", prefix, minTemperatureCelsius, maxTemperatureCelsius)
-		}
-		if err := validateInterfaceFilters(d.InterfaceFilters, prefix+".interface_filters"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateEnvName(value, field string) error {
-	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("%s is required", field)
-	}
-	if !envNamePattern.MatchString(value) {
-		return fmt.Errorf("%s must be a valid environment variable name", field)
-	}
-	return nil
-}
-
-func validateInventoryUniqueness(devices []DeviceConfig) error {
-	seenIDs := make(map[string]struct{}, len(devices))
-	seenHosts := make(map[string]struct{}, len(devices))
-	for _, d := range devices {
-		if _, ok := seenIDs[d.ID]; ok {
-			return fmt.Errorf("duplicate device id %q", d.ID)
-		}
-		seenIDs[d.ID] = struct{}{}
-		host := canonicalHost(d.Host)
-		if _, ok := seenHosts[host]; ok {
-			return fmt.Errorf("duplicate device host %q", d.Host)
-		}
-		seenHosts[host] = struct{}{}
-	}
-	return nil
-}
-
-func canonicalHost(host string) string {
-	host = strings.TrimSpace(strings.TrimSuffix(host, "."))
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.String()
-	}
-	return strings.ToLower(host)
-}
-
-func validateDependencies(devices []DeviceConfig) error {
-	byID := make(map[string]DeviceConfig, len(devices))
-	for _, device := range devices {
-		byID[device.ID] = device
-	}
-	for _, device := range devices {
-		seen := make(map[string]struct{}, len(device.UpstreamDeviceIDs))
-		for _, upstream := range device.UpstreamDeviceIDs {
-			if _, duplicate := seen[upstream]; duplicate {
-				return fmt.Errorf("device %q has duplicate upstream_device_id %q", device.ID, upstream)
-			}
-			seen[upstream] = struct{}{}
-			if upstream == device.ID {
-				return fmt.Errorf("device %q cannot reference itself as an upstream", device.ID)
-			}
-			if _, exists := byID[upstream]; !exists {
-				return fmt.Errorf("device %q references missing upstream %q", device.ID, upstream)
-			}
-		}
-	}
-
-	const (
-		unvisited = 0
-		visiting  = 1
-		visited   = 2
-	)
-	state := make(map[string]int, len(devices))
-	var visit func(string, []string) error
-	visit = func(id string, path []string) error {
-		switch state[id] {
-		case visiting:
-			return fmt.Errorf("dependency cycle detected at device %q", id)
-		case visited:
-			return nil
-		}
-		state[id] = visiting
-		path = append(path, id)
-		for _, upstream := range byID[id].UpstreamDeviceIDs {
-			if err := visit(upstream, path); err != nil {
-				return err
-			}
-		}
-		state[id] = visited
-		return nil
-	}
-	ids := make([]string, 0, len(byID))
-	for id := range byID {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		if err := visit(id, nil); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateDiscovery(discovery DiscoveryConfig) error {
-	if len(discovery.AllowedCIDRs) == 0 && discovery.MaxTargets == 0 && discovery.Timeout == 0 && discovery.Retries == 0 && discovery.MaxWorkers == 0 && discovery.MaxProbesPerSecond == 0 && discovery.ProbeBurst == 0 {
-		return nil
-	}
-	if discovery.MaxTargets <= 0 || discovery.MaxTargets > maxDiscoveryTargets {
-		return fmt.Errorf("discovery.max_targets must be between 1 and %d", maxDiscoveryTargets)
-	}
-	if discovery.Timeout <= 0 || discovery.Timeout > maxSNMPTimeout {
-		return fmt.Errorf("discovery.timeout must be between 1ns and %s", maxSNMPTimeout)
-	}
-	if discovery.Retries < 0 || discovery.Retries > maxRetries {
-		return fmt.Errorf("discovery.retries must be between 0 and %d", maxRetries)
-	}
-	if discovery.MaxWorkers <= 0 || discovery.MaxWorkers > maxWorkers {
-		return fmt.Errorf("discovery.max_workers must be between 1 and %d", maxWorkers)
-	}
-	if discovery.MaxProbesPerSecond <= 0 || math.IsNaN(discovery.MaxProbesPerSecond) || math.IsInf(discovery.MaxProbesPerSecond, 0) || discovery.MaxProbesPerSecond > maxDiscoveryRate {
-		return fmt.Errorf("discovery.max_probes_per_second must be positive and <= %.0f", maxDiscoveryRate)
-	}
-	if discovery.ProbeBurst <= 0 || discovery.ProbeBurst > maxDiscoveryBurst {
-		return fmt.Errorf("discovery.probe_burst must be between 1 and %d", maxDiscoveryBurst)
-	}
-	for i, cidr := range discovery.AllowedCIDRs {
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
-			return fmt.Errorf("discovery.allowed_cidrs[%d] is invalid: %w", i, err)
-		}
-	}
-	return nil
-}
-
-var validInterfaceStates = map[string]struct{}{
-	"up": {}, "down": {}, "testing": {}, "unknown": {},
-}
-
-var validInterfaceTypes = map[string]struct{}{
-	"other": {}, "ethernetcsmacd": {}, "ieee8023adlag": {}, "l2vlan": {},
-	"softwareloopback": {}, "propvirtual": {}, "tunnel": {}, "bridge": {},
-	"ieee80211": {}, "fddi": {}, "ppp": {}, "framerelay": {}, "atm": {},
-}
-
-func validateInterfaceFilters(filters InterfaceFilterConfig, field string) error {
-	for name, indexes := range map[string][]int{
-		"include_if_indexes": filters.IncludeIfIndexes,
-		"exclude_if_indexes": filters.ExcludeIfIndexes,
-	} {
-		for i, index := range indexes {
-			if index <= 0 {
-				return fmt.Errorf("%s.%s[%d] must be positive", field, name, i)
-			}
-		}
-	}
-	for name, patterns := range map[string][]string{
-		"include_name_regex":  filters.IncludeNameRegex,
-		"exclude_name_regex":  filters.ExcludeNameRegex,
-		"include_alias_regex": filters.IncludeAliasRegex,
-		"exclude_alias_regex": filters.ExcludeAliasRegex,
-	} {
-		for i, pattern := range patterns {
-			if _, err := regexp.Compile(pattern); err != nil {
-				return fmt.Errorf("%s.%s[%d] invalid regex: %w", field, name, i, err)
-			}
-		}
-	}
-	for name, types := range map[string][]string{
-		"include_types": filters.IncludeTypes,
-		"exclude_types": filters.ExcludeTypes,
-	} {
-		for i, value := range types {
-			if err := validateInterfaceType(value); err != nil {
-				return fmt.Errorf("%s.%s[%d]: %w", field, name, i, err)
-			}
-		}
-	}
-	for name, states := range map[string][]string{
-		"include_admin_statuses": filters.IncludeAdminStatuses,
-		"exclude_admin_statuses": filters.ExcludeAdminStatuses,
-		"include_oper_statuses":  filters.IncludeOperStatuses,
-		"exclude_oper_statuses":  filters.ExcludeOperStatuses,
-	} {
-		for i, state := range states {
-			if _, ok := validInterfaceStates[strings.ToLower(state)]; !ok {
-				return fmt.Errorf("%s.%s[%d] has unsupported state %q", field, name, i, state)
-			}
-		}
-	}
-	for i, rule := range filters.Rules {
-		prefix := fmt.Sprintf("%s.rules[%d]", field, i)
-		if rule.Action != "include" && rule.Action != "exclude" {
-			return fmt.Errorf("%s.action must be include or exclude", prefix)
-		}
-		if rule.IfIndex != nil && *rule.IfIndex <= 0 {
-			return fmt.Errorf("%s.if_index must be positive", prefix)
-		}
-		matched := rule.IfIndex != nil
-		for name, pattern := range map[string]string{"name_regex": rule.NameRegex, "alias_regex": rule.AliasRegex} {
-			if pattern == "" {
-				continue
-			}
-			matched = true
-			if _, err := regexp.Compile(pattern); err != nil {
-				return fmt.Errorf("%s.%s invalid regex: %w", prefix, name, err)
-			}
-		}
-		if rule.IfType != "" {
-			matched = true
-			if err := validateInterfaceType(rule.IfType); err != nil {
-				return fmt.Errorf("%s.if_type: %w", prefix, err)
-			}
-		}
-		for name, state := range map[string]string{"admin_status": rule.AdminStatus, "oper_status": rule.OperStatus} {
-			if state == "" {
-				continue
-			}
-			matched = true
-			if _, ok := validInterfaceStates[strings.ToLower(state)]; !ok {
-				return fmt.Errorf("%s.%s has unsupported state %q", prefix, name, state)
-			}
-		}
-		if !matched {
-			return fmt.Errorf("%s must contain at least one matcher", prefix)
-		}
-	}
-	return nil
-}
-
-func validateInterfaceType(value string) error {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized == "" {
-		return errors.New("interface type is required")
-	}
-	if _, ok := validInterfaceTypes[normalized]; ok {
-		return nil
-	}
-	if n := parsePositiveInt(normalized); n > 0 && n <= 255 {
-		return nil
-	}
-	return fmt.Errorf("unsupported interface type %q", value)
-}
-
-func parsePositiveInt(value string) int {
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// EffectivePollInterval returns the device interval or the shared default.
-func (d DeviceConfig) EffectivePollInterval(global time.Duration) time.Duration {
-	if d.PollInterval > 0 {
-		return d.PollInterval
-	}
-	return global
-}
-
-// EffectiveSNMP returns shared SNMP settings with device overrides applied.
-func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
-	if d.Timeout > 0 {
-		shared.Timeout = d.Timeout
-	}
-	if d.Retries > 0 {
-		shared.Retries = d.Retries
-	}
-	return shared
-}
-
-// WriteManagedInventory atomically persists a secret-free managed inventory.
-func WriteManagedInventory(path string, devices []DeviceConfig) error {
-	if strings.TrimSpace(path) == "" {
-		return errors.New("managed inventory path is required")
-	}
-	normalized := append([]DeviceConfig(nil), devices...)
-	applyDeviceDefaults(normalized)
-	if err := validateDeviceSource(normalized, "managed devices"); err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create managed inventory directory: %w", err)
-	}
-	tmp, err := os.CreateTemp(dir, ".managed-inventory-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create managed inventory temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpName)
-		}
-	}()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		return fmt.Errorf("set managed inventory permissions: %w", err)
-	}
-	encoder := yaml.NewEncoder(tmp)
-	if err := encoder.Encode(ManagedInventory{Devices: normalized}); err != nil {
-		_ = encoder.Close()
-		return fmt.Errorf("encode managed inventory: %w", err)
-	}
-	if err := encoder.Close(); err != nil {
-		return fmt.Errorf("close managed inventory encoder: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("sync managed inventory: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close managed inventory: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace managed inventory: %w", err)
-	}
-	cleanup = false
-	directory, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("open managed inventory directory: %w", err)
-	}
-	if err := directory.Sync(); err != nil {
-		_ = directory.Close()
-		return fmt.Errorf("sync managed inventory directory: %w", err)
-	}
-	if err := directory.Close(); err != nil {
-		return fmt.Errorf("close managed inventory directory: %w", err)
 	}
 	return nil
 }

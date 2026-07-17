@@ -3,8 +3,6 @@ package snmp
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
@@ -22,15 +20,11 @@ func NewClient(device config.DeviceConfig, snmpCfg config.SNMPConfig) (*Client, 
 	if device.Version != "2c" {
 		return nil, fmt.Errorf("unsupported SNMP version %q", device.Version)
 	}
-	community := os.Getenv(device.CommunityEnv)
-	if strings.TrimSpace(community) == "" {
-		return nil, fmt.Errorf("SNMP community environment variable %q is not set", device.CommunityEnv)
-	}
 
 	params := &gosnmp.GoSNMP{
 		Target:    device.Host,
 		Port:      device.Port,
-		Community: community,
+		Community: device.Community,
 		Version:   gosnmp.Version2c,
 		Timeout:   snmpCfg.Timeout,
 		Retries:   snmpCfg.Retries,

@@ -2,7 +2,7 @@
 
 Self-hosted Docker Compose with **every** service in one project. Use this for quick validation on a client site (or any single host with Docker and reachable SNMP devices).
 
-**No SNMP simulator.** Point [`configs/collector.yaml`](configs/collector.yaml) at real devices and set the referenced `SNMP_COMMUNITY_*` variables before acceptance.
+**No SNMP simulator.** Point [`configs/collector.yaml`](configs/collector.yaml) at real devices before acceptance.
 
 ## Services
 

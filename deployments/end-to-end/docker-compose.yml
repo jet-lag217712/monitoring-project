@@ -92,13 +92,6 @@ services:
     environment:
       MQTT_BROKER: tls://mosquitto:8883
       MQTT_PASSWORD: ${MQTT_COLLECTOR_PASSWORD:-secret}
-      SNMP_COMMUNITY_DO_CORE: ${SNMP_COMMUNITY_DO_CORE:-}
-      SNMP_COMMUNITY_SITE_A_MDF: ${SNMP_COMMUNITY_SITE_A_MDF:-}
-      SNMP_COMMUNITY_SITE_A_IDF1: ${SNMP_COMMUNITY_SITE_A_IDF1:-}
-      SNMP_COMMUNITY_SITE_A_IDF2: ${SNMP_COMMUNITY_SITE_A_IDF2:-}
-      SNMP_COMMUNITY_SITE_B_MDF: ${SNMP_COMMUNITY_SITE_B_MDF:-}
-      SNMP_COMMUNITY_SITE_C_MDF: ${SNMP_COMMUNITY_SITE_C_MDF:-}
-      SNMP_COMMUNITY_SITE_C_IDF1: ${SNMP_COMMUNITY_SITE_C_IDF1:-}
     volumes:
       - ./configs/collector.yaml:/configs/collector.yaml:ro
       - ../../infrastructure/docker/mqtt-broker/certs/ca.crt:/certs/ca.crt:ro

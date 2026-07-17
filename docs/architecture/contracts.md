@@ -2,27 +2,11 @@
 
 ## Status and ownership
 
-This document defines the v2 telemetry contract described by the [SNMP
-Collector v2 roadmap](../../.ai/roadmap/snmp-collector-v2.md). The machine-
-readable source is [`docs/schemas/snmp-collector-v2/`](../schemas/snmp-collector-v2/).
-The Phase 0 ownership and transition decision is recorded in
-[`collector-1.md`](../../.ai/decisions/collector-1.md).
+This is the canonical v2 telemetry contract. It implements the agreed roadmap in [`.ai/roadmap/snmp-collector-v2.md`](../../.ai/roadmap/snmp-collector-v2.md). During migration, ingestion accepts the documented v1 routes while v2 producers and consumers are rolled out; new collection uses the v2 routes below.
 
-The SNMP Collector owns polling-path evidence and local health evaluation.
-Ingestion owns validation, deduplication, persistence, and MQTT ACK decisions.
-PostgreSQL is the system of record. MQTT/TLS is only the authenticated,
-outbound delivery mechanism.
+MQTT/TLS is the delivery mechanism. PostgreSQL is the system of record. Every v2 message is QoS 1, durably queued in the collector's SQLite outbox, and may be delivered more than once.
 
-## Routes and compatibility
-
-Current v1 routes remain accepted during migration:
-
-```text
-site/{site_id}/device/{device_id}/metric/device
-site/{site_id}/device/{device_id}/metric/interface
-```
-
-V2 uses explicit versioned routes:
+## Routes
 
 ```text
 site/{site_id}/device/{device_id}/telemetry/v2/device
@@ -31,234 +15,156 @@ site/{site_id}/device/{device_id}/telemetry/v2/health
 site/{site_id}/collector/{collector_id}/telemetry/v2/heartbeat
 ```
 
-Route identifiers are authoritative. Ingestion cross-checks them against
-envelope identifiers and rejects mismatch, malformed IDs, unknown schema
-versions, unsupported units, invalid transitions, stale timestamps, and
-unknown event types.
+Ingestion validates the route shape and cross-checks every route identifier against the body. It rejects unknown schema versions, invalid IDs, malformed or stale timestamps, unknown metric units, invalid health transitions, and any route/body mismatch.
 
-## Formal event envelope
+## Shared envelope
 
-Every v2 event has this envelope:
+Every v2 payload contains these fields:
 
 ```json
 {
   "schema_version": "2.0",
-  "event_id": "018f3e2c-7a9d-7b20-8f63-1e2d3c4b5a60",
-  "event_type": "device_telemetry",
+  "event_id": "018f...",
   "site_id": "site-001",
   "collector_id": "collector-west-01",
-  "device_id": "dist-01",
   "observed_at": "2026-07-16T18:00:00Z",
   "emitted_at": "2026-07-16T18:00:02Z",
-  "config_revision": "revision-2026-07-16-001",
-  "payload": {}
+  "config_revision": "sha256:..."
 }
 ```
 
-`event_id` is generated before durable enqueue and is unique per observation.
-`observed_at` controls ordering and current-state updates; `emitted_at` records
-publication timing and cannot overwrite a newer observation. `config_revision`
-is non-secret. Device, interface, and health events require `device_id`; a
-heartbeat does not.
-
-All event schemas use JSON Schema Draft 2020-12, closed event shapes, and the
-literal `schema_version` `2.0`. Additive changes require compatibility review;
-incompatible changes require a new schema version and rollout decision.
-
-## Metric units
-
-| Metric or component unit | Meaning |
-|---|---|
-| `seconds` | Device uptime in seconds. |
-| `percent` | CPU or memory utilization from 0 through 100. |
-| `celsius` | Temperature value in degrees Celsius. |
-| `state` | A power component state value; status remains authoritative. |
-| `watts`, `volts`, `amps` | Numeric power-supply readings in the named unit. |
-| `octets` | Interface byte counters. |
-| `count` | Interface errors, discards, or other integer counters. |
-
-The collector omits unavailable vendor readings. It never emits fabricated zero
-values to represent an unsupported OID.
+`event_id` is a stable event UUID generated before durable enqueue. `observed_at` is when the reading or state was observed; `emitted_at` is when the collector formed the message. `config_revision` is non-secret. Device and interface payloads also include `device_id`; heartbeat payloads include `collector_id` and do not use a device route.
 
 ## Device telemetry
 
-The device event contains normalized identity, detected profile/capabilities,
-core uptime, optional vendor scalar readings, and individual temperature/power
-components. The complete shape is defined by
-[`device-event.schema.json`](../schemas/snmp-collector-v2/device-event.schema.json).
+The device payload contains normalized identity and scalar readings, plus component data rather than fabricated aggregate sensor values.
 
 ```json
 {
   "schema_version": "2.0",
-  "event_id": "018f3e2c-7a9d-7b20-8f63-1e2d3c4b5a60",
-  "event_type": "device_telemetry",
+  "event_id": "018f...",
   "site_id": "site-001",
-  "collector_id": "collector-west-01",
   "device_id": "dist-01",
+  "collector_id": "collector-west-01",
   "observed_at": "2026-07-16T18:00:00Z",
   "emitted_at": "2026-07-16T18:00:02Z",
-  "config_revision": "revision-2026-07-16-001",
-  "payload": {
-    "identity": {
-      "hostname": "dist-01",
-      "sys_object_id": "1.3.6.1.4.1.9.1.9999",
-      "sys_name": "dist-01",
-      "sys_descr": "Sanitized lab fixture",
-      "vendor": "cisco",
-      "model": "sanitized-model",
-      "serial": "sanitized-serial",
-      "snmp_version": "2c"
-    },
-    "profile": {
-      "name": "cisco",
-      "capabilities": ["cpu", "memory", "temperature", "power"]
-    },
-    "readings": {
-      "uptime_seconds": 12345,
-      "cpu_utilization_pct": 34.2,
-      "memory_utilization_pct": 61,
-      "primary_temperature_c": 52.5
-    },
-    "temperature_components": [],
-    "power_components": []
-  }
+  "config_revision": "sha256:...",
+  "identity": {
+    "hostname": "dist-01",
+    "sys_object_id": "1.3.6.1.4.1...",
+    "sys_descr": "...",
+    "vendor": "cisco",
+    "model": "...",
+    "serial": "...",
+    "profile": "cisco",
+    "capabilities": ["cpu", "memory", "temperature", "power"]
+  },
+  "readings": {
+    "uptime_seconds": 12345,
+    "cpu_utilization_pct": 34.2,
+    "memory_utilization_pct": 61.0,
+    "primary_temperature_c": 52.5
+  },
+  "temperature_components": [
+    {"name": "inlet", "index": "1", "value": 52.5, "unit": "celsius", "status": "ok", "observed_at": "2026-07-16T18:00:00Z"}
+  ],
+  "power_components": [
+    {"name": "PSU 1", "index": "1", "value": 1, "unit": "state", "status": "ok", "observed_at": "2026-07-16T18:00:00Z"}
+  ]
 }
 ```
+
+Core SNMPv2-MIB and IF-MIB data are available for every supported device. Cisco and Arista profiles add capabilities only when their fingerprinted mapping succeeds. Unsupported devices use the core profile and omit unavailable readings; they never publish guessed zero values. Component source OIDs are available only to local operator diagnostics, never to cloud clients.
 
 ## Interface telemetry
 
-An interface event carries one selected interface, its metadata, status, speed,
-and counters. Filtering occurs before emission. The complete shape is defined
-by [`interface-event.schema.json`](../schemas/snmp-collector-v2/interface-event.schema.json).
+One interface payload carries its identity, selected IF-MIB metadata, counters, errors, speed, and administrative/operational state.
 
 ```json
 {
   "schema_version": "2.0",
-  "event_id": "018f3e2c-7a9d-7b20-8f63-1e2d3c4b5a61",
-  "event_type": "interface_telemetry",
+  "event_id": "018f...",
   "site_id": "site-001",
-  "collector_id": "collector-west-01",
   "device_id": "dist-01",
+  "collector_id": "collector-west-01",
   "observed_at": "2026-07-16T18:00:00Z",
   "emitted_at": "2026-07-16T18:00:02Z",
-  "config_revision": "revision-2026-07-16-001",
-  "payload": {
-    "interface": {
-      "if_index": 2,
-      "name": "GigabitEthernet1/0/1",
-      "alias": "Sanitized uplink",
-      "type": "ethernetCsmacd",
-      "admin_status": "up",
-      "oper_status": "up",
-      "speed_bps": 1000000000
-    },
-    "counters": {
-      "in_octets": 123,
-      "out_octets": 456,
-      "in_errors": 0,
-      "out_errors": 0,
-      "in_discards": 0,
-      "out_discards": 0
-    }
+  "config_revision": "sha256:...",
+  "interface": {
+    "if_index": 2,
+    "name": "GigabitEthernet1/0/1",
+    "alias": "AP-Uplink",
+    "type": "ethernetCsmacd",
+    "admin_status": "up",
+    "oper_status": "up",
+    "speed_bps": 1000000000
+  },
+  "counters": {
+    "in_octets": 123,
+    "out_octets": 456,
+    "in_errors": 0,
+    "out_errors": 0
   }
 }
 ```
 
-## Health state and reason taxonomy
+Only interfaces selected after configured filtering are emitted. The collector records selection and exclusion counts/reasons locally without high-cardinality metric labels.
 
-| State | Meaning |
-|---|---|
-| `healthy` | Device responded and temperature is below its active threshold. |
-| `warning` | Device responded and temperature is at or above its active threshold. |
-| `critical` | Device is directly unreachable after the consecutive-failure threshold. |
-| `unknown` | Every configured upstream path is unavailable, so dependent reachability is unknown. |
+## Health telemetry
 
-Public reason codes are:
+Health is evaluated by the collector because it alone observes the polling path and locally managed dependency policy. The valid states are `healthy`, `warning`, `critical`, and `unknown`.
 
-- `reachable`
-- `temperature_threshold`
-- `direct_unreachable`
-- `upstream_unreachable`
-- `recovered`
-
-Pending failures do not create a new terminal state. They retain the prior
-state and are represented by failure-count evidence and operational metrics.
-
-## Health transition model
-
-```text
-unobserved --success/below threshold--> healthy
-unobserved --success/at threshold----> warning
-healthy    --temperature threshold---> warning
-warning    --temperature recovery----> healthy
-any state  --direct failure threshold-> critical
-any state  --all upstream paths fail--> unknown
-critical   --successful poll----------> healthy or warning
-unknown    --successful poll----------> healthy or warning
+```json
+{
+  "schema_version": "2.0",
+  "event_id": "018f...",
+  "site_id": "site-001",
+  "device_id": "access-01",
+  "collector_id": "collector-west-01",
+  "observed_at": "2026-07-16T18:00:00Z",
+  "emitted_at": "2026-07-16T18:00:02Z",
+  "config_revision": "sha256:...",
+  "state": "unknown",
+  "reason": "upstream_unreachable",
+  "failure_count": 2,
+  "temperature_warning_c": 65,
+  "temperature_policy_revision": "policy:7",
+  "upstream_device_ids": ["dist-01", "dist-02"],
+  "unavailable_upstream_device_ids": ["dist-01", "dist-02"],
+  "root_cause_device_ids": ["core-01"]
+}
 ```
 
-Every device is polled independently. A failed device with at least one
-successfully polled configured upstream is direct failure evidence. A dependent
-becomes `unknown` only when all configured upstream paths are unavailable.
-Health evidence includes previous state, transition type, failure count,
-threshold, temperature policy, upstream IDs, unavailable upstream IDs, and root
-cause IDs. CPU, memory, and power never drive v2 health state.
-
-The complete shape is defined by
-[`health-event.schema.json`](../schemas/snmp-collector-v2/health-event.schema.json).
+`warning` is a reachable device at or over its temperature threshold. A direct poll failure becomes `critical` only after the configured consecutive-failure threshold (default two). A failed dependent becomes `unknown` with `upstream_unreachable` only when every configured upstream is Critical or already upstream-unreachable. CPU, memory, and power do not change v2 health. Pending failures retain the prior terminal state and are recorded as evidence, not as a new state transition.
 
 ## Collector heartbeat
 
-The collector publishes an initial successful-startup heartbeat and a periodic
-heartbeat using the same envelope. The complete shape is defined by
-[`heartbeat-event.schema.json`](../schemas/snmp-collector-v2/heartbeat-event.schema.json).
+The collector emits a heartbeat on initial successful startup and at the configured interval (default 60 seconds). It uses the shared envelope and adds:
 
-The payload includes `hostname`, `version`, `git_commit`, `build_time`,
-`uptime_seconds`, `sqlite_queue_depth`, `memory_usage_bytes`, and
-`goroutine_count`. Local builds use `unknown` for unavailable build metadata.
-Delayed heartbeats remain historical telemetry but cannot overwrite a newer
-collector-status observation.
+```json
+{
+  "collector_id": "collector-west-01",
+  "hostname": "collector-host",
+  "version": "v2.0.0",
+  "git_commit": "abc123",
+  "build_time": "2026-07-16T12:00:00Z",
+  "uptime_seconds": 3600,
+  "sqlite_queue_depth": 14,
+  "memory_usage_bytes": 12345678,
+  "goroutine_count": 42
+}
+```
 
-Heartbeats must not contain process arguments, filesystem paths, environment
-values, credentials, raw memory, or payload bodies.
-
-## Ownership boundaries
-
-| Component | Owns | Does not own |
-|---|---|---|
-| SNMP Collector | Polling, profile detection, normalization, local health, event creation, SQLite outbox | Cloud persistence, public API, dashboard behavior |
-| MQTT/TLS transport | Authentication, delivery, QoS 1, reconnect, transport buffering | Schema meaning, health decisions, persistence |
-| Ingestion Service | Validation, topic/body checks, deduplication, database transactions, ACK decisions | SNMP polling, dashboard presentation |
-| PostgreSQL | Authoritative inventory, samples, health, dependency, collector state/history | SNMP access or message delivery |
-| Backend API | Read-only projections and compatibility responses | Polling or re-evaluating collector health |
-| React dashboard | API adaptation and visual treatment | Direct collector/database access or health inference |
-| Local TUI/control socket | Local operator status and approved control actions | Public management paths or secret exposure |
-| Contract schemas | Versioned producer/consumer interface | Runtime ownership of event semantics |
+Local builds use `unknown` for unavailable build metadata. A delayed heartbeat remains historical telemetry but cannot overwrite a current collector-status row with a newer `observed_at`. Heartbeats must not include arguments, paths, environment values, credentials, raw memory, or payload content.
 
 ## Delivery, idempotency, and migration
 
-The collector durably enqueues before publication and removes an outbox row
-only after broker success. Ingestion processes each event as:
+The collector enqueues before publication and removes an outbox item only after broker acknowledgment. Ingestion processes each message as `validate → deduplicate → upsert inventory/state and samples → commit → MQTT acknowledge`. Invalid or permanently unsupported messages are acknowledged and recorded as rejected; transaction failures are not acknowledged.
 
-```text
-MQTT receive → validate → deduplicate → transaction → MQTT acknowledge
-```
+`event_id` provides v2 message deduplication. Natural keys continue to protect sample inserts: device metrics use device, metric type, and observation time; interface samples use interface and observation time. State/history writes are idempotent by event ID. Ingestion is deployed and verified before v2 collection is enabled; v1 routes remain supported through the documented migration window.
 
-Invalid non-retryable messages are acknowledged and logged as rejected.
-Duplicates are acknowledged without changing state. Database failures are not
-acknowledged so QoS 1 redelivery occurs. V2 uses `event_id` deduplication while
-retaining natural sample keys: device metrics use device, metric type, and
-observation time; interface samples use interface and observation time.
+## REST compatibility
 
-The rollout is additive: apply storage changes and deploy ingestion support;
-verify compatibility; enable v2 producers with v1 consumption retained; run
-dual-publish validation; then cut over and deprecate v1 publishing through a
-separately reviewed change. Initial v2 retention is append-only with no
-automated deletion or archival. Time-based indexes are required; partitioning
-or archival requires a later measured-capacity decision.
+The API remains read-only for cloud clients. Numeric device status remains compatible: `0` unknown, `1` healthy, `2` warning, `3` critical. Responses that expose health must include `status_reason`, `upstream_device_ids`, `unavailable_upstream_device_ids`, and `root_cause_device_ids` when applicable.
 
-## Security
-
-No route or payload may contain SNMP communities, TLS material, environment
-values, credentials, filesystem paths, process arguments, raw memory, or other
-secrets.
+No route or payload may contain SNMP community strings, TLS material, environment values, or other secrets.

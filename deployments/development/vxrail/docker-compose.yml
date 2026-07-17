@@ -12,13 +12,6 @@ services:
     environment:
       MQTT_BROKER: ${MQTT_BROKER:?}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?}
-      SNMP_COMMUNITY_DO_CORE: ${SNMP_COMMUNITY_DO_CORE:?}
-      SNMP_COMMUNITY_SITE_A_MDF: ${SNMP_COMMUNITY_SITE_A_MDF:?}
-      SNMP_COMMUNITY_SITE_A_IDF1: ${SNMP_COMMUNITY_SITE_A_IDF1:?}
-      SNMP_COMMUNITY_SITE_A_IDF2: ${SNMP_COMMUNITY_SITE_A_IDF2:?}
-      SNMP_COMMUNITY_SITE_B_MDF: ${SNMP_COMMUNITY_SITE_B_MDF:?}
-      SNMP_COMMUNITY_SITE_C_MDF: ${SNMP_COMMUNITY_SITE_C_MDF:?}
-      SNMP_COMMUNITY_SITE_C_IDF1: ${SNMP_COMMUNITY_SITE_C_IDF1:?}
     volumes:
       - ./configs/collector.yaml:/configs/collector.yaml:ro
       - ./certs/ca.crt:/certs/ca.crt:ro

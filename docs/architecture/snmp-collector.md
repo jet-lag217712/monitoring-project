@@ -12,11 +12,11 @@ Its public operational surfaces are scrape-only `/metrics`, liveness `/healthz`,
 
 ## Inventory and configuration
 
-The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. Static entries are authoritative when the same device ID appears in both sources; unique managed entries are appended. Duplicate IDs within a source and duplicate host/IP identities in the active merged result are rejected. The collector atomically activates validated configuration snapshots. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload.
+The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. It validates uniqueness of stable device ID and IP across the merged result, then atomically activates a configuration snapshot. The sources use an explicit precedence policy; the roadmap does not yet select a source as the universal winner, so an implementation must document that policy rather than silently resolving a collision. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload.
 
-Every device uses `version: 2c`, a `community_env` reference (never a plaintext community), optional per-device poll overrides, optional `temperature_warning_c`, interface-filter rules, and zero or more `upstream_device_ids`. Dependency IDs reference stable devices, never IPs. The merged graph must be an acyclic DAG: duplicate/self/missing references and cycles are rejected.
+Every device uses `version: 2c`, a `community_env` reference (never a plaintext production community), optional per-device poll overrides, optional `temperature_warning_c`, interface-filter rules, and zero or more `upstream_device_ids`. Dependency IDs reference stable devices, never IPs. The merged graph must be an acyclic DAG: duplicate/self/missing references and cycles are rejected.
 
-`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. SIGHUP and a later local TUI action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot. Site/collector identity, admin, publisher, MQTT, and buffer settings remain startup-only during Phase 1.
+`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. SIGHUP and a local TUI action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot.
 
 ## Polling, profiles, and health
 
@@ -37,12 +37,3 @@ The TUI provides inventory, device/interface, discovery, thresholds, transport, 
 The collector retains MQTT/TLS QoS 1, a durable SQLite outbox, and at-least-once delivery. Device, interface, health, and heartbeat events use the v2 contract in [`contracts.md`](contracts.md). The periodic heartbeat carries collector identity/build/runtime information and outbox depth without secrets.
 
 `/readyz` requires a valid active configuration, available buffer, and usable publisher (connected MQTT in MQTT mode); polling and buffering continue during a broker outage. Logs are structured and redact communities, certificates, credentials, payloads, and secret-derived values. Metrics retain polling/buffer/MQTT coverage and add bounded-cardinality coverage for configuration reload, profiles, discovery, interface selection, health/dependency impact, heartbeat, and readiness.
-
-## Phase 0 contract artifacts
-
-The formal envelope and event schemas are in
-[`docs/schemas/snmp-collector-v2/`](../schemas/snmp-collector-v2/). The
-collector decision record is [`collector-1.md`](../../.ai/decisions/collector-1.md),
-and Cisco/Arista evidence is tracked in
-[`snmp-vendor-mappings.md`](snmp-vendor-mappings.md). These artifacts define
-the producer boundary before runtime profile or health code is added.
