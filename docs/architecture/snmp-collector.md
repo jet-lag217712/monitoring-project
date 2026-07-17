@@ -12,11 +12,11 @@ Its public operational surfaces are scrape-only `/metrics`, liveness `/healthz`,
 
 ## Inventory and configuration
 
-The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. It validates uniqueness of stable device ID and IP across the merged result, then atomically activates a configuration snapshot. The sources use an explicit precedence policy; the roadmap does not yet select a source as the universal winner, so an implementation must document that policy rather than silently resolving a collision. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload.
+The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. Static entries are authoritative when the same device ID appears in both sources; unique managed entries are appended. Duplicate IDs within a source and duplicate host/IP identities in the active merged result are rejected. The collector atomically activates validated configuration snapshots. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload.
 
-Every device uses `version: 2c`, a `community_env` reference (never a plaintext production community), optional per-device poll overrides, optional `temperature_warning_c`, interface-filter rules, and zero or more `upstream_device_ids`. Dependency IDs reference stable devices, never IPs. The merged graph must be an acyclic DAG: duplicate/self/missing references and cycles are rejected.
+Every device uses `version: 2c`, a `community_env` reference (never a plaintext community), optional per-device poll overrides, optional `temperature_warning_c`, interface-filter rules, and zero or more `upstream_device_ids`. Dependency IDs reference stable devices, never IPs. The merged graph must be an acyclic DAG: duplicate/self/missing references and cycles are rejected.
 
-`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. SIGHUP and a local TUI action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot.
+`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. SIGHUP and a later local TUI action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot. Site/collector identity, admin, publisher, MQTT, and buffer settings remain startup-only during Phase 1.
 
 ## Polling, profiles, and health
 
