@@ -1,8 +1,9 @@
 # SNMP Collector v2 JSON Schemas
 
 These Draft 2020-12 schemas are the machine-readable contract for v2 MQTT
-events. They are documentation and compatibility artifacts in Phase 0; no
-runtime producer or consumer uses them yet.
+events. Phase 4 producers (SNMP collector) and consumers (ingestion service)
+validate against this contract at runtime using hand-written Go checks that
+mirror the closed shapes below.
 
 ## Event schemas
 
