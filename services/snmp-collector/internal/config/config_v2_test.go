@@ -352,3 +352,22 @@ func TestEffectiveTemperatureWarningCAndPolicyRevision(t *testing.T) {
 		t.Fatal("expected revision to change with global threshold")
 	}
 }
+
+func TestValidatePendingDependencyMutationDetectsSequentialCycle(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "collector.yaml")
+	managedPath := filepath.Join(root, "managed.yaml")
+	writeFile(t, configPath, "site_id: site-001\ncollector:\n  id: collector-001\ninventory:\n  managed_path: managed.yaml\ndevices:\n  - id: dev-001\n    host: 127.0.0.1\n    community_env: SNMP_COMMUNITY_DEV_001\n  - id: dev-002\n    host: 127.0.0.2\n    community_env: SNMP_COMMUNITY_DEV_002\n", 0o600)
+	writeFile(t, managedPath, "devices:\n  - id: dev-001\n    upstream_device_ids:\n      - dev-002\n", 0o600)
+
+	cfg, err := LoadForValidation(configPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := cfg.ValidatePendingDependencyMutation("dev-002", []string{"dev-001"}); err == nil {
+		t.Fatal("expected cycle detection")
+	}
+	if err := cfg.ValidatePendingDependencyMutation("dev-001", []string{"dev-002"}); err != nil {
+		t.Fatalf("valid upstream mutation: %v", err)
+	}
+}
