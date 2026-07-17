@@ -16,7 +16,7 @@ func TestMetrics_Register(t *testing.T) {
 	if m.MessagesDeduplicated == nil || m.DBWriteFailure == nil {
 		t.Fatal("counters nil")
 	}
-	if m.ProcessingDuration == nil || m.MQTTConnected == nil {
+	if m.ProcessingDuration == nil || m.MQTTConnected == nil || m.MQTTSubscribed == nil {
 		t.Fatal("instruments nil")
 	}
 	// Second registerer must not panic when using a fresh registry.
