@@ -376,15 +376,24 @@ func (s *Server) applyThresholdMutation(params map[string]any) error {
 	if managedPath == "" {
 		return newProtoError(CodeValidationFailed, "inventory.managed_path is not configured")
 	}
-	doc, err := config.ReadManagedDocument(managedPath)
-	if err != nil {
-		return newProtoError(CodeValidationFailed, err.Error())
-	}
 	value, err := asFloat(params["temperature_warning_c"])
 	if err != nil {
 		return newProtoError(CodeValidationFailed, err.Error())
 	}
 	deviceID, _ := params["device_id"].(string)
+	if deviceID != "" {
+		if err := s.validateDeviceInInventory(deviceID); err != nil {
+			return err
+		}
+	}
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	doc, err := config.ReadManagedDocument(managedPath)
+	if err != nil {
+		return newProtoError(CodeValidationFailed, err.Error())
+	}
 	if deviceID == "" {
 		doc.Health.TemperatureWarningC = &value
 	} else {
@@ -421,6 +430,13 @@ func (s *Server) applyDependencyMutation(params map[string]any) error {
 	if err != nil {
 		return newProtoError(CodeValidationFailed, err.Error())
 	}
+	if err := s.validateDependencyTargets(deviceID, upstreams); err != nil {
+		return err
+	}
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
 	doc, err := config.ReadManagedDocument(managedPath)
 	if err != nil {
 		return newProtoError(CodeValidationFailed, err.Error())
@@ -440,6 +456,32 @@ func (s *Server) applyDependencyMutation(params map[string]any) error {
 		})
 	}
 	if err := config.WriteManagedDocument(managedPath, doc); err != nil {
+		return newProtoError(CodeValidationFailed, err.Error())
+	}
+	return nil
+}
+
+func (s *Server) validateDeviceInInventory(deviceID string) error {
+	for _, device := range s.manager.Current().Devices {
+		if device.ID == deviceID {
+			return nil
+		}
+	}
+	return newProtoError(CodeValidationFailed, "device_id not found in active inventory")
+}
+
+func (s *Server) validateDependencyTargets(deviceID string, upstreams []string) error {
+	if err := s.validateDeviceInInventory(deviceID); err != nil {
+		return err
+	}
+	devices := append([]config.DeviceConfig(nil), s.manager.Current().Devices...)
+	for i := range devices {
+		if devices[i].ID == deviceID {
+			devices[i].UpstreamDeviceIDs = append([]string(nil), upstreams...)
+			break
+		}
+	}
+	if err := config.ValidateDependencies(devices); err != nil {
 		return newProtoError(CodeValidationFailed, err.Error())
 	}
 	return nil

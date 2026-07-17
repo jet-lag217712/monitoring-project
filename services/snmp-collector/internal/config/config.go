@@ -829,6 +829,11 @@ func canonicalHost(host string) string {
 	return strings.ToLower(host)
 }
 
+// ValidateDependencies checks upstream references and cycles across a device inventory.
+func ValidateDependencies(devices []DeviceConfig) error {
+	return validateDependencies(devices)
+}
+
 func validateDependencies(devices []DeviceConfig) error {
 	byID := make(map[string]DeviceConfig, len(devices))
 	for _, device := range devices {

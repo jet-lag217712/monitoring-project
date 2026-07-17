@@ -43,8 +43,9 @@ type Server struct {
 
 	pending *pendingStore
 
-	mu       sync.Mutex
-	listener net.Listener
+	mu         sync.Mutex
+	mutationMu sync.Mutex
+	listener   net.Listener
 }
 
 // Options configures a control server.
