@@ -19,6 +19,16 @@ type Collector struct {
 	PollTotal                  prometheus.Counter
 	PollSuccessTotal           prometheus.Counter
 	PollFailureTotal           *prometheus.CounterVec
+	PollDuration               prometheus.Histogram
+	ProfileDetectionTotal      *prometheus.CounterVec
+	ProfileFallbackTotal       prometheus.Counter
+	ProfileCollectionFailure   *prometheus.CounterVec
+	ProfileDuration            prometheus.Histogram
+	InterfaceSelectionTotal    *prometheus.CounterVec
+	DiscoveryAttemptsTotal     prometheus.Counter
+	DiscoveryCandidatesTotal   prometheus.Counter
+	DiscoveryErrorsTotal       prometheus.Counter
+	DiscoveryRateLimitWaits    prometheus.Counter
 	ConfigReloadSuccessTotal   prometheus.Counter
 	ConfigReloadFailureTotal   prometheus.Counter
 }
@@ -44,6 +54,48 @@ func NewWithRegisterer(reg prometheus.Registerer) *Collector {
 			Name: "collector_poll_failure_total",
 			Help: "Total number of failed device polls",
 		}, []string{"device_id", "error_class"}),
+		PollDuration: mustHistogram(factory, prometheus.HistogramOpts{
+			Name:    "collector_poll_duration_seconds",
+			Help:    "Device poll pipeline duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		}),
+		ProfileDetectionTotal: mustCounterVec(factory, prometheus.CounterOpts{
+			Name: "collector_profile_detection_total",
+			Help: "Total profile detections by bounded profile and match kind",
+		}, []string{"profile", "match_kind"}),
+		ProfileFallbackTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_profile_fallback_total",
+			Help: "Total core-only profile fallbacks",
+		}),
+		ProfileCollectionFailure: mustCounterVec(factory, prometheus.CounterOpts{
+			Name: "collector_profile_collection_failure_total",
+			Help: "Total vendor profile collection failures",
+		}, []string{"profile", "error_class"}),
+		ProfileDuration: mustHistogram(factory, prometheus.HistogramOpts{
+			Name:    "collector_profile_duration_seconds",
+			Help:    "Vendor profile collection duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		}),
+		InterfaceSelectionTotal: mustCounterVec(factory, prometheus.CounterOpts{
+			Name: "collector_interface_selection_total",
+			Help: "Total interfaces annotated by bounded filter outcome",
+		}, []string{"outcome"}),
+		DiscoveryAttemptsTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_discovery_attempts_total",
+			Help: "Total discovery probe attempts",
+		}),
+		DiscoveryCandidatesTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_discovery_candidates_total",
+			Help: "Total successful discovery candidates",
+		}),
+		DiscoveryErrorsTotal: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_discovery_errors_total",
+			Help: "Total discovery probe errors",
+		}),
+		DiscoveryRateLimitWaits: mustCounter(factory, prometheus.CounterOpts{
+			Name: "collector_discovery_rate_limit_waits_total",
+			Help: "Total discovery probes delayed by rate limiting",
+		}),
 		ConfigReloadSuccessTotal: mustCounter(factory, prometheus.CounterOpts{
 			Name: "collector_config_reload_success_total",
 			Help: "Total number of successful configuration reloads",
@@ -112,6 +164,12 @@ func mustGauge(reg prometheus.Registerer, opts prometheus.GaugeOpts) prometheus.
 	g := prometheus.NewGauge(opts)
 	reg.MustRegister(g)
 	return g
+}
+
+func mustHistogram(reg prometheus.Registerer, opts prometheus.HistogramOpts) prometheus.Histogram {
+	h := prometheus.NewHistogram(opts)
+	reg.MustRegister(h)
+	return h
 }
 
 // ErrorClassTimeout is used when an SNMP operation times out.

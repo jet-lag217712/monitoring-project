@@ -119,7 +119,7 @@ Each poll first collects the standard identity and IF-MIB data required for all 
 
 Profiles live under `internal/snmp/vendors/{cisco,arista}` and expose a small behavior-focused contract:
 
-- fingerprint matching: `sysObjectID` is authoritative; normalized `sysDescr` is a logged fallback;
+- fingerprint matching: `sysObjectID` is the only selection input; normalized `sysDescr` may be logged for unmatched-device diagnostics but never selects a profile;
 - supported-capability declaration;
 - OID collection and response validation;
 - mapping into vendor-neutral readings with source/OID metadata available only to operator diagnostics.

@@ -1,10 +1,58 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gosnmp/gosnmp"
 )
+
+type fakeGetter struct {
+	packet *gosnmp.SnmpPacket
+	err    error
+}
+
+func (f fakeGetter) Get(_ context.Context, _ []string) (*gosnmp.SnmpPacket, error) {
+	return f.packet, f.err
+}
+
+func TestPollDeviceIdentity(t *testing.T) {
+	t.Parallel()
+
+	identity, err := PollDevice(context.Background(), fakeGetter{packet: &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: OIDSysObjectID, Type: gosnmp.ObjectIdentifier, Value: ".1.3.6.1.4.1.9.1.1745"},
+			{Name: OIDSysName, Type: gosnmp.OctetString, Value: []byte("switch-01")},
+			{Name: OIDSysDescr, Type: gosnmp.OctetString, Value: "Synthetic IOS"},
+			{Name: OIDSysUpTime, Type: gosnmp.TimeTicks, Value: uint32(12345)},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("PollDevice: %v", err)
+	}
+	if identity.SysObjectID != "1.3.6.1.4.1.9.1.1745" ||
+		identity.SysName != "switch-01" ||
+		identity.SysDescr != "Synthetic IOS" ||
+		identity.UptimeSeconds != 123.45 {
+		t.Fatalf("identity=%#v", identity)
+	}
+}
+
+func TestPollDeviceIdentityRejectsUnavailableRequiredScalar(t *testing.T) {
+	t.Parallel()
+
+	_, err := PollDevice(context.Background(), fakeGetter{packet: &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: OIDSysObjectID, Type: gosnmp.NoSuchObject},
+			{Name: OIDSysName, Type: gosnmp.OctetString, Value: "switch-01"},
+			{Name: OIDSysDescr, Type: gosnmp.OctetString, Value: "Synthetic"},
+			{Name: OIDSysUpTime, Type: gosnmp.TimeTicks, Value: uint32(100)},
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected unavailable sysObjectID error")
+	}
+}
 
 func TestTicksToSeconds(t *testing.T) {
 	t.Parallel()

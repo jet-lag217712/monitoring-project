@@ -7,20 +7,28 @@ import (
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/events"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/core"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/readings"
 )
 
 func TestToEventsJSONShape(t *testing.T) {
 	t.Parallel()
 
 	ts := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
-	evs := ToEvents(DeviceReading{
-		SiteID:        "site-001",
-		DeviceID:      "dev-001",
-		IPAddress:     "10.255.0.1",
-		Timestamp:     ts,
-		UptimeSeconds: 86400,
-		Interfaces: []core.InterfaceReading{
-			{IfIndex: 2, InOctets: 123, OutOctets: 456, InErrors: 0, OutErrors: 0},
+	evs := ToEvents(readings.DevicePollResult{
+		SiteID:     "site-001",
+		DeviceID:   "dev-001",
+		IPAddress:  "10.255.0.1",
+		ObservedAt: ts,
+		Identity:   core.DeviceIdentity{UptimeSeconds: 86400},
+		Interfaces: []readings.InterfaceResult{
+			{
+				Reading:   core.InterfaceReading{IfIndex: 2, InOctets: 123, OutOctets: 456, HasCounters: true},
+				Selection: readings.Selected,
+			},
+			{
+				Reading:   core.InterfaceReading{IfIndex: 3, InOctets: 999, OutOctets: 999, HasCounters: true},
+				Selection: readings.ExcludedRule,
+			},
 		},
 	})
 

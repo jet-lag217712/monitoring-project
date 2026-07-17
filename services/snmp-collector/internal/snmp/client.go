@@ -84,7 +84,17 @@ func (c *Client) Walk(ctx context.Context, rootOID string, walkFn gosnmp.WalkFun
 
 // WithTimeout returns a child context bounded by the SNMP client timeout multiplied by (retries + 1).
 func (c *Client) WithTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	timeout := c.params.Timeout * time.Duration(c.params.Retries+1)
+	return c.WithScaledTimeout(ctx, 1)
+}
+
+// WithScaledTimeout returns a child context whose deadline is the single-operation
+// SNMP budget multiplied by scale. Multi-walk stages such as IF-MIB inventory
+// need a larger budget than a single GET.
+func (c *Client) WithScaledTimeout(ctx context.Context, scale int) (context.Context, context.CancelFunc) {
+	if scale < 1 {
+		scale = 1
+	}
+	timeout := c.params.Timeout * time.Duration(c.params.Retries+1) * time.Duration(scale)
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}

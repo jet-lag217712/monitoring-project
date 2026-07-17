@@ -25,6 +25,17 @@ buffer:
 inventory:
   managed_path: "./data/managed-inventory.yaml"
 
+discovery:
+  allowed_cidrs:
+    - "192.0.2.0/30"
+  community_env: "SNMP_DISCOVERY_COMMUNITY"
+  max_targets: 4
+  timeout: 2s
+  retries: 0
+  max_workers: 4
+  max_probes_per_second: 5
+  probe_burst: 2
+
 mqtt:
   broker: "tls://127.0.0.1:8883"
   client_id: "Testing-Site-1"

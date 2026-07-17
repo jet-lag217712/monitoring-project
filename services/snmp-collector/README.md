@@ -40,10 +40,18 @@ Phase 1 adds strict runtime configuration and inventory foundations:
 - atomic managed-inventory writes and transactional `SIGHUP` reloads
 - `collector validate -config …` for secret-value-independent CI/operator validation
 
+Phase 2 adds polling, profiles, and isolated discovery:
+
+- core SNMPv2-MIB identity + IF-MIB inventory/counters (including `ifLastChange`)
+- stage-owned `DevicePollResult` pipeline: Core → Profile → Filter → Normalize → v1 Publisher
+- Cisco/Arista `sysObjectID` detection with static capability flags and fixture-tested enrichment
+- interface filter annotations (`selected` / `excluded_default` / `excluded_rule`)
+- operator-invoked `collector discover` with token-bucket rate limiting; never auto-enrolls devices
+
 The managed inventory file contains only a `devices` list. A configured but
 missing file is treated as empty. Existing managed files must be owner-only
 (`0600`). Publisher, MQTT, buffer, admin, site, and collector identity settings
-remain startup-only during Phase 1.
+remain startup-only.
 
 ## Existing transport status
 
@@ -64,12 +72,28 @@ go run ./cmd/collector -config configs/collector.example.yaml
 
 # Validate without requiring secret values.
 go run ./cmd/collector validate -config configs/collector.example.yaml
+
+# Operator-invoked discovery (isolated from the poll scheduler).
+export SNMP_DISCOVERY_COMMUNITY=REPLACE_ME_LOCALLY
+go run ./cmd/collector discover -config configs/collector.example.yaml -output discovery-candidates.json
+# Review candidates, then either:
+#   go run ./cmd/collector discover export -from reviewed.json -to discovery-export.yaml
+#   go run ./cmd/collector discover accept -config configs/collector.example.yaml -from reviewed.json
+# Accept writes managed inventory only; send SIGHUP to activate.
 ```
 
 Admin endpoints (default `:9090`):
 
 - `GET /metrics` — Prometheus scrape
 - `GET /healthz` — liveness
+
+### Discovery
+
+`collector discover` scans only `discovery.allowed_cidrs`, resolves
+`discovery.community_env` at probe time, and applies the configured token bucket
+before every SNMP probe. It never schedules polling and never auto-enrolls
+devices. Export produces reviewable YAML; accept uses the atomic managed-
+inventory writer and requires a subsequent reload to become active.
 
 ### Publisher modes
 
@@ -145,7 +169,7 @@ The complete configuration is parsed and validated before activation. Invalid
 reloads leave the current polling snapshot unchanged. In-flight polls continue
 using the snapshot they started with.
 
-## Metrics (buffer / MQTT)
+## Metrics (buffer / MQTT / Phase 2)
 
 | Metric | Meaning |
 |--------|---------|
@@ -158,6 +182,15 @@ using the snapshot they started with.
 | `collector_mqtt_publish_failure_total` | Failed publishes |
 | `collector_config_reload_success_total` | Successful SIGHUP reloads |
 | `collector_config_reload_failure_total` | Failed SIGHUP reloads |
+| `collector_profile_detection_total` | Profile matches by name and match kind |
+| `collector_profile_fallback_total` | Core-only fallbacks |
+| `collector_profile_collection_failure_total` | Vendor enrichment failures |
+| `collector_profile_duration_seconds` | Vendor collection duration |
+| `collector_interface_selection_total` | Interfaces by filter outcome |
+| `collector_discovery_attempts_total` | Discovery probe attempts |
+| `collector_discovery_candidates_total` | Successful discovery candidates |
+| `collector_discovery_errors_total` | Failed discovery probes |
+| `collector_discovery_rate_limit_waits_total` | Probes delayed by the token bucket |
 
 ## Local validation without deployment stacks
 

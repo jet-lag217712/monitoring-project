@@ -3,6 +3,7 @@ package poller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -14,7 +15,14 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/publisher"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/core"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/filter"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/profile"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/readings"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/vendors"
 )
+
+// profileWalkBudget covers the largest vendor profile walk count in the registry.
+const profileWalkBudget = 13
 
 // ConfigSource supplies immutable collector configuration snapshots.
 type ConfigSource interface {
@@ -31,10 +39,11 @@ func (s staticConfigSource) Current() *config.Config {
 
 // Poller schedules bounded concurrent device polls.
 type Poller struct {
-	source  ConfigSource
-	pub     publisher.Publisher
-	metrics *metrics.Collector
-	log     *slog.Logger
+	source   ConfigSource
+	pub      publisher.Publisher
+	metrics  *metrics.Collector
+	log      *slog.Logger
+	registry *profile.Registry
 }
 
 // New creates a Poller using a fixed configuration snapshot.
@@ -47,7 +56,13 @@ func NewWithConfigSource(source ConfigSource, pub publisher.Publisher, m *metric
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Poller{source: source, pub: pub, metrics: m, log: log}
+	return &Poller{
+		source:   source,
+		pub:      pub,
+		metrics:  m,
+		log:      log,
+		registry: vendors.NewRegistry(),
+	}
 }
 
 // Run polls due devices until ctx is cancelled. Each device has an independent
@@ -172,6 +187,10 @@ func (p *Poller) pollAll(ctx context.Context, cfg *config.Config, devices []conf
 
 func (p *Poller) pollDevice(ctx context.Context, cfg *config.Config, device config.DeviceConfig) {
 	p.metrics.PollTotal.Inc()
+	started := time.Now()
+	defer func() {
+		p.metrics.PollDuration.Observe(time.Since(started).Seconds())
+	}()
 
 	err := p.doPoll(ctx, cfg, device)
 	if err != nil {
@@ -196,34 +215,94 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 	if err := client.Connect(ctx); err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			p.log.Warn("close SNMP client", "device_id", device.ID, "err", err)
+		}
+	}()
 
-	pollCtx, cancel := client.WithTimeout(ctx)
-	defer cancel()
-
-	uptime, err := core.PollDevice(pollCtx, client)
+	identityCtx, cancelIdentity := client.WithTimeout(ctx)
+	identity, err := core.PollDevice(identityCtx, client)
+	cancelIdentity()
 	if err != nil {
 		return err
 	}
 
-	ifaces, err := core.PollInterfaces(pollCtx, client)
+	interfaceCtx, cancelInterfaces := client.WithScaledTimeout(ctx, core.InterfacePollWalkBudget)
+	ifaces, err := core.PollInterfaces(interfaceCtx, client)
+	cancelInterfaces()
 	if err != nil {
 		return err
 	}
 
-	evs := normalize.ToEvents(normalize.DeviceReading{
-		SiteID:        cfg.SiteID,
-		DeviceID:      device.ID,
-		IPAddress:     device.Host,
-		Timestamp:     time.Now().UTC(),
-		UptimeSeconds: uptime,
-		Interfaces:    ifaces,
-	})
+	result := readings.NewDevicePollResult(
+		cfg.SiteID,
+		device.ID,
+		device.Host,
+		time.Now().UTC(),
+		identity,
+		ifaces,
+	)
+
+	profileCtx, cancelProfile := client.WithScaledTimeout(ctx, profileWalkBudget)
+	p.enrichProfile(profileCtx, client, &result)
+	cancelProfile()
+
+	interfaceFilter, err := filter.New(device.InterfaceFilters)
+	if err != nil {
+		return fmt.Errorf("compile interface filter: %w", err)
+	}
+	interfaceFilter.Apply(&result)
+	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.Selected)).Add(float64(result.Filter.Selected))
+	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedDefault)).Add(float64(result.Filter.ExcludedDefault))
+	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedRule)).Add(float64(result.Filter.ExcludedRule))
+
+	evs := normalize.ToEvents(result)
 
 	publishCtx, cancel := context.WithTimeout(ctx, cfg.Publisher.Timeout)
 	defer cancel()
 
 	return p.pub.Publish(publishCtx, evs...)
+}
+
+// enrichProfile mutates only VendorReadings. Core identity/interfaces stay valid
+// even when every vendor walk fails.
+func (p *Poller) enrichProfile(ctx context.Context, client profile.Client, result *readings.DevicePollResult) {
+	matched, kind := p.registry.Match(result.Identity.SysObjectID)
+	if matched == nil {
+		result.Vendor = readings.VendorReadings{Profile: "core"}
+		p.metrics.ProfileFallbackTotal.Inc()
+		p.metrics.ProfileDetectionTotal.WithLabelValues("core", string(profile.MatchCore)).Inc()
+		p.log.Debug("no vendor profile matched",
+			"device_id", result.DeviceID,
+			"sys_object_id", result.Identity.SysObjectID,
+			"sys_descr", result.Identity.SysDescr,
+		)
+		return
+	}
+
+	p.metrics.ProfileDetectionTotal.WithLabelValues(matched.Name(), string(kind)).Inc()
+	started := time.Now()
+	vendor, err := matched.Collect(ctx, client)
+	p.metrics.ProfileDuration.Observe(time.Since(started).Seconds())
+	if vendor.Profile == "" {
+		vendor.Profile = matched.Name()
+	}
+	if vendor.Capabilities == 0 {
+		vendor.Capabilities = matched.Capabilities()
+	}
+	result.Vendor = vendor
+	if err != nil {
+		class := classifyError(err)
+		p.metrics.ProfileCollectionFailure.WithLabelValues(matched.Name(), class).Inc()
+		p.log.Warn("profile collection failed; retaining core readings",
+			"device_id", result.DeviceID,
+			"profile", matched.Name(),
+			"match_kind", string(kind),
+			"error_class", class,
+			"err", err,
+		)
+	}
 }
 
 func classifyError(err error) string {

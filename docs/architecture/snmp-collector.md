@@ -20,7 +20,7 @@ Every device uses `version: 2c`, a `community_env` reference (never a plaintext 
 
 ## Polling, profiles, and health
 
-A bounded, context-aware worker pool independently polls every configured device. Core SNMPv2-MIB and IF-MIB collection always runs first. Cisco and Arista profiles are selected by authoritative `sysObjectID` (normalized `sysDescr` is a logged fallback) and add fixture-tested CPU, memory, temperature, and power mappings. Profile failures preserve core readings and are reported as profile-collection failures.
+A bounded, context-aware worker pool independently polls every configured device. Core SNMPv2-MIB and IF-MIB collection always runs first, including `sysObjectID`, `sysName`, `sysDescr`, uptime, interface identity/status/speed, `ifLastChange`, and counters. Cisco and Arista profiles are selected only by `sysObjectID`; exact matches precede the longest model-family prefix, then generic enterprise profiles, then core-only fallback. `sysDescr` may be logged for an unmatched device but never selects a profile. Profile failures preserve core readings and are reported as profile-collection failures.
 
 Interface filtering occurs after inventory read and before emission. Ordered rules can match index, name/alias regex, IF-MIB type, and admin/operational status. Defaults exclude virtual interfaces; explicit includes can restore one, and a final exclusion wins.
 
@@ -28,7 +28,7 @@ Health states are `healthy`, `warning`, `critical`, and `unknown`. A successful 
 
 ## Discovery and local administration
 
-`collector discover` and the TUI discovery workflow scan configured CIDR allowlists only. Discovery uses SNMPv2c to read `sysObjectID`, `sysName`, and `sysDescr`, does not use ICMP or device writes, and applies target, timeout, retry, concurrency, and token-bucket rate/burst bounds before every probe. Candidates are reviewable and may be rejected, exported as YAML, or explicitly accepted into managed inventory; discovery never silently activates a device or an LLDP-derived edge.
+`collector discover` scans configured CIDR allowlists only and resolves its SNMP community from `discovery.community_env` at probe time. Discovery uses SNMPv2c to read `sysObjectID`, `sysName`, and `sysDescr`, does not use ICMP or device writes, and applies target, timeout, retry, concurrency, and token-bucket rate/burst bounds before every probe. Candidates are persisted for review and may be exported as YAML or explicitly accepted into managed inventory through the atomic inventory workflow; discovery never silently activates a device or an LLDP-derived edge. The later TUI will use the same isolated workflow.
 
 The TUI provides inventory, device/interface, discovery, thresholds, transport, and configuration views. Mutations require local OS access, explicit confirmation, durable audit entries without secrets, and a save/reload step. It cannot modify static YAML.
 
