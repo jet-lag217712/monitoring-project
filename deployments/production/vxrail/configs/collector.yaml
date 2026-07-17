@@ -1,7 +1,8 @@
-# Production on-site inventory template. Replace hosts and community before deploy.
-# Prefer SNMP_COMMUNITY_{DEVICE_ID} env overrides for secrets in real deployments.
+# On-site inventory template. Replace hosts and set SNMP_COMMUNITY_* env refs before deploy.
 
 site_id: "site-CHANGE_ME"
+collector:
+  id: "collector-production-vxrail"
 poll_interval: 30s
 max_workers: 10
 
@@ -35,10 +36,13 @@ mqtt:
     initial: 1s
     max: 60s
 
+inventory:
+  managed_path: "/data/managed-inventory.yaml"
+
 devices:
   - id: "core-switch"
     host: "CHANGE_ME"
     port: 161
-    community: "CHANGE_ME"
+    community_env: "SNMP_COMMUNITY_CORE_SWITCH"
     version: "2c"
     vendor: "cisco"

@@ -30,9 +30,24 @@ Approved flow:
 SNMP Devices -> SNMP Collector -> Secure Outbound Telemetry Transport
 ```
 
-## Phase 2 status
+## Current v2 status
 
-Phase 2 adds:
+Phase 1 adds strict runtime configuration and inventory foundations:
+
+- static YAML plus optional managed inventory merging (static entries win on duplicate IDs)
+- `community_env` references instead of plaintext SNMP communities
+- dependency, interface-filter, temperature-policy, discovery-policy, and polling validation
+- atomic managed-inventory writes and transactional `SIGHUP` reloads
+- `collector validate -config …` for secret-value-independent CI/operator validation
+
+The managed inventory file contains only a `devices` list. A configured but
+missing file is treated as empty. Existing managed files must be owner-only
+(`0600`). Publisher, MQTT, buffer, admin, site, and collector identity settings
+remain startup-only during Phase 1.
+
+## Existing transport status
+
+The collector retains:
 
 - Durable SQLite buffer (`internal/buffer`)
 - MQTT/TLS publisher with event-driven flusher
@@ -46,6 +61,9 @@ Phase 2 adds:
 cd services/snmp-collector
 go test ./...
 go run ./cmd/collector -config configs/collector.example.yaml
+
+# Validate without requiring secret values.
+go run ./cmd/collector validate -config configs/collector.example.yaml
 ```
 
 Admin endpoints (default `:9090`):
@@ -103,15 +121,29 @@ Optional env overrides:
 | `MQTT_BROKER` | Override `mqtt.broker` |
 | `MQTT_TLS_INSECURE=1` | Skip TLS verify (local/dev only) |
 
-### Community secrets
+### SNMP community environment references
 
-Override per-device communities with env vars (do not commit real communities):
+Each device names the environment variable that supplies its SNMP community.
+The collector resolves the value only when it creates an SNMP session:
 
 ```bash
-export SNMP_COMMUNITY_DEV_001=secret
+export SNMP_COMMUNITY_DEV_001=REPLACE_ME_LOCALLY
 ```
 
-Device IDs are uppercased and non-alphanumeric characters become `_`.
+Do not place the community value in static YAML, managed inventory, logs, or
+deployment files. Validation checks only the environment variable name.
+
+### Reload
+
+Send `SIGHUP` to reload inventory and polling-policy changes without restarting:
+
+```bash
+kill -HUP "$(pidof collector)"
+```
+
+The complete configuration is parsed and validated before activation. Invalid
+reloads leave the current polling snapshot unchanged. In-flight polls continue
+using the snapshot they started with.
 
 ## Metrics (buffer / MQTT)
 
@@ -124,6 +156,8 @@ Device IDs are uppercased and non-alphanumeric characters become `_`.
 | `collector_mqtt_connected` | 1 when connected |
 | `collector_mqtt_publish_total` | Successful publishes |
 | `collector_mqtt_publish_failure_total` | Failed publishes |
+| `collector_config_reload_success_total` | Successful SIGHUP reloads |
+| `collector_config_reload_failure_total` | Failed SIGHUP reloads |
 
 ## Local validation without deployment stacks
 
@@ -131,6 +165,7 @@ Deployment profiles do **not** include an SNMP simulator. For collector-only uni
 
 ```bash
 cd services/snmp-collector
+export SNMP_COMMUNITY_DEV_001=REPLACE_ME_LOCALLY
 go run ./cmd/collector -config configs/collector.example.yaml
 ```
 

@@ -16,63 +16,164 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/core"
 )
 
+// ConfigSource supplies immutable collector configuration snapshots.
+type ConfigSource interface {
+	Current() *config.Config
+}
+
+type staticConfigSource struct {
+	cfg *config.Config
+}
+
+func (s staticConfigSource) Current() *config.Config {
+	return s.cfg
+}
+
 // Poller schedules bounded concurrent device polls.
 type Poller struct {
-	cfg     *config.Config
+	source  ConfigSource
 	pub     publisher.Publisher
 	metrics *metrics.Collector
 	log     *slog.Logger
 }
 
-// New creates a Poller.
+// New creates a Poller using a fixed configuration snapshot.
 func New(cfg *config.Config, pub publisher.Publisher, m *metrics.Collector, log *slog.Logger) *Poller {
+	return NewWithConfigSource(staticConfigSource{cfg: cfg}, pub, m, log)
+}
+
+// NewWithConfigSource creates a Poller backed by a reloadable snapshot source.
+func NewWithConfigSource(source ConfigSource, pub publisher.Publisher, m *metrics.Collector, log *slog.Logger) *Poller {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Poller{cfg: cfg, pub: pub, metrics: m, log: log}
+	return &Poller{source: source, pub: pub, metrics: m, log: log}
 }
 
-// Run polls immediately, then on each poll_interval until ctx is cancelled.
+// Run polls due devices until ctx is cancelled. Each device has an independent
+// schedule, while all work remains bounded by the active global worker limit.
 func (p *Poller) Run(ctx context.Context) {
-	p.pollAll(ctx)
-
-	ticker := time.NewTicker(p.cfg.PollInterval)
-	defer ticker.Stop()
+	nextDue := make(map[string]time.Time)
+	firstCycle := true
 
 	for {
+		cfg := p.source.Current()
+		pruneNextDue(nextDue, cfg.Devices)
+		now := time.Now()
+		due := dueDevices(cfg, nextDue, firstCycle, now)
+		if len(due) > 0 {
+			p.pollAll(ctx, cfg, due)
+			now = time.Now()
+			for _, device := range due {
+				nextDue[device.ID] = now.Add(device.EffectivePollInterval(cfg.PollInterval))
+			}
+			firstCycle = false
+			if ctx.Err() != nil {
+				return
+			}
+			continue
+		}
+
+		wait := nextDueWait(nextDue, now)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case <-ticker.C:
-			p.pollAll(ctx)
+		case <-timer.C:
 		}
 	}
 }
 
-func (p *Poller) pollAll(ctx context.Context) {
-	sem := make(chan struct{}, p.cfg.MaxWorkers)
-	var wg sync.WaitGroup
-
-	for _, device := range p.cfg.Devices {
-		if ctx.Err() != nil {
-			break
+func pruneNextDue(nextDue map[string]time.Time, devices []config.DeviceConfig) {
+	active := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		active[device.ID] = struct{}{}
+	}
+	for id := range nextDue {
+		if _, ok := active[id]; !ok {
+			delete(nextDue, id)
 		}
-		device := device
+	}
+}
+
+func dueDevices(cfg *config.Config, nextDue map[string]time.Time, firstCycle bool, now time.Time) []config.DeviceConfig {
+	if firstCycle {
+		return append([]config.DeviceConfig(nil), cfg.Devices...)
+	}
+	due := make([]config.DeviceConfig, 0, len(cfg.Devices))
+	for _, device := range cfg.Devices {
+		if scheduled, ok := nextDue[device.ID]; !ok || !scheduled.After(now) {
+			due = append(due, device)
+		}
+	}
+	return due
+}
+
+func nextDueWait(nextDue map[string]time.Time, now time.Time) time.Duration {
+	wait := time.Hour
+	for _, scheduled := range nextDue {
+		if scheduled.Before(now) {
+			return 0
+		}
+		if candidate := scheduled.Sub(now); candidate < wait {
+			wait = candidate
+		}
+	}
+	if wait <= 0 {
+		return time.Millisecond
+	}
+	return wait
+}
+
+func (p *Poller) pollAll(ctx context.Context, cfg *config.Config, devices []config.DeviceConfig) {
+	jobs := make(chan config.DeviceConfig)
+	workerCount := cfg.MaxWorkers
+	if workerCount > len(devices) {
+		workerCount = len(devices)
+	}
+	if workerCount < 1 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
-			defer func() { <-sem }()
-			p.pollDevice(ctx, device)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case device, ok := <-jobs:
+					if !ok {
+						return
+					}
+					p.pollDevice(ctx, cfg, device)
+				}
+			}
 		}()
 	}
+
+	for _, device := range devices {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return
+		case jobs <- device:
+		}
+	}
+	close(jobs)
 	wg.Wait()
 }
 
-func (p *Poller) pollDevice(ctx context.Context, device config.DeviceConfig) {
+func (p *Poller) pollDevice(ctx context.Context, cfg *config.Config, device config.DeviceConfig) {
 	p.metrics.PollTotal.Inc()
 
-	err := p.doPoll(ctx, device)
+	err := p.doPoll(ctx, cfg, device)
 	if err != nil {
 		class := classifyError(err)
 		p.metrics.PollFailureTotal.WithLabelValues(device.ID, class).Inc()
@@ -87,8 +188,8 @@ func (p *Poller) pollDevice(ctx context.Context, device config.DeviceConfig) {
 	p.metrics.PollSuccessTotal.Inc()
 }
 
-func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
-	client, err := snmp.NewClient(device, p.cfg.SNMP)
+func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.DeviceConfig) error {
+	client, err := snmp.NewClient(device, device.EffectiveSNMP(cfg.SNMP))
 	if err != nil {
 		return err
 	}
@@ -110,11 +211,8 @@ func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
 		return err
 	}
 
-	// vendor field is reserved for Phase 2+; empty means core-only.
-	_ = device.Vendor
-
 	evs := normalize.ToEvents(normalize.DeviceReading{
-		SiteID:        p.cfg.SiteID,
+		SiteID:        cfg.SiteID,
 		DeviceID:      device.ID,
 		IPAddress:     device.Host,
 		Timestamp:     time.Now().UTC(),
@@ -122,7 +220,7 @@ func (p *Poller) doPoll(ctx context.Context, device config.DeviceConfig) error {
 		Interfaces:    ifaces,
 	})
 
-	publishCtx, cancel := context.WithTimeout(ctx, p.cfg.Publisher.Timeout)
+	publishCtx, cancel := context.WithTimeout(ctx, cfg.Publisher.Timeout)
 	defer cancel()
 
 	return p.pub.Publish(publishCtx, evs...)

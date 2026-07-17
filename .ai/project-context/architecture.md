@@ -14,7 +14,7 @@ The collector produces versioned device, interface, health, and heartbeat teleme
 
 ## Customer OOB Monitoring Plane
 
-The customer plane contains monitored devices plus collector-local operational state: read-only static and TUI-managed inventory, the durable SQLite outbox, and a local Unix-socket status/control service used by the Bubble Tea TUI. The two inventory sources use an explicit precedence policy; the v2 roadmap does not select a universal winner, so implementation documentation must do so before it resolves a collision. The collector polls every configured device independently through a bounded SNMPv2c worker pool, uses core SNMPv2-MIB/IF-MIB plus detected Cisco/Arista profiles, filters interfaces, and evaluates local temperature/dependency health evidence.
+The customer plane contains monitored devices plus collector-local operational state: read-only static and TUI-managed inventory, the durable SQLite outbox, and a local Unix-socket status/control service used by the Bubble Tea TUI. Static inventory is authoritative for duplicate device IDs; unique managed entries are appended, and duplicate active host/IP identities are rejected. The collector polls every configured device independently through a bounded SNMPv2c worker pool, uses core SNMPv2-MIB/IF-MIB plus detected Cisco/Arista profiles, filters interfaces, and evaluates local temperature/dependency health evidence.
 
 It has no inbound cloud management path. `/metrics` is scrape-only; `/healthz` is liveness; `/readyz` reports active configuration, buffer, and publisher readiness. The collector does not host PostgreSQL, the Backend API, cloud ingestion, or user-facing cloud workflows.
 

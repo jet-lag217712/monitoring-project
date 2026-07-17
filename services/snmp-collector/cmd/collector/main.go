@@ -19,6 +19,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "validate" {
+		os.Exit(runValidate(os.Args[2:]))
+	}
+
 	configPath := flag.String("config", "configs/collector.example.yaml", "path to collector config file")
 	flag.Parse()
 
@@ -27,6 +31,11 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Error("load config", "err", err)
+		os.Exit(1)
+	}
+	configManager, err := config.NewManager(*configPath, cfg)
+	if err != nil {
+		log.Error("create config manager", "err", err)
 		os.Exit(1)
 	}
 
@@ -38,6 +47,9 @@ func main() {
 
 	pollCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	reloadCh := make(chan os.Signal, 1)
+	signal.Notify(reloadCh, syscall.SIGHUP)
+	defer signal.Stop(reloadCh)
 
 	pub, shutdownPub, err := buildPublisher(mqttCtx, cfg, m, log)
 	if err != nil {
@@ -45,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := poller.New(cfg, pub, m, log)
+	p := poller.NewWithConfigSource(configManager, pub, m, log)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.Handler())
@@ -77,6 +89,23 @@ func main() {
 	)
 
 	go p.Run(pollCtx)
+	go func() {
+		for {
+			select {
+			case <-pollCtx.Done():
+				return
+			case <-reloadCh:
+				if err := configManager.Reload(); err != nil {
+					m.ConfigReloadFailureTotal.Inc()
+					log.Error("configuration reload failed", "err", err)
+					continue
+				}
+				m.ConfigReloadSuccessTotal.Inc()
+				active := configManager.Current()
+				log.Info("configuration reloaded", "devices", len(active.Devices), "poll_interval", active.PollInterval.String())
+			}
+		}
+	}()
 
 	<-pollCtx.Done()
 	log.Info("shutting down")
@@ -91,6 +120,25 @@ func main() {
 		log.Warn("publisher shutdown", "err", err)
 	}
 	mqttCancel()
+}
+
+func runValidate(args []string) int {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "configs/collector.example.yaml", "path to collector config file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "validate accepts no positional arguments")
+		return 2
+	}
+	if _, err := config.LoadForValidation(*configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "configuration invalid: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stdout, "configuration valid: %s\n", *configPath)
+	return 0
 }
 
 func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Collector, log *slog.Logger) (publisher.Publisher, func(context.Context) error, error) {

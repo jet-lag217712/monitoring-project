@@ -22,6 +22,8 @@ func TestLoadValid(t *testing.T) {
 
 	path := writeTempConfig(t, `
 site_id: "site-001"
+collector:
+  id: "collector-001"
 poll_interval: 30s
 max_workers: 5
 admin:
@@ -33,7 +35,7 @@ devices:
   - id: "dev-001"
     host: "127.0.0.1"
     port: 161
-    community: "public"
+    community_env: "SNMP_COMMUNITY_DEV_001"
     version: "2c"
 `)
 
@@ -56,9 +58,12 @@ func TestValidateMissingSiteID(t *testing.T) {
 	t.Parallel()
 
 	path := writeTempConfig(t, `
+collector:
+  id: "collector-001"
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
+    community_env: "SNMP_COMMUNITY_DEV_001"
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -71,11 +76,15 @@ func TestValidateDuplicateDeviceID(t *testing.T) {
 
 	path := writeTempConfig(t, `
 site_id: "site-001"
+collector:
+  id: "collector-001"
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
+    community_env: "SNMP_COMMUNITY_DEV_001"
   - id: "dev-001"
     host: "127.0.0.2"
+    community_env: "SNMP_COMMUNITY_DEV_002"
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -83,35 +92,31 @@ devices:
 	}
 }
 
-func TestCommunityEnvOverride(t *testing.T) {
+func TestCommunityEnvReference(t *testing.T) {
 	path := writeTempConfig(t, `
 site_id: "site-001"
+collector:
+  id: "collector-001"
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
-    community: "public"
+    community_env: "SNMP_COMMUNITY_DEV_001"
     version: "2c"
 `)
-	t.Setenv("SNMP_COMMUNITY_DEV_001", "secret")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Devices[0].Community != "secret" {
-		t.Fatalf("community=%q, want secret", cfg.Devices[0].Community)
-	}
-}
-
-func TestCommunityEnvKey(t *testing.T) {
-	t.Parallel()
-	if got := communityEnvKey("dev-001"); got != "SNMP_COMMUNITY_DEV_001" {
-		t.Fatalf("got %q", got)
+	if cfg.Devices[0].CommunityEnv != "SNMP_COMMUNITY_DEV_001" {
+		t.Fatalf("community_env=%q", cfg.Devices[0].CommunityEnv)
 	}
 }
 
 func TestMQTTModeRequiresPassword(t *testing.T) {
 	path := writeTempConfig(t, `
 site_id: "site-001"
+collector:
+  id: "collector-001"
 publisher:
   mode: mqtt
   timeout: 5s
@@ -128,6 +133,7 @@ mqtt:
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
+    community_env: "SNMP_COMMUNITY_DEV_001"
     version: "2c"
 `)
 	t.Setenv("MQTT_PASSWORD", "")
@@ -140,6 +146,8 @@ devices:
 func TestMQTTModeValid(t *testing.T) {
 	path := writeTempConfig(t, `
 site_id: "site-001"
+collector:
+  id: "collector-001"
 publisher:
   mode: mqtt
   timeout: 5s
@@ -156,6 +164,7 @@ mqtt:
 devices:
   - id: "dev-001"
     host: "127.0.0.1"
+    community_env: "SNMP_COMMUNITY_DEV_001"
     version: "2c"
 `)
 	t.Setenv("MQTT_PASSWORD", "secret")
