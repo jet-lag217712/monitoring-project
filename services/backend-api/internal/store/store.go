@@ -18,6 +18,9 @@ var ErrNotFound = errors.New("not found")
 // ErrAmbiguous is returned when a lookup matches more than one row.
 var ErrAmbiguous = errors.New("ambiguous")
 
+// DefaultHistoryWindow is the lookback used for embedded device history.
+const DefaultHistoryWindow = 24 * time.Hour
+
 // Store provides read-only access to monitoring data.
 type Store struct {
 	pool *pgxpool.Pool
@@ -66,36 +69,70 @@ type SiteRow struct {
 	Location *string
 }
 
-// DeviceRow is a devices table row with optional latest uptime.
+// DeviceRow is a devices table row with optional latest metrics and health.
 type DeviceRow struct {
-	ID            uuid.UUID
-	SiteID        uuid.UUID
-	SiteName      string
-	Hostname      string
-	IPAddress     string
-	Vendor        string
-	Model         string
-	Status        string
-	LastSeen      *time.Time
-	UptimeSeconds *float64
+	ID             uuid.UUID
+	SiteID         uuid.UUID
+	SiteName       string
+	Hostname       string
+	IPAddress      string
+	Vendor         string
+	Model          string
+	Serial         *string
+	SysObjectID    *string
+	SysName        *string
+	SysDescr       *string
+	ProfileName    *string
+	Capabilities   []string
+	Status         string
+	LastSeen       *time.Time
+	UptimeSeconds  *float64
+	CPUPct         *float64
+	MemoryPct      *float64
+	TemperatureC   *float64
+	HealthPresent  bool
+	HealthState    string
+	HealthReason   string
+	FailureCount   int
+	UpstreamIDs    []string
+	UnavailableIDs []string
+	RootCauseIDs   []string
 }
 
-// InterfaceRow is an interfaces table row.
+// InterfaceRow is an interfaces table row with optional latest sample.
 type InterfaceRow struct {
 	ID          uuid.UUID
 	DeviceID    uuid.UUID
 	IfIndex     int
 	Name        *string
 	Description *string
+	IfAlias     *string
+	IfType      *string
 	AdminStatus *string
 	OperStatus  *string
 	SpeedBps    *int64
+	InOctets    *int64
+	OutOctets   *int64
+	InErrors    *int64
+	OutErrors   *int64
+	InDiscards  *int64
+	OutDiscards *int64
 }
 
 // MetricSampleRow is one metric_samples point.
 type MetricSampleRow struct {
 	CollectedAt time.Time
 	Value       float64
+}
+
+// ComponentRow is a temperature or power component with latest reading.
+type ComponentRow struct {
+	ComponentID string
+	Name        string
+	Index       string
+	Value       *float64
+	Unit        string
+	Status      string
 }
 
 // AlertRow is an alerts table row.
@@ -151,33 +188,9 @@ func (s *Store) GetSiteByName(ctx context.Context, name string) (SiteRow, error)
 	return r, nil
 }
 
-// ListDevicesBySite returns devices for a site UUID, with latest uptime_seconds.
+// ListDevicesBySite returns devices for a site UUID with health and latest scalars.
 func (s *Store) ListDevicesBySite(ctx context.Context, siteID uuid.UUID) ([]DeviceRow, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT
-			d.id,
-			d.site_id,
-			s.name,
-			d.hostname,
-			d.ip_address::text,
-			d.vendor,
-			d.model,
-			d.status,
-			d.last_seen,
-			u.value AS uptime_seconds
-		FROM devices d
-		JOIN sites s ON s.id = d.site_id
-		LEFT JOIN LATERAL (
-			SELECT ms.value
-			FROM metric_samples ms
-			JOIN metric_types mt ON mt.id = ms.metric_type_id
-			WHERE ms.device_id = d.id AND mt.name = 'uptime_seconds'
-			ORDER BY ms.collected_at DESC
-			LIMIT 1
-		) u ON true
-		WHERE d.site_id = $1
-		ORDER BY d.hostname
-	`, siteID)
+	rows, err := s.pool.Query(ctx, deviceSelect+` WHERE d.site_id = $1 ORDER BY d.hostname`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("list devices by site: %w", err)
 	}
@@ -186,32 +199,9 @@ func (s *Store) ListDevicesBySite(ctx context.Context, siteID uuid.UUID) ([]Devi
 	return scanDevices(rows)
 }
 
-// ListAllDevices returns every device with site name and latest uptime.
+// ListAllDevices returns every device with site name, health, and latest scalars.
 func (s *Store) ListAllDevices(ctx context.Context) ([]DeviceRow, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT
-			d.id,
-			d.site_id,
-			s.name,
-			d.hostname,
-			d.ip_address::text,
-			d.vendor,
-			d.model,
-			d.status,
-			d.last_seen,
-			u.value AS uptime_seconds
-		FROM devices d
-		JOIN sites s ON s.id = d.site_id
-		LEFT JOIN LATERAL (
-			SELECT ms.value
-			FROM metric_samples ms
-			JOIN metric_types mt ON mt.id = ms.metric_type_id
-			WHERE ms.device_id = d.id AND mt.name = 'uptime_seconds'
-			ORDER BY ms.collected_at DESC
-			LIMIT 1
-		) u ON true
-		ORDER BY s.name, d.hostname
-	`)
+	rows, err := s.pool.Query(ctx, deviceSelect+` ORDER BY s.name, d.hostname`)
 	if err != nil {
 		return nil, fmt.Errorf("list all devices: %w", err)
 	}
@@ -221,8 +211,6 @@ func (s *Store) ListAllDevices(ctx context.Context) ([]DeviceRow, error) {
 }
 
 // GetDevice resolves a device by UUID, site-scoped collector ID, or globally unique hostname.
-// siteName is the collector site ID (sites.name); when set, deviceID is resolved via the same
-// deterministic UUID derivation used by ingestion.
 func (s *Store) GetDevice(ctx context.Context, deviceID, siteName string) (DeviceRow, error) {
 	if id, err := uuid.Parse(deviceID); err == nil {
 		return s.getDeviceByID(ctx, id)
@@ -241,19 +229,9 @@ func (s *Store) getDeviceByHostnameUnique(ctx context.Context, hostname string) 
 	}
 	defer rows.Close()
 
-	var out []DeviceRow
-	for rows.Next() {
-		var r DeviceRow
-		if err := rows.Scan(
-			&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
-			&r.Vendor, &r.Model, &r.Status, &r.LastSeen, &r.UptimeSeconds,
-		); err != nil {
-			return DeviceRow{}, fmt.Errorf("scan device: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		return DeviceRow{}, fmt.Errorf("get device by hostname: %w", err)
+	out, err := scanDevices(rows)
+	if err != nil {
+		return DeviceRow{}, err
 	}
 	switch len(out) {
 	case 0:
@@ -277,13 +255,30 @@ const deviceSelect = `
 			s.name,
 			d.hostname,
 			d.ip_address::text,
-			d.vendor,
-			d.model,
+			COALESCE(d.vendor, ''),
+			COALESCE(d.model, ''),
+			d.serial,
+			d.sys_object_id,
+			d.sys_name,
+			d.sys_descr,
+			d.profile_name,
+			COALESCE(d.capabilities, '{}'),
 			d.status,
 			d.last_seen,
-			u.value AS uptime_seconds
+			u.value AS uptime_seconds,
+			cpu.value AS cpu_pct,
+			mem.value AS memory_pct,
+			COALESCE(temp.value, h.temperature_c) AS temperature_c,
+			(h.device_id IS NOT NULL) AS health_present,
+			COALESCE(h.state, ''),
+			COALESCE(h.reason, ''),
+			COALESCE(h.failure_count, 0),
+			COALESCE(h.upstream_device_ids, '{}'),
+			COALESCE(h.unavailable_upstream_device_ids, '{}'),
+			COALESCE(h.root_cause_device_ids, '{}')
 		FROM devices d
 		JOIN sites s ON s.id = d.site_id
+		LEFT JOIN device_health_current h ON h.device_id = d.id
 		LEFT JOIN LATERAL (
 			SELECT ms.value
 			FROM metric_samples ms
@@ -292,15 +287,62 @@ const deviceSelect = `
 			ORDER BY ms.collected_at DESC
 			LIMIT 1
 		) u ON true
+		LEFT JOIN LATERAL (
+			SELECT ms.value
+			FROM metric_samples ms
+			JOIN metric_types mt ON mt.id = ms.metric_type_id
+			WHERE ms.device_id = d.id AND mt.name = 'cpu_utilization_pct'
+			ORDER BY ms.collected_at DESC
+			LIMIT 1
+		) cpu ON true
+		LEFT JOIN LATERAL (
+			SELECT ms.value
+			FROM metric_samples ms
+			JOIN metric_types mt ON mt.id = ms.metric_type_id
+			WHERE ms.device_id = d.id AND mt.name = 'memory_utilization_pct'
+			ORDER BY ms.collected_at DESC
+			LIMIT 1
+		) mem ON true
+		LEFT JOIN LATERAL (
+			SELECT ms.value
+			FROM metric_samples ms
+			JOIN metric_types mt ON mt.id = ms.metric_type_id
+			WHERE ms.device_id = d.id AND mt.name = 'primary_temperature_c'
+			ORDER BY ms.collected_at DESC
+			LIMIT 1
+		) temp ON true
 `
 
-// ListInterfaces returns interfaces for a device UUID.
+// ListInterfaces returns interfaces for a device UUID with latest counters.
 func (s *Store) ListInterfaces(ctx context.Context, deviceID uuid.UUID) ([]InterfaceRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, device_id, if_index, name, description, admin_status, oper_status, speed_bps
-		FROM interfaces
-		WHERE device_id = $1
-		ORDER BY if_index
+		SELECT
+			i.id,
+			i.device_id,
+			i.if_index,
+			i.name,
+			i.description,
+			i.if_alias,
+			i.if_type,
+			i.admin_status,
+			i.oper_status,
+			i.speed_bps,
+			samp.in_octets,
+			samp.out_octets,
+			samp.in_errors,
+			samp.out_errors,
+			samp.in_discards,
+			samp.out_discards
+		FROM interfaces i
+		LEFT JOIN LATERAL (
+			SELECT in_octets, out_octets, in_errors, out_errors, in_discards, out_discards
+			FROM interface_samples
+			WHERE interface_id = i.id
+			ORDER BY collected_at DESC
+			LIMIT 1
+		) samp ON true
+		WHERE i.device_id = $1
+		ORDER BY i.if_index
 	`, deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("list interfaces: %w", err)
@@ -312,9 +354,34 @@ func (s *Store) ListInterfaces(ctx context.Context, deviceID uuid.UUID) ([]Inter
 		var r InterfaceRow
 		if err := rows.Scan(
 			&r.ID, &r.DeviceID, &r.IfIndex, &r.Name, &r.Description,
-			&r.AdminStatus, &r.OperStatus, &r.SpeedBps,
+			&r.IfAlias, &r.IfType, &r.AdminStatus, &r.OperStatus, &r.SpeedBps,
+			&r.InOctets, &r.OutOctets, &r.InErrors, &r.OutErrors, &r.InDiscards, &r.OutDiscards,
 		); err != nil {
 			return nil, fmt.Errorf("scan interface: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListInterfaceTrafficHistory returns recent in_octets samples for an interface.
+func (s *Store) ListInterfaceTrafficHistory(ctx context.Context, interfaceID uuid.UUID, start time.Time) ([]MetricSampleRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT collected_at, COALESCE(in_octets, 0)::double precision
+		FROM interface_samples
+		WHERE interface_id = $1 AND collected_at >= $2
+		ORDER BY collected_at ASC
+	`, interfaceID, start)
+	if err != nil {
+		return nil, fmt.Errorf("list interface traffic: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MetricSampleRow
+	for rows.Next() {
+		var r MetricSampleRow
+		if err := rows.Scan(&r.CollectedAt, &r.Value); err != nil {
+			return nil, fmt.Errorf("scan interface traffic: %w", err)
 		}
 		out = append(out, r)
 	}
@@ -357,6 +424,62 @@ func (s *Store) ListMetrics(ctx context.Context, deviceID uuid.UUID, metric stri
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// ListTemperatureComponents returns inventory + latest reading per component.
+func (s *Store) ListTemperatureComponents(ctx context.Context, deviceID uuid.UUID) ([]ComponentRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			c.component_id,
+			c.name,
+			c.component_index,
+			r.value,
+			COALESCE(r.unit, ''),
+			COALESCE(r.status, '')
+		FROM device_temperature_components c
+		LEFT JOIN LATERAL (
+			SELECT value, unit, status
+			FROM device_temperature_readings
+			WHERE device_id = c.device_id AND component_id = c.component_id
+			ORDER BY observed_at DESC
+			LIMIT 1
+		) r ON true
+		WHERE c.device_id = $1
+		ORDER BY c.component_index, c.component_id
+	`, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("list temperature components: %w", err)
+	}
+	defer rows.Close()
+	return scanComponents(rows)
+}
+
+// ListPowerComponents returns inventory + latest reading per component.
+func (s *Store) ListPowerComponents(ctx context.Context, deviceID uuid.UUID) ([]ComponentRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			c.component_id,
+			c.name,
+			c.component_index,
+			r.value,
+			COALESCE(r.unit, ''),
+			COALESCE(r.status, '')
+		FROM device_power_components c
+		LEFT JOIN LATERAL (
+			SELECT value, unit, status
+			FROM device_power_readings
+			WHERE device_id = c.device_id AND component_id = c.component_id
+			ORDER BY observed_at DESC
+			LIMIT 1
+		) r ON true
+		WHERE c.device_id = $1
+		ORDER BY c.component_index, c.component_id
+	`, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("list power components: %w", err)
+	}
+	defer rows.Close()
+	return scanComponents(rows)
 }
 
 // ListActiveAlerts returns alerts with cleared_at IS NULL.
@@ -423,15 +546,24 @@ func (s *Store) CountActiveAlertsBySite(ctx context.Context) (map[uuid.UUID]int,
 	return out, rows.Err()
 }
 
+func scanComponents(rows pgx.Rows) ([]ComponentRow, error) {
+	var out []ComponentRow
+	for rows.Next() {
+		var r ComponentRow
+		if err := rows.Scan(&r.ComponentID, &r.Name, &r.Index, &r.Value, &r.Unit, &r.Status); err != nil {
+			return nil, fmt.Errorf("scan component: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func scanDevices(rows pgx.Rows) ([]DeviceRow, error) {
 	var out []DeviceRow
 	for rows.Next() {
-		var r DeviceRow
-		if err := rows.Scan(
-			&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
-			&r.Vendor, &r.Model, &r.Status, &r.LastSeen, &r.UptimeSeconds,
-		); err != nil {
-			return nil, fmt.Errorf("scan device: %w", err)
+		r, err := scanDeviceFields(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, r)
 	}
@@ -439,14 +571,30 @@ func scanDevices(rows pgx.Rows) ([]DeviceRow, error) {
 }
 
 func scanDevice(row pgx.Row) (DeviceRow, error) {
-	var r DeviceRow
-	err := row.Scan(
-		&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
-		&r.Vendor, &r.Model, &r.Status, &r.LastSeen, &r.UptimeSeconds,
-	)
+	r, err := scanDeviceFields(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DeviceRow{}, ErrNotFound
 	}
+	if err != nil {
+		return DeviceRow{}, err
+	}
+	return r, nil
+}
+
+type scannable interface {
+	Scan(dest ...any) error
+}
+
+func scanDeviceFields(row scannable) (DeviceRow, error) {
+	var r DeviceRow
+	err := row.Scan(
+		&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
+		&r.Vendor, &r.Model, &r.Serial, &r.SysObjectID, &r.SysName, &r.SysDescr,
+		&r.ProfileName, &r.Capabilities, &r.Status, &r.LastSeen, &r.UptimeSeconds,
+		&r.CPUPct, &r.MemoryPct, &r.TemperatureC,
+		&r.HealthPresent, &r.HealthState, &r.HealthReason, &r.FailureCount,
+		&r.UpstreamIDs, &r.UnavailableIDs, &r.RootCauseIDs,
+	)
 	if err != nil {
 		return DeviceRow{}, fmt.Errorf("scan device: %w", err)
 	}

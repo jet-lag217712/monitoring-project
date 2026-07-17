@@ -163,22 +163,25 @@ The dashboard has a three-tier status system applied to both sites and devices.
 
 ### 3.2 Device Status
 
-Device status comes from the API as a numeric code (1, 2, 3):
+Device status comes from the API as a numeric code (0, 1, 2, 3):
 
 | Code | Semantic | Badge class | Badge label |
 |---|---|---|---|
+| `0` | Unknown (upstream unreachable) | `.status-badge.unknown` | `Unknown` |
 | `1` | Healthy | `.status-badge.ok` | `Healthy` |
 | `2` | Warning | `.status-badge.caution` | `Warning` |
 | `3` | Critical | `.status-badge.alert` | `Critical` |
-| unknown | Fallback | `.status-badge.ok` | `Unknown` |
+
+Unknown is a distinct slate/neutral visual state. It must never render as green Healthy or red Critical. Site summaries count Unknown / dependency-impacted devices separately from Critical roots.
 
 ### 3.3 Status Color Usage Rules
 
 1. **Green only for health.** `--status-ok` / `#22c55e` must never be used decoratively. It means "healthy" or "normal".
 2. **Red only for critical.** `--status-alert` / `#ef4444` must only indicate a problem requiring action.
 3. **Amber for caution.** `--status-caution` / `#f59e0b` means "degraded but not critical".
-4. **Status badges never appear without a dot.** The dot provides the color signal; the text reinforces it.
-5. **Alert badges blink; ok/caution badges do not.**
+4. **Slate for unknown.** `--status-unknown` / `#64748b` means dependency-impacted / upstream-unreachable — not an independent Critical claim.
+5. **Status badges never appear without a dot.** The dot provides the color signal; the text reinforces it.
+6. **Alert badges blink; ok/caution/unknown badges do not.**
 
 ### 3.4 Alert Banner Activation
 

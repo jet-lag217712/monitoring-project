@@ -21,12 +21,17 @@ type SiteOverviewLatest struct {
 
 // SiteSummary holds aggregate counts for a site card / detail header.
 type SiteSummary struct {
-	IDFCount     int     `json:"idf_count"`
-	DeviceCount  int     `json:"device_count"`
-	OnlineCount  int     `json:"online_count"`
-	AvgCPU       float64 `json:"avg_cpu"`
-	AvgMemory    float64 `json:"avg_memory"`
-	ActiveAlerts int     `json:"active_alerts"`
+	IDFCount                int     `json:"idf_count"`
+	DeviceCount             int     `json:"device_count"`
+	OnlineCount             int     `json:"online_count"`
+	AvgCPU                  float64 `json:"avg_cpu"`
+	AvgMemory               float64 `json:"avg_memory"`
+	ActiveAlerts            int     `json:"active_alerts"`
+	HealthyCount            int     `json:"healthy_count"`
+	WarningCount            int     `json:"warning_count"`
+	CriticalCount           int     `json:"critical_count"`
+	UnknownCount            int     `json:"unknown_count"`
+	DependencyImpactedCount int     `json:"dependency_impacted_count"`
 }
 
 // SiteDetail is the GET /api/sites/{siteId} response.
@@ -39,10 +44,15 @@ type SiteDetail struct {
 
 // SiteDetailSummary is the detail-view summary (field names match mockData).
 type SiteDetailSummary struct {
-	TotalDevices int `json:"total_devices"`
-	OnlineCount  int `json:"online_count"`
-	IDFCount     int `json:"idf_count"`
-	ActiveAlerts int `json:"active_alerts"`
+	TotalDevices            int `json:"total_devices"`
+	OnlineCount             int `json:"online_count"`
+	IDFCount                int `json:"idf_count"`
+	ActiveAlerts            int `json:"active_alerts"`
+	HealthyCount            int `json:"healthy_count"`
+	WarningCount            int `json:"warning_count"`
+	CriticalCount           int `json:"critical_count"`
+	UnknownCount            int `json:"unknown_count"`
+	DependencyImpactedCount int `json:"dependency_impacted_count"`
 }
 
 // SiteDetailLatest wraps the devices map.
@@ -52,41 +62,94 @@ type SiteDetailLatest struct {
 
 // DeviceSummary is a device row in site detail / device list.
 type DeviceSummary struct {
-	Hostname   string   `json:"hostname"`
-	Role       string   `json:"role"`
-	Status     int      `json:"status"`
-	CPUPct     float64  `json:"cpu_pct"`
-	MemoryPct  float64  `json:"memory_pct"`
-	UptimeDays *float64 `json:"uptime_days"`
-	LatencyMs  *float64 `json:"latency_ms"`
+	Hostname               string   `json:"hostname"`
+	Role                   string   `json:"role"`
+	Status                 int      `json:"status"`
+	StatusReason           string   `json:"status_reason,omitempty"`
+	FailureCount           *int     `json:"failure_count,omitempty"`
+	UpstreamDeviceIDs      []string `json:"upstream_device_ids,omitempty"`
+	UnavailableUpstreamIDs []string `json:"unavailable_upstream_device_ids,omitempty"`
+	RootCauseDeviceIDs     []string `json:"root_cause_device_ids,omitempty"`
+	CPUPct                 *float64 `json:"cpu_pct"`
+	MemoryPct              *float64 `json:"memory_pct"`
+	UptimeDays             *float64 `json:"uptime_days"`
+	LatencyMs              *float64 `json:"latency_ms"`
+}
+
+// ComponentReading is a temperature or power component projection.
+type ComponentReading struct {
+	ComponentID string   `json:"component_id"`
+	Name        string   `json:"name"`
+	Index       string   `json:"index,omitempty"`
+	Status      string   `json:"status"`
+	Value       *float64 `json:"value"`
+	Unit        string   `json:"unit"`
+}
+
+// SNMPIdentity holds persisted SNMP sys* fields.
+type SNMPIdentity struct {
+	SysName     string `json:"sysName,omitempty"`
+	SysObjectID string `json:"sysObjectID,omitempty"`
+	SysDescr    string `json:"sysDescr,omitempty"`
+	SysUpTime   *int64 `json:"sysUpTime,omitempty"`
+}
+
+// DeviceHistory holds embedded metric series for device detail.
+type DeviceHistory struct {
+	CPU         []MetricPoint `json:"cpu"`
+	Memory      []MetricPoint `json:"memory"`
+	Temperature []MetricPoint `json:"temperature"`
+	Uptime      []MetricPoint `json:"uptime"`
 }
 
 // DeviceDetail is GET /api/devices/{deviceId}.
 type DeviceDetail struct {
-	ID         uuid.UUID  `json:"id"`
-	SiteID     string     `json:"site_id"`
-	Hostname   string     `json:"hostname"`
-	IPAddress  string     `json:"ip_address"`
-	Vendor     string     `json:"vendor"`
-	Model      string     `json:"model"`
-	Status     int        `json:"status"`
-	Role       string     `json:"role"`
-	CPUPct     float64    `json:"cpu_pct"`
-	MemoryPct  float64    `json:"memory_pct"`
-	UptimeDays *float64   `json:"uptime_days"`
-	LatencyMs  *float64   `json:"latency_ms"`
-	LastSeen   *time.Time `json:"last_seen,omitempty"`
+	ID                     uuid.UUID          `json:"id"`
+	SiteID                 string             `json:"site_id"`
+	Hostname               string             `json:"hostname"`
+	IPAddress              string             `json:"ip_address"`
+	Vendor                 string             `json:"vendor"`
+	Model                  string             `json:"model"`
+	SerialNumber           string             `json:"serial_number,omitempty"`
+	Profile                string             `json:"profile,omitempty"`
+	Capabilities           []string           `json:"capabilities,omitempty"`
+	Status                 int                `json:"status"`
+	StatusReason           string             `json:"status_reason,omitempty"`
+	FailureCount           *int               `json:"failure_count,omitempty"`
+	UpstreamDeviceIDs      []string           `json:"upstream_device_ids,omitempty"`
+	UnavailableUpstreamIDs []string           `json:"unavailable_upstream_device_ids,omitempty"`
+	RootCauseDeviceIDs     []string           `json:"root_cause_device_ids,omitempty"`
+	Role                   string             `json:"role"`
+	CPUPct                 *float64           `json:"cpu_pct"`
+	MemoryPct              *float64           `json:"memory_pct"`
+	TemperatureC           *float64           `json:"temperature_c"`
+	UptimeDays             *float64           `json:"uptime_days"`
+	LatencyMs              *float64           `json:"latency_ms"`
+	LastSeen               *time.Time         `json:"last_seen,omitempty"`
+	SNMP                   *SNMPIdentity      `json:"snmp,omitempty"`
+	TemperatureComponents  []ComponentReading `json:"temperature_components,omitempty"`
+	PowerComponents        []ComponentReading `json:"power_components,omitempty"`
+	History                *DeviceHistory     `json:"history,omitempty"`
 }
 
 // InterfaceInfo is one interface on a device.
 type InterfaceInfo struct {
-	ID          uuid.UUID `json:"id"`
-	IfIndex     int       `json:"if_index"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	AdminStatus string    `json:"admin_status,omitempty"`
-	OperStatus  string    `json:"oper_status,omitempty"`
-	SpeedBps    *int64    `json:"speed_bps,omitempty"`
+	ID             uuid.UUID     `json:"id"`
+	IfIndex        int           `json:"if_index"`
+	Name           string        `json:"name"`
+	Description    string        `json:"description,omitempty"`
+	IfAlias        string        `json:"if_alias,omitempty"`
+	IfType         string        `json:"if_type,omitempty"`
+	AdminStatus    string        `json:"admin_status,omitempty"`
+	OperStatus     string        `json:"oper_status,omitempty"`
+	SpeedBps       *int64        `json:"speed_bps,omitempty"`
+	InOctets       *int64        `json:"in_octets,omitempty"`
+	OutOctets      *int64        `json:"out_octets,omitempty"`
+	InErrors       *int64        `json:"in_errors,omitempty"`
+	OutErrors      *int64        `json:"out_errors,omitempty"`
+	InDiscards     *int64        `json:"in_discards,omitempty"`
+	OutDiscards    *int64        `json:"out_discards,omitempty"`
+	TrafficHistory []MetricPoint `json:"traffic_history,omitempty"`
 }
 
 // MetricPoint is one time-series sample.

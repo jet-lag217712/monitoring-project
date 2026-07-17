@@ -6,5 +6,6 @@ Value Options
 
 All Green: 'all-healthy'
 Caution: 'two-caution'
-Critical: 'one-red"
+Critical: 'one-red'
+Cascade Unknown: 'cascade-unknown'
  */

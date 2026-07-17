@@ -22,12 +22,12 @@ export default function DeviceMetricsCharts({ history }) {
       {cpu.length > 0 ? (
         <MetricLineChart title="CPU Utilization" data={cpu} metric="cpu" unit="%" />
       ) : (
-        <EmptyChart title="CPU Utilization" message="No live CPU telemetry yet (vendor OID deferred)." />
+        <EmptyChart title="CPU Utilization" message="No CPU telemetry for this device yet." />
       )}
       {memory.length > 0 ? (
         <MetricLineChart title="RAM Utilization" data={memory} metric="memory" unit="%" />
       ) : (
-        <EmptyChart title="RAM Utilization" message="No live memory telemetry yet (vendor OID deferred)." />
+        <EmptyChart title="RAM Utilization" message="No memory telemetry for this device yet." />
       )}
       {temperature.length > 0 ? (
         <MetricLineChart
@@ -46,7 +46,7 @@ export default function DeviceMetricsCharts({ history }) {
           yDomain={['auto', 'auto']}
         />
       ) : (
-        <EmptyChart title="Device Temperature" message="No live temperature telemetry yet." />
+        <EmptyChart title="Device Temperature" message="No temperature telemetry for this device yet." />
       )}
     </div>
   )

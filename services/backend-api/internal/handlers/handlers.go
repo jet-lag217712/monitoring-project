@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -72,17 +73,17 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 		devs := bySite[site.ID]
 		deviceCount := len(devs)
 		onlineCount := 0
-		anyOffline := false
+		var counts derive.SiteHealthCounts
+		var cpuVals, memVals []*float64
 		for _, d := range devs {
 			online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
 			if online {
 				onlineCount++
-			} else {
-				anyOffline = true
 			}
-		}
-		if deviceCount == 0 {
-			anyOffline = false
+			proj := projectDevice(d, online)
+			counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
+			cpuVals = append(cpuVals, d.CPUPct)
+			memVals = append(memVals, d.MemoryPct)
 		}
 
 		loc := ""
@@ -92,15 +93,20 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 		out[site.Name] = models.SiteOverview{
 			Location: derive.LocationOrName(loc, site.Name),
 			Type:     "",
-			Status:   derive.SiteStatus(anyOffline),
+			Status:   derive.SiteStatusFromHealth(counts),
 			Latest: models.SiteOverviewLatest{
 				Summary: models.SiteSummary{
-					IDFCount:     0,
-					DeviceCount:  deviceCount,
-					OnlineCount:  onlineCount,
-					AvgCPU:       0,
-					AvgMemory:    0,
-					ActiveAlerts: alertCounts[site.ID],
+					IDFCount:                0,
+					DeviceCount:             deviceCount,
+					OnlineCount:             onlineCount,
+					AvgCPU:                  derive.AvgNullable(cpuVals),
+					AvgMemory:               derive.AvgNullable(memVals),
+					ActiveAlerts:            alertCounts[site.ID],
+					HealthyCount:            counts.HealthyCount,
+					WarningCount:            counts.WarningCount,
+					CriticalCount:           counts.CriticalCount,
+					UnknownCount:            counts.UnknownCount,
+					DependencyImpactedCount: counts.DependencyImpactedCount,
 				},
 			},
 		}
@@ -130,13 +136,16 @@ func (a *API) handleGetSite(w http.ResponseWriter, r *http.Request) {
 	now := a.now()
 	deviceMap := make(map[string]models.DeviceSummary, len(devices))
 	onlineCount := 0
+	var counts derive.SiteHealthCounts
 	for _, d := range devices {
 		online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
 		if online {
 			onlineCount++
 		}
+		proj := projectDevice(d, online)
+		counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
 		key := derive.DeviceMapKey(d.IPAddress, d.Hostname)
-		deviceMap[key] = toDeviceSummary(d, online)
+		deviceMap[key] = toDeviceSummary(d, proj)
 	}
 
 	loc := ""
@@ -147,10 +156,15 @@ func (a *API) handleGetSite(w http.ResponseWriter, r *http.Request) {
 		SiteID:   site.Name,
 		Location: derive.LocationOrName(loc, site.Name),
 		Summary: models.SiteDetailSummary{
-			TotalDevices: len(devices),
-			OnlineCount:  onlineCount,
-			IDFCount:     0,
-			ActiveAlerts: alertCounts[site.ID],
+			TotalDevices:            len(devices),
+			OnlineCount:             onlineCount,
+			IDFCount:                0,
+			ActiveAlerts:            alertCounts[site.ID],
+			HealthyCount:            counts.HealthyCount,
+			WarningCount:            counts.WarningCount,
+			CriticalCount:           counts.CriticalCount,
+			UnknownCount:            counts.UnknownCount,
+			DependencyImpactedCount: counts.DependencyImpactedCount,
 		},
 		Latest: models.SiteDetailLatest{Devices: deviceMap},
 	})
@@ -173,7 +187,7 @@ func (a *API) handleListSiteDevices(w http.ResponseWriter, r *http.Request) {
 	out := make([]models.DeviceSummary, 0, len(devices))
 	for _, d := range devices {
 		online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
-		out = append(out, toDeviceSummary(d, online))
+		out = append(out, toDeviceSummary(d, projectDevice(d, online)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -181,49 +195,124 @@ func (a *API) handleListSiteDevices(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("deviceId")
 	siteName := r.URL.Query().Get("siteId")
-	d, err := a.store.GetDevice(r.Context(), deviceID, siteName)
+	ctx := r.Context()
+	d, err := a.store.GetDevice(ctx, deviceID, siteName)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
 	online := derive.DeviceOnline(d.Status, d.LastSeen, a.now(), a.onlineThreshold)
-	writeJSON(w, http.StatusOK, models.DeviceDetail{
-		ID:         d.ID,
-		SiteID:     d.SiteName,
-		Hostname:   d.Hostname,
-		IPAddress:  derive.NormalizeIP(d.IPAddress),
-		Vendor:     d.Vendor,
-		Model:      d.Model,
-		Status:     derive.DeviceStatusCode(online),
-		Role:       "",
-		CPUPct:     0,
-		MemoryPct:  0,
-		UptimeDays: derive.UptimeDays(d.UptimeSeconds),
-		LatencyMs:  nil,
-		LastSeen:   d.LastSeen,
-	})
+	proj := projectDevice(d, online)
+
+	tempComponents, err := a.store.ListTemperatureComponents(ctx, d.ID)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	powerComponents, err := a.store.ListPowerComponents(ctx, d.ID)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+
+	historyStart := a.now().Add(-store.DefaultHistoryWindow)
+	history, err := a.loadDeviceHistory(ctx, d.ID, &historyStart)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+
+	detail := models.DeviceDetail{
+		ID:                     d.ID,
+		SiteID:                 d.SiteName,
+		Hostname:               d.Hostname,
+		IPAddress:              derive.NormalizeIP(d.IPAddress),
+		Vendor:                 d.Vendor,
+		Model:                  d.Model,
+		Status:                 proj.Status,
+		StatusReason:           proj.StatusReason,
+		FailureCount:           proj.FailureCount,
+		UpstreamDeviceIDs:      emptyToNil(proj.UpstreamDeviceIDs),
+		UnavailableUpstreamIDs: emptyToNil(proj.UnavailableUpstreamIDs),
+		RootCauseDeviceIDs:     emptyToNil(proj.RootCauseDeviceIDs),
+		Role:                   "",
+		CPUPct:                 d.CPUPct,
+		MemoryPct:              d.MemoryPct,
+		TemperatureC:           d.TemperatureC,
+		UptimeDays:             derive.UptimeDays(d.UptimeSeconds),
+		LatencyMs:              nil,
+		LastSeen:               d.LastSeen,
+		TemperatureComponents:  toComponents(tempComponents),
+		PowerComponents:        toComponents(powerComponents),
+		History:                history,
+	}
+	if d.Serial != nil {
+		detail.SerialNumber = *d.Serial
+	}
+	if d.ProfileName != nil {
+		detail.Profile = *d.ProfileName
+	}
+	if len(d.Capabilities) > 0 {
+		detail.Capabilities = d.Capabilities
+	}
+	detail.SNMP = buildSNMP(d)
+
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (a *API) loadDeviceHistory(ctx context.Context, deviceID uuid.UUID, start *time.Time) (*models.DeviceHistory, error) {
+	cpu, err := a.store.ListMetrics(ctx, deviceID, "cpu_utilization_pct", start, nil)
+	if err != nil {
+		return nil, err
+	}
+	mem, err := a.store.ListMetrics(ctx, deviceID, "memory_utilization_pct", start, nil)
+	if err != nil {
+		return nil, err
+	}
+	temp, err := a.store.ListMetrics(ctx, deviceID, "primary_temperature_c", start, nil)
+	if err != nil {
+		return nil, err
+	}
+	uptime, err := a.store.ListMetrics(ctx, deviceID, "uptime_seconds", start, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &models.DeviceHistory{
+		CPU:         toMetricPoints(cpu),
+		Memory:      toMetricPoints(mem),
+		Temperature: toMetricPoints(temp),
+		Uptime:      toMetricPoints(uptime),
+	}, nil
 }
 
 func (a *API) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.PathValue("deviceId")
 	siteName := r.URL.Query().Get("siteId")
-	d, err := a.store.GetDevice(r.Context(), deviceID, siteName)
+	ctx := r.Context()
+	d, err := a.store.GetDevice(ctx, deviceID, siteName)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
-	ifaces, err := a.store.ListInterfaces(r.Context(), d.ID)
+	ifaces, err := a.store.ListInterfaces(ctx, d.ID)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
 
+	historyStart := a.now().Add(-store.DefaultHistoryWindow)
 	out := make([]models.InterfaceInfo, 0, len(ifaces))
 	for _, iface := range ifaces {
 		info := models.InterfaceInfo{
-			ID:       iface.ID,
-			IfIndex:  iface.IfIndex,
-			SpeedBps: iface.SpeedBps,
+			ID:          iface.ID,
+			IfIndex:     iface.IfIndex,
+			SpeedBps:    iface.SpeedBps,
+			InOctets:    iface.InOctets,
+			OutOctets:   iface.OutOctets,
+			InErrors:    iface.InErrors,
+			OutErrors:   iface.OutErrors,
+			InDiscards:  iface.InDiscards,
+			OutDiscards: iface.OutDiscards,
 		}
 		if iface.Name != nil {
 			info.Name = *iface.Name
@@ -231,11 +320,25 @@ func (a *API) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 		if iface.Description != nil {
 			info.Description = *iface.Description
 		}
+		if iface.IfAlias != nil {
+			info.IfAlias = *iface.IfAlias
+		}
+		if iface.IfType != nil {
+			info.IfType = *iface.IfType
+		}
 		if iface.AdminStatus != nil {
 			info.AdminStatus = *iface.AdminStatus
 		}
 		if iface.OperStatus != nil {
 			info.OperStatus = *iface.OperStatus
+		}
+		traffic, err := a.store.ListInterfaceTrafficHistory(ctx, iface.ID, historyStart)
+		if err != nil {
+			a.writeStoreError(w, err)
+			return
+		}
+		if len(traffic) > 0 {
+			info.TrafficHistory = toMetricPoints(traffic)
 		}
 		out = append(out, info)
 	}
@@ -280,17 +383,12 @@ func (a *API) handleListMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	points := make([]models.MetricPoint, 0, len(samples))
-	for _, s := range samples {
-		points = append(points, models.MetricPoint{TS: s.CollectedAt.UTC(), Value: s.Value})
-	}
-
 	writeJSON(w, http.StatusOK, models.MetricsResponse{
 		DeviceID: d.Hostname,
 		Metric:   metric,
 		Start:    start,
 		End:      end,
-		Points:   points,
+		Points:   toMetricPoints(samples),
 	})
 }
 
@@ -323,16 +421,93 @@ func (a *API) handleTestConfig(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func toDeviceSummary(d store.DeviceRow, online bool) models.DeviceSummary {
+func projectDevice(d store.DeviceRow, online bool) derive.DeviceProjection {
+	return derive.ProjectDeviceStatus(
+		d.HealthState,
+		d.HealthPresent,
+		d.HealthReason,
+		d.FailureCount,
+		d.UpstreamIDs,
+		d.UnavailableIDs,
+		d.RootCauseIDs,
+		online,
+	)
+}
+
+func toDeviceSummary(d store.DeviceRow, proj derive.DeviceProjection) models.DeviceSummary {
 	return models.DeviceSummary{
-		Hostname:   d.Hostname,
-		Role:       "",
-		Status:     derive.DeviceStatusCode(online),
-		CPUPct:     0,
-		MemoryPct:  0,
-		UptimeDays: derive.UptimeDays(d.UptimeSeconds),
-		LatencyMs:  nil,
+		Hostname:               d.Hostname,
+		Role:                   "",
+		Status:                 proj.Status,
+		StatusReason:           proj.StatusReason,
+		FailureCount:           proj.FailureCount,
+		UpstreamDeviceIDs:      emptyToNil(proj.UpstreamDeviceIDs),
+		UnavailableUpstreamIDs: emptyToNil(proj.UnavailableUpstreamIDs),
+		RootCauseDeviceIDs:     emptyToNil(proj.RootCauseDeviceIDs),
+		CPUPct:                 d.CPUPct,
+		MemoryPct:              d.MemoryPct,
+		UptimeDays:             derive.UptimeDays(d.UptimeSeconds),
+		LatencyMs:              nil,
 	}
+}
+
+func toComponents(rows []store.ComponentRow) []models.ComponentReading {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]models.ComponentReading, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, models.ComponentReading{
+			ComponentID: r.ComponentID,
+			Name:        r.Name,
+			Index:       r.Index,
+			Status:      r.Status,
+			Value:       r.Value,
+			Unit:        r.Unit,
+		})
+	}
+	return out
+}
+
+func toMetricPoints(samples []store.MetricSampleRow) []models.MetricPoint {
+	points := make([]models.MetricPoint, 0, len(samples))
+	for _, s := range samples {
+		points = append(points, models.MetricPoint{TS: s.CollectedAt.UTC(), Value: s.Value})
+	}
+	return points
+}
+
+func buildSNMP(d store.DeviceRow) *models.SNMPIdentity {
+	snmp := &models.SNMPIdentity{}
+	has := false
+	if d.SysName != nil && *d.SysName != "" {
+		snmp.SysName = *d.SysName
+		has = true
+	}
+	if d.SysObjectID != nil && *d.SysObjectID != "" {
+		snmp.SysObjectID = *d.SysObjectID
+		has = true
+	}
+	if d.SysDescr != nil && *d.SysDescr != "" {
+		snmp.SysDescr = *d.SysDescr
+		has = true
+	}
+	if d.UptimeSeconds != nil {
+		cs := int64(*d.UptimeSeconds * 100)
+		snmp.SysUpTime = &cs
+		has = true
+	}
+	if !has {
+		return nil
+	}
+	return snmp
+}
+
+func emptyToNil(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	return in
 }
 
 func (a *API) writeStoreError(w http.ResponseWriter, err error) {

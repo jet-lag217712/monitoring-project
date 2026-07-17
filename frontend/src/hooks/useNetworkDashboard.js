@@ -167,25 +167,40 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
           return
         }
 
-        const [device, interfaces, metrics] = await Promise.all([
-          fetchDeviceFromApi(collectorId, siteId),
-          fetchDeviceInterfacesFromApi(collectorId, siteId),
-          fetchDeviceMetricsFromApi(collectorId, {
-            siteId,
-            metric: 'uptime_seconds',
-            start: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            end: new Date().toISOString(),
-          }).catch(() => ({ points: [] })),
-        ])
+        const historyStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const historyEnd = new Date().toISOString()
+        const metricOpts = { siteId, start: historyStart, end: historyEnd }
+
+        const [device, interfaces, uptimeMetrics, cpuMetrics, memMetrics, tempMetrics] =
+          await Promise.all([
+            fetchDeviceFromApi(collectorId, siteId),
+            fetchDeviceInterfacesFromApi(collectorId, siteId),
+            fetchDeviceMetricsFromApi(collectorId, {
+              ...metricOpts,
+              metric: 'uptime_seconds',
+            }).catch(() => ({ points: [] })),
+            fetchDeviceMetricsFromApi(collectorId, {
+              ...metricOpts,
+              metric: 'cpu_utilization_pct',
+            }).catch(() => ({ points: [] })),
+            fetchDeviceMetricsFromApi(collectorId, {
+              ...metricOpts,
+              metric: 'memory_utilization_pct',
+            }).catch(() => ({ points: [] })),
+            fetchDeviceMetricsFromApi(collectorId, {
+              ...metricOpts,
+              metric: 'primary_temperature_c',
+            }).catch(() => ({ points: [] })),
+          ])
 
         if (!isCurrentFetch()) return
 
         setDeviceDetail(
           adaptDeviceDetail(device, interfaces, {
-            uptime: metricsToSeries(metrics.points),
-            cpu: [],
-            memory: [],
-            temperature: [],
+            uptime: metricsToSeries(uptimeMetrics.points),
+            cpu: metricsToSeries(cpuMetrics.points),
+            memory: metricsToSeries(memMetrics.points),
+            temperature: metricsToSeries(tempMetrics.points),
           }),
         )
         setDataMode('live')

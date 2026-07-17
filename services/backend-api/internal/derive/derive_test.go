@@ -43,6 +43,103 @@ func TestDeviceStatusCode(t *testing.T) {
 	}
 }
 
+func TestHealthStatusCode(t *testing.T) {
+	tests := []struct {
+		state  string
+		online bool
+		want   int
+	}{
+		{"healthy", true, derive.StatusHealthy},
+		{"warning", true, derive.StatusWarning},
+		{"critical", false, derive.StatusCritical},
+		{"unknown", false, derive.StatusUnknown},
+		{"", true, derive.StatusHealthy},
+		{"", false, derive.StatusCritical},
+		{"healthy", false, derive.StatusCritical},
+		{"warning", false, derive.StatusCritical},
+		{"critical", true, derive.StatusCritical},
+		{"unknown", true, derive.StatusUnknown},
+	}
+	for _, tt := range tests {
+		got := derive.HealthStatusCode(tt.state, tt.online)
+		if got != tt.want {
+			t.Fatalf("state=%q online=%v got %d want %d", tt.state, tt.online, got, tt.want)
+		}
+	}
+}
+
+func TestProjectDeviceStatus_StaleHealthyFallsBackToCritical(t *testing.T) {
+	proj := derive.ProjectDeviceStatus("healthy", true, "", 0, nil, nil, nil, false)
+	if proj.Status != derive.StatusCritical {
+		t.Fatalf("stale healthy device should be critical, got %d", proj.Status)
+	}
+}
+
+func TestProjectDeviceStatus_CriticalVsUnknown(t *testing.T) {
+	critical := derive.ProjectDeviceStatus("critical", true, "poll_failed", 2, nil, nil, nil, false)
+	if critical.Status != derive.StatusCritical {
+		t.Fatalf("critical status=%d", critical.Status)
+	}
+	if critical.StatusReason != "poll_failed" || critical.FailureCount == nil || *critical.FailureCount != 2 {
+		t.Fatalf("critical projection incomplete: %+v", critical)
+	}
+
+	unknown := derive.ProjectDeviceStatus(
+		"unknown", true, "upstream_unreachable", 2,
+		[]string{"dist-01", "dist-02"},
+		[]string{"dist-01", "dist-02"},
+		[]string{"core-01"},
+		false,
+	)
+	if unknown.Status != derive.StatusUnknown {
+		t.Fatalf("unknown status=%d", unknown.Status)
+	}
+	if unknown.StatusReason != "upstream_unreachable" {
+		t.Fatalf("reason=%q", unknown.StatusReason)
+	}
+	if len(unknown.RootCauseDeviceIDs) != 1 || unknown.RootCauseDeviceIDs[0] != "core-01" {
+		t.Fatalf("root cause=%v", unknown.RootCauseDeviceIDs)
+	}
+
+	fallback := derive.ProjectDeviceStatus("", false, "", 0, nil, nil, nil, true)
+	if fallback.Status != derive.StatusHealthy {
+		t.Fatalf("v1 fallback online should be healthy, got %d", fallback.Status)
+	}
+}
+
+func TestSiteHealthCounts_DistinguishCriticalAndUnknown(t *testing.T) {
+	var counts derive.SiteHealthCounts
+	counts.Accumulate(derive.StatusCritical, nil)
+	counts.Accumulate(derive.StatusUnknown, []string{"dist-01"})
+	counts.Accumulate(derive.StatusWarning, nil)
+	counts.Accumulate(derive.StatusHealthy, nil)
+
+	if counts.CriticalCount != 1 {
+		t.Fatalf("critical_count=%d", counts.CriticalCount)
+	}
+	if counts.UnknownCount != 1 || counts.DependencyImpactedCount != 1 {
+		t.Fatalf("unknown=%d impacted=%d", counts.UnknownCount, counts.DependencyImpactedCount)
+	}
+	if counts.WarningCount != 1 || counts.HealthyCount != 1 {
+		t.Fatalf("warning=%d healthy=%d", counts.WarningCount, counts.HealthyCount)
+	}
+	if derive.SiteStatusFromHealth(counts) != "alert" {
+		t.Fatal("site with critical should be alert")
+	}
+
+	warningOnly := derive.SiteHealthCounts{WarningCount: 1}
+	if derive.SiteStatusFromHealth(warningOnly) != "caution" {
+		t.Fatal("warning-only site should be caution")
+	}
+	unknownOnly := derive.SiteHealthCounts{UnknownCount: 1}
+	if derive.SiteStatusFromHealth(unknownOnly) != "caution" {
+		t.Fatal("unknown-only site should be caution, not alert")
+	}
+	if derive.SiteStatusFromHealth(derive.SiteHealthCounts{}) != "ok" {
+		t.Fatal("empty site should be ok")
+	}
+}
+
 func TestSiteStatus(t *testing.T) {
 	if derive.SiteStatus(false) != "ok" {
 		t.Fatal("expected ok")
@@ -87,6 +184,16 @@ func TestLocationOrName(t *testing.T) {
 	}
 	if derive.LocationOrName("", "district-office") != "district-office" {
 		t.Fatal("fallback to name")
+	}
+}
+
+func TestAvgNullable(t *testing.T) {
+	a, b := 10.0, 20.0
+	if got := derive.AvgNullable([]*float64{&a, nil, &b}); got != 15.0 {
+		t.Fatalf("got %v", got)
+	}
+	if got := derive.AvgNullable(nil); got != 0 {
+		t.Fatalf("empty avg=%v", got)
 	}
 }
 

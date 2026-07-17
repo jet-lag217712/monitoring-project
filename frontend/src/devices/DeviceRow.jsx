@@ -28,8 +28,16 @@ export default function DeviceRow({ ip, device, renderStatus, onClick }) {
       <td style={mutedCellStyle}>{device.hostname ?? '—'}</td>
       <td style={mutedCellStyle}>{device.role ?? '—'}</td>
       <td>{renderStatus(device.status)}</td>
-      <td><UtilizationBar pct={device.cpu_pct ?? 0} /></td>
-      <td><UtilizationBar pct={device.memory_pct ?? 0} /></td>
+      <td>
+        {device.cpu_pct != null ? <UtilizationBar pct={device.cpu_pct} /> : <span style={mutedCellStyle}>—</span>}
+      </td>
+      <td>
+        {device.memory_pct != null ? (
+          <UtilizationBar pct={device.memory_pct} />
+        ) : (
+          <span style={mutedCellStyle}>—</span>
+        )}
+      </td>
       <td>
         <span style={monoTextStyle}>
           {formatUptime(device.uptime_days)}

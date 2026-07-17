@@ -9,29 +9,7 @@ function formatSpeedBps(speedBps) {
   return `${bps} bps`
 }
 
-export function adaptInterface(iface) {
-  return {
-    ...iface,
-    if_index: iface.if_index,
-    name: iface.name || `if${iface.if_index}`,
-    admin_status: iface.admin_status || '—',
-    oper_status: iface.oper_status || '—',
-    speed: formatSpeedBps(iface.speed_bps) ?? '—',
-    duplex: '—',
-    utilization_pct: null,
-    bytes_in: null,
-    bytes_out: null,
-    packets_in: null,
-    packets_out: null,
-    errors_in: null,
-    errors_out: null,
-    last_status_change: null,
-    description: iface.description || '—',
-    traffic_history: [],
-  }
-}
-
-export function metricsToSeries(points) {
+function mapHistorySeries(points) {
   if (!Array.isArray(points)) return []
   return points.map(p => ({
     ts: p.ts,
@@ -39,50 +17,112 @@ export function metricsToSeries(points) {
   }))
 }
 
+export function adaptInterface(iface) {
+  const traffic = Array.isArray(iface.traffic_history)
+    ? mapHistorySeries(iface.traffic_history)
+    : []
+
+  return {
+    ...iface,
+    if_index: iface.if_index,
+    name: iface.name || `if${iface.if_index}`,
+    admin_status: iface.admin_status || '—',
+    oper_status: iface.oper_status || '—',
+    speed: formatSpeedBps(iface.speed_bps) ?? '—',
+    duplex: iface.duplex ?? '—',
+    utilization_pct: iface.utilization_pct ?? null,
+    bytes_in: iface.in_octets ?? iface.bytes_in ?? null,
+    bytes_out: iface.out_octets ?? iface.bytes_out ?? null,
+    packets_in: iface.packets_in ?? null,
+    packets_out: iface.packets_out ?? null,
+    errors_in: iface.in_errors ?? iface.errors_in ?? null,
+    errors_out: iface.out_errors ?? iface.errors_out ?? null,
+    last_status_change: iface.last_status_change ?? null,
+    description: iface.description || iface.if_alias || '—',
+    if_alias: iface.if_alias ?? null,
+    if_type: iface.if_type ?? null,
+    traffic_history: traffic,
+  }
+}
+
+export function metricsToSeries(points) {
+  return mapHistorySeries(points)
+}
+
+function pickHistory(deviceHistory, metrics, key, metricKey) {
+  if (Array.isArray(deviceHistory?.[key]) && deviceHistory[key].length > 0) {
+    return mapHistorySeries(deviceHistory[key])
+  }
+  if (Array.isArray(metrics?.[metricKey])) {
+    return metrics[metricKey]
+  }
+  return []
+}
+
 /**
  * @param {object} device - GET /api/devices/{id} body
  * @param {object[]} interfaces - GET .../interfaces body
- * @param {{ uptime?: object }} [metrics] - optional series keyed by chart name
+ * @param {{ uptime?: object[], cpu?: object[], memory?: object[], temperature?: object[] }} [metrics]
  */
 export function adaptDeviceDetail(device, interfaces = [], metrics = {}) {
   const adaptedInterfaces = interfaces.map(adaptInterface)
   const activeInterfaceCount = adaptedInterfaces.filter(
     iface => String(iface.oper_status).toLowerCase() === 'up',
   ).length
-  const isOnline = device.status === 1
-  const uptimeDays = device.uptime_days
-  const sysUpTimeCs =
-    uptimeDays != null && !Number.isNaN(Number(uptimeDays))
-      ? Math.round(Number(uptimeDays) * 24 * 60 * 60 * 100)
-      : null
+
+  const status = device.status
+  const isReachable = status === 1 || status === 2
+  const deviceHistory = device.history ?? {}
+
+  const snmp = device.snmp
+    ? {
+        sysName: device.snmp.sysName ?? device.hostname ?? '—',
+        sysDescr: device.snmp.sysDescr ?? '—',
+        sysObjectID: device.snmp.sysObjectID ?? null,
+        sysUpTime: device.snmp.sysUpTime ?? null,
+        sysContact: device.snmp.sysContact ?? '—',
+        sysLocation: device.snmp.sysLocation ?? '—',
+      }
+    : {
+        sysName: device.hostname ?? '—',
+        sysDescr: [device.vendor, device.model].filter(Boolean).join(' ') || '—',
+        sysObjectID: null,
+        sysUpTime: null,
+        sysContact: '—',
+        sysLocation: '—',
+      }
 
   return {
     ...device,
     name: device.hostname,
     hostname: device.hostname,
     role: device.role || '',
-    status: device.status,
-    cpu_pct: device.cpu_pct ?? 0,
-    memory_pct: device.memory_pct ?? 0,
-    uptime_days: uptimeDays,
-    latency_ms: device.latency_ms,
-    temperature_c: null,
+    status,
+    status_reason: device.status_reason ?? null,
+    failure_count: device.failure_count ?? null,
+    upstream_device_ids: device.upstream_device_ids ?? [],
+    unavailable_upstream_device_ids: device.unavailable_upstream_device_ids ?? [],
+    root_cause_device_ids: device.root_cause_device_ids ?? [],
+    serial_number: device.serial_number ?? null,
+    profile: device.profile ?? null,
+    capabilities: device.capabilities ?? [],
+    cpu_pct: device.cpu_pct ?? null,
+    memory_pct: device.memory_pct ?? null,
+    temperature_c: device.temperature_c ?? device.primary_temperature_c ?? null,
+    uptime_days: device.uptime_days ?? null,
+    latency_ms: device.latency_ms ?? null,
+    temperature_components: device.temperature_components ?? [],
+    power_components: device.power_components ?? [],
     interface_count: adaptedInterfaces.length,
     active_interface_count: activeInterfaceCount,
-    admin_status: isOnline ? 'up' : 'down',
-    oper_status: isOnline ? 'up' : 'down',
-    snmp: {
-      sysName: device.hostname,
-      sysDescr: [device.vendor, device.model].filter(Boolean).join(' ') || '—',
-      sysUpTime: sysUpTimeCs,
-      sysContact: '—',
-      sysLocation: '—',
-    },
+    admin_status: isReachable ? 'up' : 'down',
+    oper_status: isReachable ? 'up' : 'down',
+    snmp,
     history: {
-      cpu: metrics.cpu ?? [],
-      memory: metrics.memory ?? [],
-      temperature: metrics.temperature ?? [],
-      uptime: metrics.uptime ?? [],
+      cpu: pickHistory(deviceHistory, metrics, 'cpu', 'cpu'),
+      memory: pickHistory(deviceHistory, metrics, 'memory', 'memory'),
+      temperature: pickHistory(deviceHistory, metrics, 'temperature', 'temperature'),
+      uptime: pickHistory(deviceHistory, metrics, 'uptime', 'uptime'),
     },
     interfaces: adaptedInterfaces,
   }

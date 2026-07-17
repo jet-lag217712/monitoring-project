@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node_modules/.bin/vite",
     "build": "node_modules/.bin/vite build",
-    "preview": "node_modules/.bin/vite preview"
+    "preview": "node_modules/.bin/vite preview",
+    "test": "node_modules/.bin/vitest run"
   },
   "private": true,
   "dependencies": {
@@ -16,6 +17,7 @@
     "vite": "^8.0.14"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.1"
+    "@vitejs/plugin-react": "^5.1.1",
+    "vitest": "^3.2.4"
   }
 }
