@@ -64,8 +64,9 @@ All colors are defined as CSS custom properties on `:root` in `src/index.css`.
 | `--status-ok` | `#22c55e` | `--status-ok-bg` | `#f0fdf4` | Text: `#15803d` |
 | `--status-caution` | `#f59e0b` | `--status-caution-bg` | `#fffbeb` | Text: `#b45309` |
 | `--status-alert` | `#ef4444` | `--status-alert-bg` | `#fef2f2` | Text: `#b91c1c` |
+| `--status-unknown` | `#64748b` | `--status-unknown-bg` | `#f1f5f9` | Text: `#475569` |
 
-Status colors follow a traffic-light semantic: green = healthy, amber = caution/warning, red = critical/alert. They are used exclusively for device and site health indicators — never decoratively.
+Status colors follow a traffic-light semantic plus a distinct Unknown slate: green = healthy, amber = caution/warning, red = critical/alert, slate = upstream-unreachable / dependency impact. They are used exclusively for device and site health indicators — never decoratively.
 
 **Alert banner specific overrides (not tokens, hardcoded in CSS):**
 - Alert banner background: `#fef2f2`
@@ -96,6 +97,8 @@ Status colors follow a traffic-light semantic: green = healthy, amber = caution/
   --status-caution-bg: #fffbeb;
   --status-alert:      #ef4444;
   --status-alert-bg:   #fef2f2;
+  --status-unknown:    #64748b;
+  --status-unknown-bg: #f1f5f9;
 }
 ```
 

@@ -77,6 +77,11 @@ REST prefix is `/api/...` (not `/api/v1/...`). Frontend and the MVP roadmap are 
 - Site detail device map keys prefer real `ip_address`; fall back to `hostname` when IP is `0.0.0.0`
 - `{deviceId}` = collector string ID (`devices.hostname`) with optional `?siteId=` (sites.name), or device UUID
 
-### Honest defaults (MVP)
+## Honest defaults (MVP + v2)
 
-Fields without telemetry backing (`cpu_pct`, `memory_pct`, `latency_ms`, `role`, `type`, `idf_count`) return `0`, `null`, or `""`.
+- Absent telemetry (`cpu_pct`, `memory_pct`, `temperature_c`, `latency_ms`) is JSON `null`, never fabricated zeros.
+- Device `status` uses numeric compatibility: `0` unknown, `1` healthy, `2` warning, `3` critical.
+- When `device_health_current` exists, status/reason/dependency fields come from that projection. Without a health row, MVP online→`1` / offline→`3` fallback remains.
+- Site summaries expose `healthy_count`, `warning_count`, `critical_count`, `unknown_count`, and `dependency_impacted_count`. Unknown dependents are never counted as Critical.
+- Device detail embeds `history.{cpu,memory,temperature,uptime}` (24h window) plus temperature/power components and SNMP identity when persisted.
+- Fields without inventory backing (`role`, `type`, `idf_count`) return `0` or `""`.

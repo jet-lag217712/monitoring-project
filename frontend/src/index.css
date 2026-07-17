@@ -24,6 +24,8 @@
   --status-caution-bg: #fffbeb;
   --status-alert:      #ef4444;
   --status-alert-bg:   #fef2f2;
+  --status-unknown:    #64748b;
+  --status-unknown-bg: #f1f5f9;
 }
 
 html { scroll-behavior: smooth; }
@@ -383,6 +385,13 @@ body {
 
 .site-card.status-alert { border-left: 3px solid var(--status-alert); }
 .site-card.status-caution { border-left: 3px solid var(--status-caution); }
+.site-card.status-unknown { border-left: 3px solid var(--status-unknown); }
+
+.device-component-panel {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
 
 .site-card-header {
   display: flex;
@@ -426,6 +435,7 @@ body {
 .status-badge.ok      { background: var(--status-ok-bg);      color: #15803d; }
 .status-badge.caution { background: var(--status-caution-bg);  color: #b45309; }
 .status-badge.alert   { background: var(--status-alert-bg);    color: #b91c1c; }
+.status-badge.unknown { background: var(--status-unknown-bg);  color: #475569; }
 
 .badge-dot {
   width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
@@ -433,6 +443,7 @@ body {
 .ok .badge-dot      { background: var(--status-ok); }
 .caution .badge-dot { background: var(--status-caution); }
 .alert .badge-dot   { background: var(--status-alert); animation: blink 1.2s ease-in-out infinite; }
+.unknown .badge-dot { background: var(--status-unknown); }
 
 /* ── SITE CARD METRICS ── */
 .site-metrics {

@@ -7,7 +7,7 @@ import DeviceMetricsCharts from './DeviceMetricsCharts.jsx'
 import InterfaceDetailPanel from './InterfaceDetailPanel.jsx'
 import InterfacesTable from '../tables/InterfacesTable.jsx'
 
-const DEVICE_STATUS_LABELS = { 1: 'Healthy', 2: 'Warning', 3: 'Critical' }
+const DEVICE_STATUS_LABELS = { 0: 'Unknown', 1: 'Healthy', 2: 'Warning', 3: 'Critical' }
 
 export default function DeviceDetail({
   site,
@@ -24,6 +24,11 @@ export default function DeviceDetail({
   const displayName = device?.name ?? device?.hostname ?? deviceIp
   const selectedInterface = device ? resolveSelectedInterface(device, selectedInterfaceKey) : null
   const statusLabel = DEVICE_STATUS_LABELS[device?.status] ?? 'Unknown'
+  const reasonSuffix = device?.status_reason ? ` · ${device.status_reason}` : ''
+  const rootCause =
+    Array.isArray(device?.root_cause_device_ids) && device.root_cause_device_ids.length > 0
+      ? ` · root cause: ${device.root_cause_device_ids.join(', ')}`
+      : ''
 
   return (
     <div className="device-detail-page">
@@ -53,6 +58,8 @@ export default function DeviceDetail({
               <h1 className="page-title">{displayName}</h1>
               <p className="page-sub">
                 {device.hostname ?? '—'} · {deviceIp} · {statusLabel}
+                {reasonSuffix}
+                {rootCause}
               </p>
             </div>
             <DeviceStatusBadge status={device.status} />

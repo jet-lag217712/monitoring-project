@@ -1,14 +1,4 @@
-const SITE_STATUS_LABELS = {
-  ok: 'OK',
-  caution: 'Caution',
-  alert: 'Alert',
-}
-
-const DEVICE_STATUS_LABELS = {
-  1: ['ok', 'Healthy'],
-  2: ['caution', 'Warning'],
-  3: ['alert', 'Critical'],
-}
+import { DEVICE_STATUS_LABELS, SITE_STATUS_LABELS } from './statusLabels.js'
 
 export function SiteStatusBadge({ status }) {
   return (
@@ -20,7 +10,7 @@ export function SiteStatusBadge({ status }) {
 }
 
 export function DeviceStatusBadge({ status }) {
-  const [className, label] = DEVICE_STATUS_LABELS[status] ?? ['ok', 'Unknown']
+  const [className, label] = DEVICE_STATUS_LABELS[status] ?? ['unknown', 'Unknown']
 
   return (
     <span className={`status-badge ${className}`}>
@@ -29,3 +19,5 @@ export function DeviceStatusBadge({ status }) {
     </span>
   )
 }
+
+export { DEVICE_STATUS_LABELS, SITE_STATUS_LABELS }

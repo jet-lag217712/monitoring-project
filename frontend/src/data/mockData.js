@@ -233,38 +233,71 @@ function enrichDevice(ip, device, siteLocation) {
   const serialSuffix = (seed % 900000 + 100000).toString(16).toUpperCase()
   const interfaces = buildInterfaces(ip, device)
   const activeInterfaceCount = interfaces.filter(iface => iface.oper_status === 'up').length
-  const isOnline = device.status === 1
+  const isReachable = device.status === 1 || device.status === 2
   const psu1_v = Math.round((11.8 + rng() * 0.6) * 10) / 10
   const psu2_v = Math.round((11.8 + rng() * 0.6) * 10) / 10
   const voltagesInRange = psu1_v >= 11.5 && psu1_v <= 12.5 && psu2_v >= 11.5 && psu2_v <= 12.5
+  const temperatureC =
+    device.temperature_c ?? Math.round(38 + rng() * 18 + (device.cpu_pct ?? 0) * 0.1)
 
   return {
     ...device,
     name: device.hostname,
-    vendor: meta.vendor,
-    model: meta.model,
-    serial_number: `SN-${serialSuffix}`,
-    temperature_c: Math.round(38 + rng() * 18 + (device.cpu_pct ?? 0) * 0.1),
-    power_supply: {
-      psu1_v,
-      psu2_v,
-    },
-    power_supply_status: voltagesInRange ? 'Normal' : 'Warning',
+    vendor: device.vendor ?? meta.vendor,
+    model: device.model ?? meta.model,
+    serial_number: device.serial_number ?? `SN-${serialSuffix}`,
+    profile: device.profile ?? (meta.vendor === 'Cisco' ? 'cisco' : 'core'),
+    temperature_c: temperatureC,
+    status_reason: device.status_reason ?? null,
+    failure_count: device.failure_count ?? null,
+    upstream_device_ids: device.upstream_device_ids ?? [],
+    unavailable_upstream_device_ids: device.unavailable_upstream_device_ids ?? [],
+    root_cause_device_ids: device.root_cause_device_ids ?? [],
+    temperature_components: device.temperature_components ?? [
+      {
+        component_id: 'temp-1',
+        name: 'Inlet',
+        index: '1',
+        value: temperatureC - 2,
+        unit: 'celsius',
+        status: 'ok',
+      },
+    ],
+    power_components: device.power_components ?? [
+      {
+        component_id: 'power-1',
+        name: 'PSU 1',
+        index: '1',
+        value: psu1_v,
+        unit: 'volts',
+        status: voltagesInRange ? 'ok' : 'warning',
+      },
+      {
+        component_id: 'power-2',
+        name: 'PSU 2',
+        index: '2',
+        value: psu2_v,
+        unit: 'volts',
+        status: voltagesInRange ? 'ok' : 'warning',
+      },
+    ],
     snmp: {
       sysName: device.hostname,
       sysDescr: buildSysDescr(device.role, meta),
+      sysObjectID: device.snmp?.sysObjectID ?? '1.3.6.1.4.1.9.1.9999',
       sysUpTime: Math.round((device.uptime_days ?? 0) * 24 * 60 * 60 * 100),
       sysContact: 'netops@district.edu',
       sysLocation: siteLocation ?? '—',
     },
     interface_count: interfaces.length,
     active_interface_count: activeInterfaceCount,
-    admin_status: isOnline ? 'up' : 'down',
-    oper_status: isOnline ? 'up' : 'down',
+    admin_status: isReachable ? 'up' : 'down',
+    oper_status: isReachable ? 'up' : 'down',
     history: {
       cpu: buildHistory(seed, device.cpu_pct ?? 30),
       memory: buildHistory(seed + 1, device.memory_pct ?? 40),
-      temperature: buildHistory(seed + 2, 42 + (device.cpu_pct ?? 0) * 0.15, 4),
+      temperature: buildHistory(seed + 2, temperatureC, 4),
+      uptime: buildHistory(seed + 3, (device.uptime_days ?? 1) * 86400, 1000),
     },
     interfaces,
   }
@@ -285,20 +318,37 @@ function clone(value) {
 
 function deriveSiteSummary(detail) {
   const devices = Object.values(detail.latest.devices)
-  const onlineCount = devices.filter(device => device.status === 1).length
-  const cautionCount = devices.filter(device => device.status === 2).length
-  const alertCount = devices.filter(device => device.status === 3).length
-  const avgCpu = Math.round(devices.reduce((sum, device) => sum + device.cpu_pct, 0) / devices.length)
-  const avgMemory = Math.round(devices.reduce((sum, device) => sum + device.memory_pct, 0) / devices.length)
+  const healthyCount = devices.filter(device => device.status === 1).length
+  const warningCount = devices.filter(device => device.status === 2).length
+  const criticalCount = devices.filter(device => device.status === 3).length
+  const unknownCount = devices.filter(device => device.status === 0).length
+  const dependencyImpactedCount = devices.filter(
+    device =>
+      device.status === 0 &&
+      Array.isArray(device.unavailable_upstream_device_ids) &&
+      device.unavailable_upstream_device_ids.length > 0,
+  ).length
+  const onlineCount = devices.filter(device => device.status === 1 || device.status === 2).length
+  const avgCpu = Math.round(
+    devices.reduce((sum, device) => sum + (device.cpu_pct ?? 0), 0) / Math.max(devices.length, 1),
+  )
+  const avgMemory = Math.round(
+    devices.reduce((sum, device) => sum + (device.memory_pct ?? 0), 0) / Math.max(devices.length, 1),
+  )
 
   detail.summary.total_devices = devices.length
   detail.summary.online_count = onlineCount
-  detail.summary.active_alerts = alertCount
+  detail.summary.active_alerts = criticalCount
+  detail.summary.healthy_count = healthyCount
+  detail.summary.warning_count = warningCount
+  detail.summary.critical_count = criticalCount
+  detail.summary.unknown_count = unknownCount
+  detail.summary.dependency_impacted_count = dependencyImpactedCount
 
   return {
     location: detail.location,
     type: detail.summary.idf_count > 1 ? 'Multi-IDF Campus' : 'Single-IDF Campus',
-    status: alertCount > 0 ? 'alert' : cautionCount > 0 ? 'caution' : 'ok',
+    status: criticalCount > 0 ? 'alert' : warningCount > 0 || unknownCount > 0 ? 'caution' : 'ok',
     latest: {
       summary: {
         idf_count: detail.summary.idf_count,
@@ -306,7 +356,12 @@ function deriveSiteSummary(detail) {
         online_count: onlineCount,
         avg_cpu: avgCpu,
         avg_memory: avgMemory,
-        active_alerts: alertCount,
+        active_alerts: criticalCount,
+        healthy_count: healthyCount,
+        warning_count: warningCount,
+        critical_count: criticalCount,
+        unknown_count: unknownCount,
+        dependency_impacted_count: dependencyImpactedCount,
       },
     },
   }
@@ -328,21 +383,43 @@ export const mockScenarios = {
   'all-healthy': buildScenario(() => {}),
   'two-caution': buildScenario(details => {
     details['school-a'].latest.devices['10.20.10.2'].status = 2
+    details['school-a'].latest.devices['10.20.10.2'].status_reason = 'temperature_warning'
     details['school-a'].latest.devices['10.20.10.2'].cpu_pct = 74
     details['school-a'].latest.devices['10.20.10.2'].memory_pct = 78
     details['school-a'].latest.devices['10.20.10.2'].latency_ms = 18.4
 
     details['school-c'].latest.devices['10.40.30.2'].status = 2
+    details['school-c'].latest.devices['10.40.30.2'].status_reason = 'temperature_warning'
     details['school-c'].latest.devices['10.40.30.2'].cpu_pct = 79
     details['school-c'].latest.devices['10.40.30.2'].memory_pct = 81
     details['school-c'].latest.devices['10.40.30.2'].latency_ms = 21.1
   }),
   'one-red': buildScenario(details => {
     details['school-b'].latest.devices['10.30.0.1'].status = 3
+    details['school-b'].latest.devices['10.30.0.1'].status_reason = 'poll_failed'
+    details['school-b'].latest.devices['10.30.0.1'].failure_count = 2
     details['school-b'].latest.devices['10.30.0.1'].cpu_pct = 96
     details['school-b'].latest.devices['10.30.0.1'].memory_pct = 93
     details['school-b'].latest.devices['10.30.0.1'].latency_ms = 126.5
     details['school-b'].latest.devices['10.30.10.2'].latency_ms = 48.3
+  }),
+  'cascade-unknown': buildScenario(details => {
+    details['district-office'].latest.devices['10.10.0.1'].status = 3
+    details['district-office'].latest.devices['10.10.0.1'].status_reason = 'poll_failed'
+    details['district-office'].latest.devices['10.10.0.1'].failure_count = 2
+    details['district-office'].latest.devices['10.10.0.1'].cpu_pct = null
+    details['district-office'].latest.devices['10.10.0.1'].memory_pct = null
+
+    details['district-office'].latest.devices['10.10.0.2'].status = 0
+    details['district-office'].latest.devices['10.10.0.2'].status_reason = 'upstream_unreachable'
+    details['district-office'].latest.devices['10.10.0.2'].failure_count = 2
+    details['district-office'].latest.devices['10.10.0.2'].upstream_device_ids = ['dist-core-01']
+    details['district-office'].latest.devices['10.10.0.2'].unavailable_upstream_device_ids = [
+      'dist-core-01',
+    ]
+    details['district-office'].latest.devices['10.10.0.2'].root_cause_device_ids = ['dist-core-01']
+    details['district-office'].latest.devices['10.10.0.2'].cpu_pct = null
+    details['district-office'].latest.devices['10.10.0.2'].memory_pct = null
   }),
 }
 

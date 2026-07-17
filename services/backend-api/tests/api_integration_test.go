@@ -185,6 +185,133 @@ func TestAPI_SitesAndDetailShapes(t *testing.T) {
 	})
 }
 
+func TestAPI_CriticalVsUnknownHealth(t *testing.T) {
+	dbURL := integrationDBURL(t)
+	ctx := context.Background()
+
+	adminURL := os.Getenv("DATABASE_ADMIN_URL")
+	if adminURL == "" {
+		adminURL = "postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable"
+	}
+
+	seedHealthCascade(t, ctx, adminURL)
+	defer cleanupHealthCascade(t, ctx, adminURL)
+
+	st, err := store.Open(ctx, dbURL, 5, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	api := handlers.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)), 5*time.Minute)
+	mux := http.NewServeMux()
+	api.Register(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sites/api-health-site", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var detail models.SiteDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Summary.CriticalCount != 1 {
+		t.Fatalf("critical_count=%d want 1", detail.Summary.CriticalCount)
+	}
+	if detail.Summary.UnknownCount != 1 || detail.Summary.DependencyImpactedCount != 1 {
+		t.Fatalf("unknown=%d impacted=%d", detail.Summary.UnknownCount, detail.Summary.DependencyImpactedCount)
+	}
+
+	core := detail.Latest.Devices["core-01"]
+	if core.Status != 3 || core.StatusReason != "poll_failed" {
+		t.Fatalf("core=%+v", core)
+	}
+	access := detail.Latest.Devices["access-01"]
+	if access.Status != 0 || access.StatusReason != "upstream_unreachable" {
+		t.Fatalf("access=%+v", access)
+	}
+	if len(access.RootCauseDeviceIDs) != 1 || access.RootCauseDeviceIDs[0] != "core-01" {
+		t.Fatalf("root causes=%v", access.RootCauseDeviceIDs)
+	}
+}
+
+func seedHealthCascade(t *testing.T, ctx context.Context, adminURL string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, adminURL)
+	if err != nil {
+		t.Fatalf("admin connect: %v", err)
+	}
+	defer pool.Close()
+
+	siteID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0010")
+	coreID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0011")
+	accessID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0012")
+	now := time.Now().UTC()
+	eventID := uuid.New()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO sites (id, name, location)
+		VALUES ($1, 'api-health-site', 'Health Cascade Site')
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+	`, siteID)
+	if err != nil {
+		t.Fatalf("seed site: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO devices (id, site_id, hostname, ip_address, vendor, model, snmp_version, status, last_seen)
+		VALUES
+			($1, $3, 'core-01', '10.0.0.1', 'cisco', 'core', '2c', 'offline', $4),
+			($2, $3, 'access-01', '10.0.0.2', 'cisco', 'access', '2c', 'offline', $4)
+		ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, last_seen = EXCLUDED.last_seen
+	`, coreID, accessID, siteID, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("seed devices: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO device_health_current (
+			device_id, site_id, state, reason, transition, failure_count, failure_threshold,
+			upstream_device_ids, unavailable_upstream_device_ids, root_cause_device_ids,
+			observed_at, event_id
+		) VALUES
+			($1, $3, 'critical', 'poll_failed', 'entered', 2, 2, '{}', '{}', '{}', $4, $5),
+			($2, $3, 'unknown', 'upstream_unreachable', 'entered', 2, 2,
+			 ARRAY['core-01'], ARRAY['core-01'], ARRAY['core-01'], $4, $6)
+		ON CONFLICT (device_id) DO UPDATE SET
+			state = EXCLUDED.state,
+			reason = EXCLUDED.reason,
+			failure_count = EXCLUDED.failure_count,
+			upstream_device_ids = EXCLUDED.upstream_device_ids,
+			unavailable_upstream_device_ids = EXCLUDED.unavailable_upstream_device_ids,
+			root_cause_device_ids = EXCLUDED.root_cause_device_ids,
+			observed_at = EXCLUDED.observed_at,
+			event_id = EXCLUDED.event_id
+	`, coreID, accessID, siteID, now, eventID, uuid.New())
+	if err != nil {
+		t.Fatalf("seed health: %v", err)
+	}
+}
+
+func cleanupHealthCascade(t *testing.T, ctx context.Context, adminURL string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, adminURL)
+	if err != nil {
+		t.Logf("cleanup connect: %v", err)
+		return
+	}
+	defer pool.Close()
+
+	coreID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0011")
+	accessID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0012")
+	siteID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0010")
+	_, _ = pool.Exec(ctx, `DELETE FROM device_health_current WHERE device_id IN ($1, $2)`, coreID, accessID)
+	_, _ = pool.Exec(ctx, `DELETE FROM devices WHERE id IN ($1, $2)`, coreID, accessID)
+	_, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, siteID)
+}
+
 func integrationDBURL(t *testing.T) string {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")

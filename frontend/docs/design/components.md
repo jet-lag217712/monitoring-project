@@ -309,20 +309,23 @@ See [Utilization Bar](#8--utilization-bar).
 | `.status-badge.ok` | `var(--status-ok-bg)` = `#f0fdf4` | `#15803d` (dark green) |
 | `.status-badge.caution` | `var(--status-caution-bg)` = `#fffbeb` | `#b45309` (dark amber) |
 | `.status-badge.alert` | `var(--status-alert-bg)` = `#fef2f2` | `#b91c1c` (dark red) |
+| `.status-badge.unknown` | `var(--status-unknown-bg)` = `#f1f5f9` | `#475569` (slate) |
 
 ### Badge Dot (`.badge-dot`)
 - `5px × 5px; border-radius: 50%; flex-shrink: 0`
 - `.ok .badge-dot` → `background: var(--status-ok)` (bright green)
 - `.caution .badge-dot` → `background: var(--status-caution)` (bright amber)
 - `.alert .badge-dot` → `background: var(--status-alert)` + `animation: blink 1.2s infinite` (blinking red)
+- `.unknown .badge-dot` → `background: var(--status-unknown)` (slate)
 
 ### Two Exported Components
 - `<SiteStatusBadge status="ok|caution|alert" />` — maps to `OK`, `Caution`, `Alert` labels
-- `<DeviceStatusBadge status={1|2|3} />` — maps to numeric API status codes:
+- `<DeviceStatusBadge status={0|1|2|3} />` — maps to numeric API status codes:
+  - `0` → class `unknown`, label `Unknown`
   - `1` → class `ok`, label `Healthy`
   - `2` → class `caution`, label `Warning`
   - `3` → class `alert`, label `Critical`
-  - fallback → class `ok`, label `Unknown`
+  - fallback → class `unknown`, label `Unknown`
 
 ---
 
