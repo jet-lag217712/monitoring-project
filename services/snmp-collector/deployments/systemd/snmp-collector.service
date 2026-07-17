@@ -1,0 +1,50 @@
+[Unit]
+Description=Equate SNMP Collector
+Documentation=file:///opt/equate/snmp-collector/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snmp-collector
+Group=snmp-collector
+WorkingDirectory=/opt/equate/snmp-collector
+
+# Least-privilege hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# Writable paths only where the collector must persist state.
+RuntimeDirectory=snmp-collector
+RuntimeDirectoryMode=0750
+StateDirectory=snmp-collector
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/snmp-collector /run/snmp-collector
+
+# Environment for community_env / MQTT password references (never commit secrets).
+EnvironmentFile=-/etc/equate/snmp-collector.env
+
+ExecStart=/usr/local/bin/collector -config /etc/equate/collector.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=on-failure
+RestartSec=5s
+
+# Suggested config values (set in collector.yaml):
+#   admin.control_socket: /run/snmp-collector/control.sock
+#   inventory.managed_path: /var/lib/snmp-collector/managed-inventory.yaml
+#   buffer.path: /var/lib/snmp-collector/buffer.db
+#
+# Permissions:
+#   control socket: 0600, owner snmp-collector
+#   managed inventory: 0600, owner snmp-collector
+#   audit log (managed-inventory.yaml.audit.log): 0600, owner snmp-collector
+
+[Install]
+WantedBy=multi-user.target

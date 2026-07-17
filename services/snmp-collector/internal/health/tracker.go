@@ -2,12 +2,14 @@ package health
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
 )
 
 // Tracker owns the committed failure ledger and post-cycle health evaluation.
 type Tracker struct {
+	mu      sync.RWMutex
 	devices map[string]*DeviceHealth
 }
 
@@ -20,6 +22,8 @@ func NewTracker() *Tracker {
 // Retained devices keep failure count, terminal state, last success time, and evidence.
 // New devices are created as unobserved on first ApplyBatch.
 func (t *Tracker) Prune(activeIDs []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.devices == nil {
 		t.devices = make(map[string]*DeviceHealth)
 	}
@@ -36,6 +40,8 @@ func (t *Tracker) Prune(activeIDs []string) {
 
 // Device returns a copy of the committed health entry, if present.
 func (t *Tracker) Device(id string) (DeviceHealth, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	entry, ok := t.devices[id]
 	if !ok || entry == nil {
 		return DeviceHealth{}, false
@@ -45,6 +51,8 @@ func (t *Tracker) Device(id string) (DeviceHealth, bool) {
 
 // Snapshot returns committed gauge inputs after correlation.
 func (t *Tracker) Snapshot() Snapshot {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	snap := Snapshot{
 		DevicesByState: map[State]int{
 			StateHealthy:  0,
@@ -77,6 +85,8 @@ func (t *Tracker) Snapshot() Snapshot {
 // ApplyBatch commits outcomes for a completed cycle and evaluates the full inventory.
 // Events are returned sorted by device ID. Phase 3 never emits TransitionReasserted.
 func (t *Tracker) ApplyBatch(cfg *config.Config, outcomes []PollOutcome) []Event {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.devices == nil {
 		t.devices = make(map[string]*DeviceHealth)
 	}

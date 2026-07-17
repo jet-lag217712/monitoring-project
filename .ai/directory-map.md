@@ -112,8 +112,11 @@ monitoring-dashboard/
 │   ├── collector-2.md
 │   ├── collector-3.md
 │   ├── collector-4.md
+│   ├── collector-5.md
+│   ├── collector-6.md
 │   ├── dashboard-1.md
 │   ├── dashboard-2.md
+│   ├── dashboard-3.md
 │   └── instructions.md
 │
 ├── roadmap/

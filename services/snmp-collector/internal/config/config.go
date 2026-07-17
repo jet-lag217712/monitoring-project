@@ -97,9 +97,9 @@ type DiscoveryConfig struct {
 
 // PublisherConfig selects the publish backend and poller publish timeout.
 type PublisherConfig struct {
-	Mode              string        `yaml:"mode"` // stdout | mqtt
-	Timeout           time.Duration `yaml:"timeout"`
-	TelemetryVersion  string        `yaml:"telemetry_version"` // v1 | v2 | both
+	Mode             string        `yaml:"mode"` // stdout | mqtt
+	Timeout          time.Duration `yaml:"timeout"`
+	TelemetryVersion string        `yaml:"telemetry_version"` // v1 | v2 | both
 }
 
 // BufferConfig controls the durable local SQLite buffer (mqtt mode).
@@ -135,9 +135,10 @@ type ReconnectConfig struct {
 	Max     time.Duration `yaml:"max"`
 }
 
-// AdminConfig controls the admin HTTP server (metrics/health).
+// AdminConfig controls the admin HTTP server (metrics/health) and local control socket.
 type AdminConfig struct {
-	Listen string `yaml:"listen"`
+	Listen        string `yaml:"listen"`
+	ControlSocket string `yaml:"control_socket"`
 }
 
 // SNMPConfig holds shared SNMP client defaults.
@@ -192,9 +193,25 @@ type InterfaceFilterRule struct {
 	OperStatus  string `yaml:"oper_status"`
 }
 
+// ManagedHealthPolicy is the optional global temperature override in the managed file.
+type ManagedHealthPolicy struct {
+	TemperatureWarningC *float64 `yaml:"temperature_warning_c"`
+}
+
+// ManagedDiscoveryPolicy is the optional discovery rate override in the managed file.
+// CIDR allowlists remain static-authoritative and are never accepted here.
+type ManagedDiscoveryPolicy struct {
+	MaxProbesPerSecond *float64 `yaml:"max_probes_per_second"`
+	ProbeBurst         *int     `yaml:"probe_burst"`
+}
+
 // ManagedInventory is the on-disk shape written by local operator tooling.
+// It may contain policy overlays and device overlays/appends. Runtime never
+// writes back into this document except through explicit operator mutations.
 type ManagedInventory struct {
-	Devices []DeviceConfig `yaml:"devices"`
+	Health    ManagedHealthPolicy    `yaml:"health"`
+	Discovery ManagedDiscoveryPolicy `yaml:"discovery"`
+	Devices   []DeviceConfig         `yaml:"devices"`
 }
 
 // Load reads and validates a collector config file for daemon startup.
@@ -237,16 +254,26 @@ func load(path string, requireRuntimeSecrets bool) (*Config, error) {
 		return nil, err
 	}
 
-	managedDevices, err := loadManagedInventory(cfg.Inventory.ManagedPath, cfg.configPath)
+	managed, err := loadManagedDocument(cfg.Inventory.ManagedPath, cfg.configPath)
 	if err != nil {
 		return nil, err
 	}
-	applyDeviceDefaults(managedDevices)
-	if err := validateDeviceSource(managedDevices, "managed devices"); err != nil {
+	if err := validateManagedDocument(managed, staticDevices); err != nil {
 		return nil, err
 	}
+	staticIDs := make(map[string]struct{}, len(staticDevices))
+	for _, device := range staticDevices {
+		staticIDs[device.ID] = struct{}{}
+	}
+	for i := range managed.Devices {
+		if _, exists := staticIDs[managed.Devices[i].ID]; exists {
+			continue
+		}
+		applyDeviceDefaults(managed.Devices[i : i+1])
+	}
 
-	cfg.Devices = mergeInventories(staticDevices, managedDevices)
+	cfg.Devices = mergeInventories(staticDevices, managed.Devices)
+	applyManagedPolicy(&cfg, managed)
 	if err := cfg.validate(false); err != nil {
 		return nil, err
 	}
@@ -273,9 +300,10 @@ func decodeYAML(data []byte, dst any) error {
 	return nil
 }
 
-func loadManagedInventory(path, configPath string) ([]DeviceConfig, error) {
+func loadManagedDocument(path, configPath string) (ManagedInventory, error) {
+	var empty ManagedInventory
 	if strings.TrimSpace(path) == "" {
-		return nil, nil
+		return empty, nil
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(filepath.Dir(configPath), path)
@@ -284,19 +312,96 @@ func loadManagedInventory(path, configPath string) ([]DeviceConfig, error) {
 
 	if err := validateSourceFile(path, true); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return empty, nil
 		}
-		return nil, fmt.Errorf("managed inventory: %w", err)
+		return empty, fmt.Errorf("managed inventory: %w", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read managed inventory: %w", err)
+		return empty, fmt.Errorf("read managed inventory: %w", err)
 	}
 	var inventory ManagedInventory
 	if err := decodeYAML(data, &inventory); err != nil {
-		return nil, fmt.Errorf("parse managed inventory: %w", err)
+		return empty, fmt.Errorf("parse managed inventory: %w", err)
 	}
-	return inventory.Devices, nil
+	return inventory, nil
+}
+
+func validateManagedDocument(managed ManagedInventory, staticDevices []DeviceConfig) error {
+	if managed.Health.TemperatureWarningC != nil {
+		v := *managed.Health.TemperatureWarningC
+		if v < minTemperatureCelsius || v > maxTemperatureCelsius {
+			return fmt.Errorf("managed health.temperature_warning_c must be between %.0f and %.0f", minTemperatureCelsius, maxTemperatureCelsius)
+		}
+	}
+	if managed.Discovery.MaxProbesPerSecond != nil && *managed.Discovery.MaxProbesPerSecond <= 0 {
+		return fmt.Errorf("managed discovery.max_probes_per_second must be positive")
+	}
+	if managed.Discovery.ProbeBurst != nil && *managed.Discovery.ProbeBurst <= 0 {
+		return fmt.Errorf("managed discovery.probe_burst must be positive")
+	}
+
+	staticIDs := make(map[string]struct{}, len(staticDevices))
+	for _, device := range staticDevices {
+		staticIDs[device.ID] = struct{}{}
+	}
+
+	overlays := make([]DeviceConfig, 0)
+	appends := make([]DeviceConfig, 0)
+	for i, device := range managed.Devices {
+		if _, exists := staticIDs[device.ID]; exists {
+			if err := validateManagedOverlay(device, fmt.Sprintf("managed devices[%d]", i)); err != nil {
+				return err
+			}
+			overlays = append(overlays, device)
+			continue
+		}
+		appends = append(appends, device)
+	}
+	applyDeviceDefaults(appends)
+	if err := validateDeviceSource(appends, "managed devices"); err != nil {
+		return err
+	}
+	// Overlays may omit host; uniqueness among overlay IDs is still required.
+	seenOverlayIDs := make(map[string]struct{}, len(overlays))
+	for _, device := range overlays {
+		if _, ok := seenOverlayIDs[device.ID]; ok {
+			return fmt.Errorf("duplicate device id %q in managed devices", device.ID)
+		}
+		seenOverlayIDs[device.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateManagedOverlay(device DeviceConfig, prefix string) error {
+	if strings.TrimSpace(device.ID) == "" {
+		return fmt.Errorf("%s.id is required", prefix)
+	}
+	if !identifierPattern.MatchString(device.ID) {
+		return fmt.Errorf("%s.id has invalid format", prefix)
+	}
+	if device.TemperatureWarningC != nil {
+		v := *device.TemperatureWarningC
+		if v < minTemperatureCelsius || v > maxTemperatureCelsius {
+			return fmt.Errorf("%s.temperature_warning_c must be between %.0f and %.0f", prefix, minTemperatureCelsius, maxTemperatureCelsius)
+		}
+	}
+	if err := validateInterfaceFilters(device.InterfaceFilters, prefix+".interface_filters"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func applyManagedPolicy(cfg *Config, managed ManagedInventory) {
+	if managed.Health.TemperatureWarningC != nil {
+		cfg.Health.TemperatureWarningC = *managed.Health.TemperatureWarningC
+	}
+	if managed.Discovery.MaxProbesPerSecond != nil {
+		cfg.Discovery.MaxProbesPerSecond = *managed.Discovery.MaxProbesPerSecond
+	}
+	if managed.Discovery.ProbeBurst != nil {
+		cfg.Discovery.ProbeBurst = *managed.Discovery.ProbeBurst
+	}
 }
 
 func validateSourceFile(path string, managed bool) error {
@@ -316,20 +421,74 @@ func validateSourceFile(path string, managed bool) error {
 	return nil
 }
 
+// mergeInventories builds the runtime device list: static devices first, then
+// overlays for matching IDs, then unique managed appends. Static-authoritative
+// identity fields (host, port, version, community_env) are never replaced.
 func mergeInventories(staticDevices, managedDevices []DeviceConfig) []DeviceConfig {
 	merged := make([]DeviceConfig, 0, len(staticDevices)+len(managedDevices))
-	staticIDs := make(map[string]struct{}, len(staticDevices))
+	indexByID := make(map[string]int, len(staticDevices))
 	for _, device := range staticDevices {
+		indexByID[device.ID] = len(merged)
 		merged = append(merged, device)
-		staticIDs[device.ID] = struct{}{}
 	}
 	for _, device := range managedDevices {
-		if _, exists := staticIDs[device.ID]; exists {
+		if idx, exists := indexByID[device.ID]; exists {
+			merged[idx] = applyDeviceOverlay(merged[idx], device)
 			continue
 		}
 		merged = append(merged, device)
 	}
 	return merged
+}
+
+// applyDeviceOverlay copies allowed managed overlay fields onto a static device.
+func applyDeviceOverlay(base, overlay DeviceConfig) DeviceConfig {
+	if overlay.TemperatureWarningC != nil {
+		value := *overlay.TemperatureWarningC
+		base.TemperatureWarningC = &value
+	}
+	if overlay.UpstreamDeviceIDs != nil {
+		base.UpstreamDeviceIDs = append([]string(nil), overlay.UpstreamDeviceIDs...)
+	}
+	if hasInterfaceFilterConfig(overlay.InterfaceFilters) {
+		base.InterfaceFilters = cloneInterfaceFilters(overlay.InterfaceFilters)
+	}
+	return base
+}
+
+func hasInterfaceFilterConfig(filters InterfaceFilterConfig) bool {
+	return len(filters.Rules) > 0 ||
+		len(filters.IncludeIfIndexes) > 0 ||
+		len(filters.ExcludeIfIndexes) > 0 ||
+		len(filters.IncludeNameRegex) > 0 ||
+		len(filters.ExcludeNameRegex) > 0 ||
+		len(filters.IncludeAliasRegex) > 0 ||
+		len(filters.ExcludeAliasRegex) > 0 ||
+		len(filters.IncludeTypes) > 0 ||
+		len(filters.ExcludeTypes) > 0 ||
+		len(filters.IncludeAdminStatuses) > 0 ||
+		len(filters.ExcludeAdminStatuses) > 0 ||
+		len(filters.IncludeOperStatuses) > 0 ||
+		len(filters.ExcludeOperStatuses) > 0
+}
+
+func cloneInterfaceFilters(filters InterfaceFilterConfig) InterfaceFilterConfig {
+	out := InterfaceFilterConfig{
+		Rules:                append([]InterfaceFilterRule(nil), filters.Rules...),
+		IncludeIfIndexes:     append([]int(nil), filters.IncludeIfIndexes...),
+		ExcludeIfIndexes:     append([]int(nil), filters.ExcludeIfIndexes...),
+		IncludeNameRegex:     append([]string(nil), filters.IncludeNameRegex...),
+		ExcludeNameRegex:     append([]string(nil), filters.ExcludeNameRegex...),
+		IncludeAliasRegex:    append([]string(nil), filters.IncludeAliasRegex...),
+		ExcludeAliasRegex:    append([]string(nil), filters.ExcludeAliasRegex...),
+		IncludeTypes:         append([]string(nil), filters.IncludeTypes...),
+		ExcludeTypes:         append([]string(nil), filters.ExcludeTypes...),
+		IncludeAdminStatuses: append([]string(nil), filters.IncludeAdminStatuses...),
+		ExcludeAdminStatuses: append([]string(nil), filters.ExcludeAdminStatuses...),
+		IncludeOperStatuses:  append([]string(nil), filters.IncludeOperStatuses...),
+		ExcludeOperStatuses:  append([]string(nil), filters.ExcludeOperStatuses...),
+	}
+	return out
 }
 
 func (c *Config) applyDefaults() {
@@ -670,6 +829,11 @@ func canonicalHost(host string) string {
 	return strings.ToLower(host)
 }
 
+// ValidateDependencies checks upstream references and cycles across a device inventory.
+func ValidateDependencies(devices []DeviceConfig) error {
+	return validateDependencies(devices)
+}
+
 func validateDependencies(devices []DeviceConfig) error {
 	byID := make(map[string]DeviceConfig, len(devices))
 	for _, device := range devices {
@@ -965,39 +1129,76 @@ func ConfigRevision(cfg *Config) string {
 	return fmt.Sprintf("revision-%x", h.Sum(nil)[:10])
 }
 
-// ReadManagedInventory loads a managed inventory file. A missing file is empty.
-func ReadManagedInventory(path string) ([]DeviceConfig, error) {
+// ReadManagedDocument loads the full managed inventory document. A missing file is empty.
+func ReadManagedDocument(path string) (ManagedInventory, error) {
+	var empty ManagedInventory
 	if strings.TrimSpace(path) == "" {
-		return nil, nil
+		return empty, nil
 	}
 	path = filepath.Clean(path)
 	if err := validateSourceFile(path, true); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return empty, nil
 		}
-		return nil, fmt.Errorf("managed inventory: %w", err)
+		return empty, fmt.Errorf("managed inventory: %w", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read managed inventory: %w", err)
+		return empty, fmt.Errorf("read managed inventory: %w", err)
 	}
 	var inventory ManagedInventory
 	if err := decodeYAML(data, &inventory); err != nil {
-		return nil, fmt.Errorf("parse managed inventory: %w", err)
+		return empty, fmt.Errorf("parse managed inventory: %w", err)
+	}
+	return inventory, nil
+}
+
+// ReadManagedInventory loads managed device entries. A missing file is empty.
+func ReadManagedInventory(path string) ([]DeviceConfig, error) {
+	inventory, err := ReadManagedDocument(path)
+	if err != nil {
+		return nil, err
 	}
 	return append([]DeviceConfig(nil), inventory.Devices...), nil
 }
 
-// WriteManagedInventory atomically persists a secret-free managed inventory.
-func WriteManagedInventory(path string, devices []DeviceConfig) error {
+// WriteManagedDocument atomically persists a secret-free managed inventory document.
+func WriteManagedDocument(path string, inventory ManagedInventory) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("managed inventory path is required")
 	}
-	normalized := append([]DeviceConfig(nil), devices...)
-	applyDeviceDefaults(normalized)
-	if err := validateDeviceSource(normalized, "managed devices"); err != nil {
+	normalized := inventory
+	normalized.Devices = append([]DeviceConfig(nil), inventory.Devices...)
+	applyDeviceDefaults(normalized.Devices)
+	// Full validation of appends requires static context; here we only validate
+	// entries that look like complete devices. Overlay-only entries (no host)
+	// are validated lightly so control-plane writers can persist overlays.
+	appends := make([]DeviceConfig, 0)
+	for i, device := range normalized.Devices {
+		if strings.TrimSpace(device.Host) == "" {
+			if err := validateManagedOverlay(device, fmt.Sprintf("managed devices[%d]", i)); err != nil {
+				return err
+			}
+			continue
+		}
+		appends = append(appends, device)
+	}
+	if err := validateDeviceSource(appends, "managed devices"); err != nil {
 		return err
 	}
+	if normalized.Health.TemperatureWarningC != nil {
+		v := *normalized.Health.TemperatureWarningC
+		if v < minTemperatureCelsius || v > maxTemperatureCelsius {
+			return fmt.Errorf("managed health.temperature_warning_c must be between %.0f and %.0f", minTemperatureCelsius, maxTemperatureCelsius)
+		}
+	}
+	if normalized.Discovery.MaxProbesPerSecond != nil && *normalized.Discovery.MaxProbesPerSecond <= 0 {
+		return fmt.Errorf("managed discovery.max_probes_per_second must be positive")
+	}
+	if normalized.Discovery.ProbeBurst != nil && *normalized.Discovery.ProbeBurst <= 0 {
+		return fmt.Errorf("managed discovery.probe_burst must be positive")
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create managed inventory directory: %w", err)
@@ -1019,7 +1220,7 @@ func WriteManagedInventory(path string, devices []DeviceConfig) error {
 		return fmt.Errorf("set managed inventory permissions: %w", err)
 	}
 	encoder := yaml.NewEncoder(tmp)
-	if err := encoder.Encode(ManagedInventory{Devices: normalized}); err != nil {
+	if err := encoder.Encode(normalized); err != nil {
 		_ = encoder.Close()
 		return fmt.Errorf("encode managed inventory: %w", err)
 	}
@@ -1048,4 +1249,15 @@ func WriteManagedInventory(path string, devices []DeviceConfig) error {
 		return fmt.Errorf("close managed inventory directory: %w", err)
 	}
 	return nil
+}
+
+// WriteManagedInventory atomically persists managed devices while preserving
+// any existing managed health/discovery policy sections.
+func WriteManagedInventory(path string, devices []DeviceConfig) error {
+	existing, err := ReadManagedDocument(path)
+	if err != nil {
+		return err
+	}
+	existing.Devices = append([]DeviceConfig(nil), devices...)
+	return WriteManagedDocument(path, existing)
 }

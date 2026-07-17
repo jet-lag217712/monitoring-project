@@ -7,6 +7,11 @@ max_workers: 10
 
 admin:
   listen: ":9090"
+  # Local-only operator control socket (empty disables). Prefer a RuntimeDirectory path in production.
+  control_socket: ""
+
+inventory:
+  managed_path: "managed-inventory.yaml"
 
 snmp:
   timeout: 5s

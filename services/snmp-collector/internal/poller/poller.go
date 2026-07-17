@@ -19,6 +19,7 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/profile"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/readings"
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/vendors"
+	"github.com/equate/ogsd/services/snmp-collector/internal/status"
 	"github.com/equate/ogsd/services/snmp-collector/internal/telemetry"
 )
 
@@ -46,6 +47,7 @@ type Poller struct {
 	log      *slog.Logger
 	registry *profile.Registry
 	health   *health.Tracker
+	status   *status.Store
 
 	mu            sync.Mutex
 	activeDevices map[string]struct{}
@@ -68,11 +70,25 @@ func NewWithConfigSource(source ConfigSource, pub publisher.Publisher, m *metric
 		log:           log,
 		registry:      vendors.NewRegistry(),
 		health:        health.NewTracker(),
+		status:        status.New(),
 		activeDevices: make(map[string]struct{}),
 	}
 }
 
-// Tracker exposes the committed health ledger for tests.
+// SetStatusStore replaces the operator status cache used for last-poll summaries.
+func (p *Poller) SetStatusStore(store *status.Store) {
+	if store == nil {
+		return
+	}
+	p.status = store
+}
+
+// StatusStore returns the operator status cache.
+func (p *Poller) StatusStore() *status.Store {
+	return p.status
+}
+
+// Tracker exposes the committed health ledger for tests and the control plane.
 func (p *Poller) Tracker() *health.Tracker {
 	return p.health
 }
@@ -138,6 +154,10 @@ func (p *Poller) syncInventory(cfg *config.Config) {
 	}
 	if changed {
 		p.health.Prune(ids)
+		if p.status != nil {
+			p.status.Prune(next)
+			p.status.SetRevision(config.ConfigRevision(cfg))
+		}
 		p.activeDevices = next
 	}
 	p.mu.Unlock()
@@ -311,6 +331,14 @@ func (p *Poller) pollDevice(ctx context.Context, cfg *config.Config, device conf
 		outcome.DeviceID = device.ID
 		outcome.Success = false
 		outcome.TemperatureC = nil
+		if p.status != nil {
+			p.status.RecordPoll(status.DevicePoll{
+				DeviceID:   device.ID,
+				ObservedAt: outcome.ObservedAt,
+				Result:     status.PollFailure,
+				ErrorClass: class,
+			})
+		}
 		return outcome
 	}
 	p.metrics.PollSuccessTotal.Inc()
@@ -393,7 +421,42 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 
 	outcome.Success = true
 	outcome.TemperatureC = health.PrimaryTemperaturePtr(result.Vendor.Temperatures)
+	if p.status != nil {
+		p.status.RecordPoll(devicePollFromResult(result))
+	}
 	return outcome, nil
+}
+
+func devicePollFromResult(result readings.DevicePollResult) status.DevicePoll {
+	poll := status.DevicePoll{
+		DeviceID:    result.DeviceID,
+		ObservedAt:  result.ObservedAt,
+		Result:      status.PollSuccess,
+		SysName:     result.Identity.SysName,
+		SysObjectID: result.Identity.SysObjectID,
+		Interfaces: status.InterfaceSummary{
+			Selected:        result.Filter.Selected,
+			ExcludedDefault: result.Filter.ExcludedDefault,
+			ExcludedRule:    result.Filter.ExcludedRule,
+		},
+		Components: status.ComponentSummary{
+			Profile:          result.Vendor.Profile,
+			TemperatureCount: len(result.Vendor.Temperatures),
+			PowerCount:       len(result.Vendor.Power),
+			HasCPU:           result.Vendor.CPU != nil,
+			HasMemory:        result.Vendor.Memory != nil,
+			PrimaryTempC:     health.PrimaryTemperaturePtr(result.Vendor.Temperatures),
+		},
+	}
+	if result.Vendor.CPU != nil {
+		value := result.Vendor.CPU.Value
+		poll.Components.CPUUtilizationPct = &value
+	}
+	if result.Vendor.Memory != nil {
+		value := result.Vendor.Memory.Value
+		poll.Components.MemUtilizationPct = &value
+	}
+	return poll
 }
 
 // enrichProfile mutates only VendorReadings. Core identity/interfaces stay valid

@@ -53,6 +53,69 @@ func TestManagedInventoryStaticPrecedence(t *testing.T) {
 	if len(cfg.Devices) != 2 || cfg.Devices[0].Host != "127.0.0.1" || cfg.Devices[1].ID != "managed-device" {
 		t.Fatalf("merged devices=%#v", cfg.Devices)
 	}
+	if cfg.Devices[0].CommunityEnv != "SNMP_COMMUNITY_STATIC" {
+		t.Fatalf("static community overridden: %q", cfg.Devices[0].CommunityEnv)
+	}
+}
+
+func TestManagedOverlayAppliesAllowedFieldsOnly(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "collector.yaml")
+	writeFile(t, configPath, "site_id: site-001\ncollector:\n  id: collector-001\nhealth:\n  temperature_warning_c: 65\ndiscovery:\n  allowed_cidrs: [\"192.0.2.0/30\"]\n  community_env: SNMP_DISCOVERY_COMMUNITY\n  max_targets: 4\n  timeout: 2s\n  retries: 0\n  max_workers: 4\n  max_probes_per_second: 5\n  probe_burst: 2\ninventory:\n  managed_path: managed.yaml\ndevices:\n  - id: static-device\n    host: 127.0.0.1\n    community_env: SNMP_COMMUNITY_STATIC\n", 0o600)
+	writeFile(t, filepath.Join(root, "managed.yaml"), "health:\n  temperature_warning_c: 70\ndiscovery:\n  max_probes_per_second: 3\n  probe_burst: 1\ndevices:\n  - id: static-device\n    temperature_warning_c: 72\n    upstream_device_ids: []\n    interface_filters:\n      exclude_name_regex: [\"^Lo\"]\n", 0o600)
+
+	cfg, err := LoadForValidation(configPath)
+	if err != nil {
+		t.Fatalf("LoadForValidation: %v", err)
+	}
+	if cfg.Health.TemperatureWarningC != 70 {
+		t.Fatalf("global temperature=%v", cfg.Health.TemperatureWarningC)
+	}
+	if cfg.Discovery.MaxProbesPerSecond != 3 || cfg.Discovery.ProbeBurst != 1 {
+		t.Fatalf("discovery rate=%v burst=%v", cfg.Discovery.MaxProbesPerSecond, cfg.Discovery.ProbeBurst)
+	}
+	if got := cfg.Discovery.AllowedCIDRs; len(got) != 1 || got[0] != "192.0.2.0/30" {
+		t.Fatalf("allowlist changed: %#v", got)
+	}
+	if cfg.Devices[0].Host != "127.0.0.1" {
+		t.Fatalf("host overridden: %q", cfg.Devices[0].Host)
+	}
+	if cfg.Devices[0].TemperatureWarningC == nil || *cfg.Devices[0].TemperatureWarningC != 72 {
+		t.Fatalf("device temperature overlay=%v", cfg.Devices[0].TemperatureWarningC)
+	}
+	if len(cfg.Devices[0].InterfaceFilters.ExcludeNameRegex) != 1 {
+		t.Fatalf("interface filter overlay=%#v", cfg.Devices[0].InterfaceFilters)
+	}
+}
+
+func TestWriteManagedInventoryPreservesPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "managed.yaml")
+	temp := 68.0
+	rate := 4.0
+	burst := 2
+	if err := WriteManagedDocument(path, ManagedInventory{
+		Health:    ManagedHealthPolicy{TemperatureWarningC: &temp},
+		Discovery: ManagedDiscoveryPolicy{MaxProbesPerSecond: &rate, ProbeBurst: &burst},
+		Devices:   []DeviceConfig{{ID: "dev-001", Host: "127.0.0.1", Port: 161, CommunityEnv: "SNMP_COMMUNITY_DEV_001", Version: "2c"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManagedInventory(path, []DeviceConfig{{ID: "dev-002", Host: "127.0.0.2", Port: 161, CommunityEnv: "SNMP_COMMUNITY_DEV_002", Version: "2c"}}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ReadManagedDocument(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Health.TemperatureWarningC == nil || *doc.Health.TemperatureWarningC != 68 {
+		t.Fatalf("health policy lost: %#v", doc.Health)
+	}
+	if doc.Discovery.MaxProbesPerSecond == nil || *doc.Discovery.MaxProbesPerSecond != 4 {
+		t.Fatalf("discovery policy lost: %#v", doc.Discovery)
+	}
+	if len(doc.Devices) != 1 || doc.Devices[0].ID != "dev-002" {
+		t.Fatalf("devices=%#v", doc.Devices)
+	}
 }
 
 func TestManagedInventoryCrossSourceDuplicateHostRejected(t *testing.T) {

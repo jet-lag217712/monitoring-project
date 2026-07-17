@@ -12,11 +12,11 @@ Its public operational surfaces are scrape-only `/metrics`, liveness `/healthz`,
 
 ## Inventory and configuration
 
-The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. Static entries are authoritative when the same device ID appears in both sources; unique managed entries are appended. Duplicate IDs within a source and duplicate host/IP identities in the active merged result are rejected. The collector atomically activates validated configuration snapshots. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload.
+The collector merges a read-only static YAML deployment inventory with a separate TUI-managed inventory. Static entries are authoritative for identity fields (`host`, `port`, SNMP version, `community_env`); managed entries with the same device ID apply overlays for temperature thresholds, upstream dependencies, and interface filters. Unique managed entries are appended. Duplicate IDs within a source and duplicate host/IP identities in the active merged result are rejected. Optional managed policy sections may override the global temperature default and discovery probe rate/burst; discovery CIDR allowlists remain static-only. The collector atomically activates validated configuration snapshots. The TUI writes only the managed file using restrictive permissions, fsync, atomic rename, and reload. Runtime state never writes back into static or managed files except through explicit control mutations.
 
 Every device uses `version: 2c`, a `community_env` reference (never a plaintext community), optional per-device poll overrides, optional `temperature_warning_c`, interface-filter rules, and zero or more `upstream_device_ids`. Dependency IDs reference stable devices, never IPs. The merged graph must be an acyclic DAG: duplicate/self/missing references and cycles are rejected.
 
-`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. SIGHUP and a later local TUI action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot. Site/collector identity, admin, publisher, MQTT, and buffer settings remain startup-only during Phase 1.
+`collector validate -config …` validates YAML, environment-reference names, TLS/MQTT settings, file permissions, inventory, profile names, polling and discovery bounds, regular expressions, policy bounds, heartbeat interval, and the dependency DAG. `SIGHUP` and the local TUI/control `config.reload` action reload transactionally: an invalid reload retains the active snapshot; existing polls finish on their captured snapshot. Site/collector identity, admin, publisher, MQTT, and buffer settings remain startup-only.
 
 ## Polling, profiles, and health
 
@@ -42,9 +42,9 @@ transitions as MQTT v2 health envelopes when `publisher.telemetry_version` is
 
 ## Discovery and local administration
 
-`collector discover` scans configured CIDR allowlists only and resolves its SNMP community from `discovery.community_env` at probe time. Discovery uses SNMPv2c to read `sysObjectID`, `sysName`, and `sysDescr`, does not use ICMP or device writes, and applies target, timeout, retry, concurrency, and token-bucket rate/burst bounds before every probe. Candidates are persisted for review and may be exported as YAML or explicitly accepted into managed inventory through the atomic inventory workflow; discovery never silently activates a device or an LLDP-derived edge. The later TUI will use the same isolated workflow.
+`collector discover` scans configured CIDR allowlists only and resolves its SNMP community from `discovery.community_env` at probe time. Discovery uses SNMPv2c to read `sysObjectID`, `sysName`, and `sysDescr`, does not use ICMP or device writes, and applies target, timeout, retry, concurrency, and token-bucket rate/burst bounds before every probe. Candidates are persisted for review and may be exported as YAML or explicitly accepted into managed inventory through the atomic inventory workflow; discovery never silently activates a device or an LLDP-derived edge. The TUI/control plane orchestrates the same isolated workflow (`Scanner → Review → AcceptReviewed → WriteManagedInventory → Explicit Reload`).
 
-The TUI provides inventory, device/interface, discovery, thresholds, transport, and configuration views. Mutations require local OS access, explicit confirmation, durable audit entries without secrets, and a save/reload step. It cannot modify static YAML.
+The TUI provides inventory, device/interface, discovery, thresholds, transport, and configuration views over the versioned Unix NDJSON control protocol. Mutations require local OS access, explicit prepare/commit confirmation bound to the active configuration revision, durable audit entries without secrets, and a save/reload step. It cannot modify static YAML.
 
 ## Delivery and observability
 

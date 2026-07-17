@@ -7,6 +7,7 @@ max_workers: 10
 
 admin:
   listen: ":9090"
+  control_socket: ""
 
 snmp:
   timeout: 5s

@@ -34,13 +34,19 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 
 ```bash
 curl -fsS http://127.0.0.1:9090/healthz
+curl -fsS http://127.0.0.1:9090/readyz
 docker compose logs -f snmp-collector
+# Optional local TUI when admin.control_socket is mounted/available on the host
+# collector tui -socket /run/snmp-collector/control.sock
 # On cloud: API shows site devices after first successful poll
 ```
 
 ## Notes
 
 - Buffer volume `collector-data` retains telemetry during MQTT outages
-- Managed inventory is stored at `/data/managed-inventory.yaml` and is owner-only
+- Managed inventory is stored at `/data/managed-inventory.yaml` and is owner-only (`0600`)
+- Control socket and audit log (when enabled) must remain owner-only (`0600`); never publish them
+- Invalid managed writes/reloads leave the prior runtime snapshot active — replace the managed file and reload to roll back overlays
 - Prefer registry image tags in production; build-from-source is a skeleton default
 - Do not commit community strings or production passwords
+- Least-privilege systemd example: [`services/snmp-collector/deployments/systemd/snmp-collector.service`](../../../services/snmp-collector/deployments/systemd/snmp-collector.service)
