@@ -16,6 +16,7 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/metrics"
 	"github.com/equate/ogsd/services/snmp-collector/internal/poller"
 	"github.com/equate/ogsd/services/snmp-collector/internal/publisher"
+	"github.com/equate/ogsd/services/snmp-collector/internal/readiness"
 )
 
 func main() {
@@ -56,7 +57,7 @@ func main() {
 	signal.Notify(reloadCh, syscall.SIGHUP)
 	defer signal.Stop(reloadCh)
 
-	pub, shutdownPub, err := buildPublisher(mqttCtx, cfg, m, log)
+	pub, shutdownPub, ready, err := buildPublisher(mqttCtx, cfg, m, log)
 	if err != nil {
 		log.Error("build publisher", "err", err)
 		os.Exit(1)
@@ -64,11 +65,31 @@ func main() {
 
 	p := poller.NewWithConfigSource(configManager, pub, m, log)
 
+	readyCheck := readiness.Func(func() bool {
+		status := readiness.Evaluate(
+			configManager.Current() != nil,
+			ready.storageReady(),
+			ready.bufferReady(),
+			ready.publisherReady(),
+		)
+		m.SetReady(status.Ready())
+		return status.Ready()
+	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if readyCheck.Ready() {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok\n"))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready\n"))
 	})
 
 	srv := &http.Server{
@@ -146,10 +167,42 @@ func runValidate(args []string) int {
 	return 0
 }
 
-func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Collector, log *slog.Logger) (publisher.Publisher, func(context.Context) error, error) {
+type publisherReadiness struct {
+	mode  string
+	store *buffer.Store
+	mqtt  interface{ IsConnected() bool }
+}
+
+func (r publisherReadiness) storageReady() bool {
+	switch r.mode {
+	case "stdout":
+		return true
+	case "mqtt":
+		return r.store != nil && r.store.Available()
+	default:
+		return false
+	}
+}
+
+func (r publisherReadiness) bufferReady() bool {
+	return r.storageReady()
+}
+
+func (r publisherReadiness) publisherReady() bool {
+	switch r.mode {
+	case "stdout":
+		return true
+	case "mqtt":
+		return r.mqtt != nil && r.mqtt.IsConnected()
+	default:
+		return false
+	}
+}
+
+func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Collector, log *slog.Logger) (publisher.Publisher, func(context.Context) error, publisherReadiness, error) {
 	switch cfg.Publisher.Mode {
 	case "stdout":
-		return publisher.NewStdoutPublisher(), func(context.Context) error { return nil }, nil
+		return publisher.NewStdoutPublisher(), func(context.Context) error { return nil }, publisherReadiness{mode: "stdout"}, nil
 	case "mqtt":
 		store, err := buffer.Open(buffer.Options{
 			Path:          cfg.Buffer.Path,
@@ -158,13 +211,13 @@ func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Coll
 			Metrics:       m,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("open buffer: %w", err)
+			return nil, nil, publisherReadiness{}, fmt.Errorf("open buffer: %w", err)
 		}
 
 		mqttClient, err := publisher.NewMQTTClient(mqttCtx, cfg.MQTT, cfg.MQTTPassword(), m, log)
 		if err != nil {
 			_ = store.Close()
-			return nil, nil, fmt.Errorf("mqtt client: %w", err)
+			return nil, nil, publisherReadiness{}, fmt.Errorf("mqtt client: %w", err)
 		}
 
 		flusherCtx, stopFlusher := context.WithCancel(mqttCtx)
@@ -182,8 +235,8 @@ func buildPublisher(mqttCtx context.Context, cfg *config.Config, m *metrics.Coll
 			}
 			return drainErr
 		}
-		return bp, shutdown, nil
+		return bp, shutdown, publisherReadiness{mode: "mqtt", store: store, mqtt: mqttClient}, nil
 	default:
-		return nil, nil, fmt.Errorf("unknown publisher mode %q", cfg.Publisher.Mode)
+		return nil, nil, publisherReadiness{}, fmt.Errorf("unknown publisher mode %q", cfg.Publisher.Mode)
 	}
 }

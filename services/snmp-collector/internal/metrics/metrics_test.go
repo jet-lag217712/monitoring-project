@@ -13,6 +13,14 @@ func TestPhase2MetricsRegisteredAndObserved(t *testing.T) {
 	collector := NewWithRegisterer(registry)
 	collector.ProfileDuration.Observe(0.25)
 	collector.InterfaceSelectionTotal.WithLabelValues("selected").Add(2)
+	collector.ObserveHealthTransition("healthy", "reachable", "initial")
+	collector.SetHealthSnapshot(map[string]float64{
+		"healthy":  1,
+		"warning":  0,
+		"critical": 0,
+		"unknown":  0,
+	}, 0, 0)
+	collector.SetReady(true)
 
 	families, err := registry.Gather()
 	if err != nil {
@@ -26,6 +34,11 @@ func TestPhase2MetricsRegisteredAndObserved(t *testing.T) {
 		"collector_profile_duration_seconds",
 		"collector_interface_selection_total",
 		"collector_discovery_attempts_total",
+		"collector_health_transitions_total",
+		"collector_health_devices",
+		"collector_dependency_impacted_devices",
+		"collector_health_pending_failures",
+		"collector_ready",
 	} {
 		if !seen[name] {
 			t.Fatalf("metric %q was not registered", name)

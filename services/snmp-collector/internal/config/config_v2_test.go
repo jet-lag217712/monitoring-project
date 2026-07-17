@@ -261,3 +261,31 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return data
 }
+
+func TestEffectiveTemperatureWarningCAndPolicyRevision(t *testing.T) {
+	t.Parallel()
+
+	override := 70.0
+	cfg := &Config{
+		Health: HealthConfig{TemperatureWarningC: 65, FailureThreshold: 2},
+		Devices: []DeviceConfig{
+			{ID: "b-device", TemperatureWarningC: &override},
+			{ID: "a-device"},
+		},
+	}
+	if got := cfg.Devices[1].EffectiveTemperatureWarningC(cfg.Health.TemperatureWarningC); got != 65 {
+		t.Fatalf("default override=%v", got)
+	}
+	if got := cfg.Devices[0].EffectiveTemperatureWarningC(cfg.Health.TemperatureWarningC); got != 70 {
+		t.Fatalf("device override=%v", got)
+	}
+	rev1 := TemperaturePolicyRevision(cfg)
+	rev2 := TemperaturePolicyRevision(cfg)
+	if rev1 == "" || rev1 != rev2 {
+		t.Fatalf("revision unstable: %q %q", rev1, rev2)
+	}
+	cfg.Health.TemperatureWarningC = 66
+	if TemperaturePolicyRevision(cfg) == rev1 {
+		t.Fatal("expected revision to change with global threshold")
+	}
+}

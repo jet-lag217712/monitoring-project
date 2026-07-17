@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -76,7 +77,7 @@ type InventoryConfig struct {
 	ManagedPath string `yaml:"managed_path"`
 }
 
-// HealthConfig contains policies consumed by the later health phase.
+// HealthConfig contains device health evaluation policies.
 type HealthConfig struct {
 	TemperatureWarningC float64 `yaml:"temperature_warning_c"`
 	FailureThreshold    int     `yaml:"failure_threshold"`
@@ -879,6 +880,14 @@ func (d DeviceConfig) EffectivePollInterval(global time.Duration) time.Duration 
 	return global
 }
 
+// EffectiveTemperatureWarningC returns the device temperature threshold or the shared default.
+func (d DeviceConfig) EffectiveTemperatureWarningC(global float64) float64 {
+	if d.TemperatureWarningC != nil {
+		return *d.TemperatureWarningC
+	}
+	return global
+}
+
 // EffectiveSNMP returns shared SNMP settings with device overrides applied.
 func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
 	if d.Timeout > 0 {
@@ -888,6 +897,35 @@ func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
 		shared.Retries = d.Retries
 	}
 	return shared
+}
+
+// TemperaturePolicyRevision returns a non-secret fingerprint of the active temperature policy.
+// Full MQTT config_revision remains a Phase 4 envelope concern.
+func TemperaturePolicyRevision(cfg *Config) string {
+	if cfg == nil {
+		return "policy-none"
+	}
+	type override struct {
+		ID    string
+		Value float64
+	}
+	overrides := make([]override, 0)
+	for _, device := range cfg.Devices {
+		if device.TemperatureWarningC == nil {
+			continue
+		}
+		overrides = append(overrides, override{ID: device.ID, Value: *device.TemperatureWarningC})
+	}
+	sort.Slice(overrides, func(i, j int) bool {
+		return overrides[i].ID < overrides[j].ID
+	})
+
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "global=%.4f;", cfg.Health.TemperatureWarningC)
+	for _, item := range overrides {
+		_, _ = fmt.Fprintf(h, "%s=%.4f;", item.ID, item.Value)
+	}
+	return fmt.Sprintf("policy-%x", h.Sum(nil)[:8])
 }
 
 // ReadManagedInventory loads a managed inventory file. A missing file is empty.

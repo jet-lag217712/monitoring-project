@@ -108,6 +108,10 @@ monitoring-dashboard/
 │
 ├── decisions/
 │   ├── awsdeploy-1.md
+│   ├── collector-1.md
+│   ├── collector-2.md
+│   ├── collector-3.md
+│   ├── collector-4.md
 │   ├── dashboard-1.md
 │   ├── dashboard-2.md
 │   └── instructions.md
