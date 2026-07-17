@@ -75,6 +75,33 @@ func TestEnqueuePeekDeleteFIFO(t *testing.T) {
 	}
 }
 
+func TestEnqueueBatchAtomic(t *testing.T) {
+	s := openTestStore(t, 2)
+	ctx := context.Background()
+
+	err := s.EnqueueBatch(ctx, []PendingEvent{
+		{Topic: "t1", Payload: []byte("a")},
+		{Topic: "t2", Payload: []byte("b")},
+		{Topic: "t3", Payload: []byte("c")},
+	})
+	if !errors.Is(err, ErrBufferFull) {
+		t.Fatalf("err=%v, want ErrBufferFull", err)
+	}
+	if s.Depth() != 0 {
+		t.Fatalf("depth=%d, want 0 after failed batch", s.Depth())
+	}
+
+	if err := s.EnqueueBatch(ctx, []PendingEvent{
+		{Topic: "t1", Payload: []byte("a")},
+		{Topic: "t2", Payload: []byte("b")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if s.Depth() != 2 {
+		t.Fatalf("depth=%d, want 2", s.Depth())
+	}
+}
+
 func TestBufferFull(t *testing.T) {
 	s := openTestStore(t, 2)
 	ctx := context.Background()
