@@ -58,6 +58,7 @@ func (p *Poller) Run(ctx context.Context) {
 
 	for {
 		cfg := p.source.Current()
+		pruneNextDue(nextDue, cfg.Devices)
 		now := time.Now()
 		due := dueDevices(cfg, nextDue, firstCycle, now)
 		if len(due) > 0 {
@@ -82,6 +83,18 @@ func (p *Poller) Run(ctx context.Context) {
 			}
 			return
 		case <-timer.C:
+		}
+	}
+}
+
+func pruneNextDue(nextDue map[string]time.Time, devices []config.DeviceConfig) {
+	active := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		active[device.ID] = struct{}{}
+	}
+	for id := range nextDue {
+		if _, ok := active[id]; !ok {
+			delete(nextDue, id)
 		}
 	}
 }
