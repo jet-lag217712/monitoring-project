@@ -11,6 +11,17 @@ snmp:
   timeout: 5s
   retries: 2
 
+discovery:
+  allowed_cidrs:
+    - "192.0.2.0/30"
+  community_env: "SNMP_DISCOVERY_COMMUNITY"
+  max_targets: 4
+  timeout: 2s
+  retries: 0
+  max_workers: 4
+  max_probes_per_second: 5
+  probe_burst: 2
+
 publisher:
   mode: stdout
   timeout: 10s
@@ -21,4 +32,4 @@ devices:
     port: 161 # real devices; use 1161 only if you run a local SNMP agent for collector-only tests
     community_env: "SNMP_COMMUNITY_DEV_001"
     version: "2c"
-    vendor: "" # selects vendors/{vendor} when implemented
+    vendor: "" # optional metadata; sysObjectID controls profile detection

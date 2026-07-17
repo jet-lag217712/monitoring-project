@@ -19,8 +19,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "validate" {
-		os.Exit(runValidate(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "validate":
+			os.Exit(runValidate(os.Args[2:]))
+		case "discover":
+			os.Exit(runDiscover(os.Args[2:]))
+		}
 	}
 
 	configPath := flag.String("config", "configs/collector.example.yaml", "path to collector config file")

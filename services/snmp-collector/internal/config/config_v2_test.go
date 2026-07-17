@@ -118,7 +118,7 @@ func TestValidateInterfaceFiltersTable(t *testing.T) {
 }
 
 func TestValidateDiscovery(t *testing.T) {
-	valid := DiscoveryConfig{AllowedCIDRs: []string{"10.0.0.0/24"}, MaxTargets: 100, Timeout: 2 * time.Second, Retries: 1, MaxWorkers: 5, MaxProbesPerSecond: 10, ProbeBurst: 2}
+	valid := DiscoveryConfig{AllowedCIDRs: []string{"10.0.0.0/24"}, CommunityEnv: "SNMP_DISCOVERY_COMMUNITY", MaxTargets: 100, Timeout: 2 * time.Second, Retries: 1, MaxWorkers: 5, MaxProbesPerSecond: 10, ProbeBurst: 2}
 	if err := validateDiscovery(valid); err != nil {
 		t.Fatalf("valid discovery: %v", err)
 	}
@@ -131,6 +131,11 @@ func TestValidateDiscovery(t *testing.T) {
 	invalid.MaxProbesPerSecond = 0
 	if err := validateDiscovery(invalid); err == nil {
 		t.Fatal("expected invalid probe rate error")
+	}
+	invalid = valid
+	invalid.CommunityEnv = "not-valid!"
+	if err := validateDiscovery(invalid); err == nil || !strings.Contains(err.Error(), "community_env") {
+		t.Fatalf("expected invalid community env error, got %v", err)
 	}
 }
 

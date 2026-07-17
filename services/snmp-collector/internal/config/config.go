@@ -82,9 +82,10 @@ type HealthConfig struct {
 	FailureThreshold    int     `yaml:"failure_threshold"`
 }
 
-// DiscoveryConfig contains validated discovery policy without implementing scans.
+// DiscoveryConfig contains the isolated operator-invoked discovery policy.
 type DiscoveryConfig struct {
 	AllowedCIDRs       []string      `yaml:"allowed_cidrs"`
+	CommunityEnv       string        `yaml:"community_env"`
 	MaxTargets         int           `yaml:"max_targets"`
 	Timeout            time.Duration `yaml:"timeout"`
 	Retries            int           `yaml:"retries"`
@@ -422,6 +423,25 @@ func (c *Config) MQTTPassword() string {
 	return os.Getenv(c.MQTT.PasswordEnv)
 }
 
+// DiscoveryCommunity resolves the discovery secret only when a probe is requested.
+func (c *Config) DiscoveryCommunity() string {
+	if c.Discovery.CommunityEnv == "" {
+		return ""
+	}
+	return os.Getenv(c.Discovery.CommunityEnv)
+}
+
+// ManagedInventoryPath returns the configured managed path relative to the config file.
+func (c *Config) ManagedInventoryPath() string {
+	if strings.TrimSpace(c.Inventory.ManagedPath) == "" {
+		return ""
+	}
+	if filepath.IsAbs(c.Inventory.ManagedPath) {
+		return filepath.Clean(c.Inventory.ManagedPath)
+	}
+	return filepath.Join(filepath.Dir(c.configPath), c.Inventory.ManagedPath)
+}
+
 // MQTTInsecureSkipVerify reports whether TLS verification should be skipped (dev only).
 func MQTTInsecureSkipVerify() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("MQTT_TLS_INSECURE")))
@@ -699,8 +719,14 @@ func validateDependencies(devices []DeviceConfig) error {
 }
 
 func validateDiscovery(discovery DiscoveryConfig) error {
-	if len(discovery.AllowedCIDRs) == 0 && discovery.MaxTargets == 0 && discovery.Timeout == 0 && discovery.Retries == 0 && discovery.MaxWorkers == 0 && discovery.MaxProbesPerSecond == 0 && discovery.ProbeBurst == 0 {
+	if len(discovery.AllowedCIDRs) == 0 && discovery.CommunityEnv == "" && discovery.MaxTargets == 0 && discovery.Timeout == 0 && discovery.Retries == 0 && discovery.MaxWorkers == 0 && discovery.MaxProbesPerSecond == 0 && discovery.ProbeBurst == 0 {
 		return nil
+	}
+	if len(discovery.AllowedCIDRs) == 0 {
+		return fmt.Errorf("discovery.allowed_cidrs is required when discovery is configured")
+	}
+	if err := validateEnvName(discovery.CommunityEnv, "discovery.community_env"); err != nil {
+		return err
 	}
 	if discovery.MaxTargets <= 0 || discovery.MaxTargets > maxDiscoveryTargets {
 		return fmt.Errorf("discovery.max_targets must be between 1 and %d", maxDiscoveryTargets)
@@ -862,6 +888,29 @@ func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
 		shared.Retries = d.Retries
 	}
 	return shared
+}
+
+// ReadManagedInventory loads a managed inventory file. A missing file is empty.
+func ReadManagedInventory(path string) ([]DeviceConfig, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	path = filepath.Clean(path)
+	if err := validateSourceFile(path, true); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("managed inventory: %w", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read managed inventory: %w", err)
+	}
+	var inventory ManagedInventory
+	if err := decodeYAML(data, &inventory); err != nil {
+		return nil, fmt.Errorf("parse managed inventory: %w", err)
+	}
+	return append([]DeviceConfig(nil), inventory.Devices...), nil
 }
 
 // WriteManagedInventory atomically persists a secret-free managed inventory.

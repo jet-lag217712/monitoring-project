@@ -3,23 +3,23 @@
 This directory holds vendor-specific OID collectors that extend the standard
 `snmp/core` packages (IF-MIB + SNMPv2-MIB).
 
-## Extension pattern
+## Detection and extension pattern
 
-1. Create a package named after the vendor, e.g. `cisco/`, `juniper/`.
-2. Export a poll function that accepts a context and SNMP client and returns
-   additional device metrics (CPU, memory, etc.).
-3. Select the package from device config via the `vendor` field:
+1. Core polling reads `sysObjectID`, identity, and IF-MIB first.
+2. The registry selects an exact object ID, the longest model-family prefix,
+   a generic enterprise profile, or core-only fallback—in that order.
+3. The selected profile adds only its declared capability readings.
 
-```yaml
-devices:
-  - id: "sw-01"
-    host: "10.0.0.1"
-    vendor: "cisco"
-```
+`sysDescr` never selects a profile. Device `vendor` configuration remains
+optional operator metadata and is not detection authority.
 
-When `vendor` is empty or no matching package exists, the collector falls back
-to core-only metrics (`uptime_seconds` + IF-MIB interface counters).
+Profiles return optional vendor-neutral CPU, memory, temperature, and power
+readings. Unsupported or unavailable fields are omitted rather than emitted as
+zero. A profile collection failure preserves the successful core result.
 
-## Phase 1 status
+## Phase 2 fixtures
 
-No vendor implementations yet. Core MIB polling is sufficient for MVP.
+Cisco and Arista packages use sanitized synthetic fixtures based on the
+documented MIB mappings. Fixtures cover successful collection, missing
+subtrees, `NoSuchObject`, timeout, and partial-table behavior. They contain no
+live customer addresses, communities, or credentials.

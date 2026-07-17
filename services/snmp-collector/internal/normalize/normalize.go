@@ -1,25 +1,14 @@
 package normalize
 
 import (
-	"time"
-
 	"github.com/equate/ogsd/services/snmp-collector/internal/events"
-	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/core"
+	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/readings"
 )
 
-// DeviceReading is the device-level input to normalization.
-type DeviceReading struct {
-	SiteID        string
-	DeviceID      string
-	IPAddress     string
-	Timestamp     time.Time
-	UptimeSeconds float64
-	Interfaces    []core.InterfaceReading
-}
-
-// ToEvents maps SNMP readings into contract-aligned telemetry events.
-func ToEvents(r DeviceReading) []events.Event {
-	ts := r.Timestamp.UTC()
+// ToEvents bridges the Phase 2 internal result to the unchanged v1 events.
+// Unsupported v1 vendor fields remain internal until the Phase 4 contract.
+func ToEvents(r readings.DevicePollResult) []events.Event {
+	ts := r.ObservedAt.UTC()
 	out := make([]events.Event, 0, 1+len(r.Interfaces))
 
 	out = append(out, events.DeviceMetricEvent{
@@ -28,19 +17,22 @@ func ToEvents(r DeviceReading) []events.Event {
 		IPAddress: r.IPAddress,
 		Timestamp: ts,
 		Metric:    "uptime_seconds",
-		Value:     r.UptimeSeconds,
+		Value:     r.Identity.UptimeSeconds,
 	})
 
 	for _, iface := range r.Interfaces {
+		if iface.Selection != readings.Selected || !iface.Reading.HasCounters {
+			continue
+		}
 		out = append(out, events.InterfaceMetricEvent{
 			SiteID:    r.SiteID,
 			DeviceID:  r.DeviceID,
 			Timestamp: ts,
-			IfIndex:   iface.IfIndex,
-			InOctets:  iface.InOctets,
-			OutOctets: iface.OutOctets,
-			InErrors:  iface.InErrors,
-			OutErrors: iface.OutErrors,
+			IfIndex:   iface.Reading.IfIndex,
+			InOctets:  iface.Reading.InOctets,
+			OutOctets: iface.Reading.OutOctets,
+			InErrors:  iface.Reading.InErrors,
+			OutErrors: iface.Reading.OutErrors,
 		})
 	}
 	return out
