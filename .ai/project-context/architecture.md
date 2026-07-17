@@ -1,164 +1,31 @@
-# Architecture
+# Architecture — SNMP Collector v2
 
 ## Purpose
 
-Equate OGSD is a two-plane network telemetry and monitoring platform for K-12 network infrastructure. The system monitors district network devices through distributed SNMP collectors deployed within customer environments and presents operational visibility through the UI/UX Cloud Plane.
+Equate OGSD is a two-plane network telemetry and monitoring platform. Customer-side collectors observe network devices locally; the UI/UX Cloud Plane owns durable monitoring state, API contracts, and visualization. The agreed v2 design is defined in [`.ai/roadmap/snmp-collector-v2.md`](../roadmap/snmp-collector-v2.md).
 
-The platform separates telemetry collection from the user experience layer. The customer-side OOB monitoring environment is responsible for collecting and securely transmitting telemetry, while the UI/UX Cloud Plane provides centralized visualization, API access, and operational workflows.
-
-This document provides a high-level architectural overview for AI agents. Detailed implementation, networking, and service ownership information is documented elsewhere.
-
-## High-Level Data Flow
+## Data flow
 
 ```text
-SNMP Devices
-    ↓
-SNMP Collector
-    ↓
-Secure Outbound Telemetry Transport
-    ↓
-Cloud Ingestion
-    ↓
-PostgreSQL
-    ↓
-Backend API
-    ↓
-UI/UX Cloud Plane
+SNMPv2c devices → SNMP Collector v2 → SQLite outbox → MQTT/TLS → Ingestion → PostgreSQL → Backend API → Dashboard
 ```
 
-## Core Components
+The collector produces versioned device, interface, health, and heartbeat telemetry. MQTT is a delivery boundary, not a system of record; PostgreSQL is authoritative.
 
-### Customer OOB Monitoring Plane
+## Customer OOB Monitoring Plane
 
-Runs inside the customer environment.
+The customer plane contains monitored devices plus collector-local operational state: read-only static and TUI-managed inventory, the durable SQLite outbox, and a local Unix-socket status/control service used by the Bubble Tea TUI. The two inventory sources use an explicit precedence policy; the v2 roadmap does not select a universal winner, so implementation documentation must do so before it resolves a collision. The collector polls every configured device independently through a bounded SNMPv2c worker pool, uses core SNMPv2-MIB/IF-MIB plus detected Cisco/Arista profiles, filters interfaces, and evaluates local temperature/dependency health evidence.
 
-Responsibilities:
+It has no inbound cloud management path. `/metrics` is scrape-only; `/healthz` is liveness; `/readyz` reports active configuration, buffer, and publisher readiness. The collector does not host PostgreSQL, the Backend API, cloud ingestion, or user-facing cloud workflows.
 
-* Reach monitored devices over SNMP.
-* Host one or more SNMP collectors.
-* Buffer telemetry locally during connectivity interruptions.
-* Initiate outbound-only secure telemetry connections to the cloud plane.
+## UI/UX Cloud Plane
 
-Non-responsibilities:
+The cloud plane contains MQTT/TLS transport, Ingestion, PostgreSQL, the Backend API, and dashboard. Ingestion validates versioned routes/payloads, deduplicates, and transactionally persists inventory, samples, component readings, health evidence/history, and collector status/history. PostgreSQL supplies monitoring state to the read-only API; the dashboard consumes the API only.
 
-* Hosting the Backend API.
-* Hosting PostgreSQL.
-* Hosting cloud ingestion.
-* Serving UI/UX Cloud Plane requests.
+## Principles and non-goals
 
-### SNMP Collector
-
-Runs within the customer OOB monitoring environment.
-
-Responsibilities:
-
-* Poll network devices using SNMPv2.
-* Translate device telemetry into normalized monitoring events.
-* Buffer telemetry locally during connectivity interruptions.
-* Publish telemetry through outbound-only secure connections.
-* Operate without requiring inbound access from the cloud platform.
-
-### Secure Outbound Telemetry Transport
-
-Provides secure telemetry delivery between customer environments and the cloud platform.
-
-Responsibilities:
-
-* Receive telemetry from distributed collectors.
-* Decouple device monitoring from cloud processing.
-* Provide reliable message delivery between planes.
-* Treat MQTT/TLS as the current transport implementation, not the product architecture or a system of record.
-
-### Cloud Ingestion
-
-Runs as part of the cloud backend.
-
-Responsibilities:
-
-* Validate incoming telemetry.
-* Reject malformed or unauthorized payloads.
-* Normalize monitoring data.
-* Persist operational state into the database.
-
-### PostgreSQL
-
-Authoritative system of record in the UI/UX Cloud Plane.
-
-Responsibilities:
-
-* Store device inventory.
-* Store telemetry history and current monitoring state.
-* Support backend queries for the UI/UX Cloud Plane.
-
-### Backend API
-
-Runs in the UI/UX Cloud Plane and provides the application interface between stored monitoring data and frontend clients.
-
-Responsibilities:
-
-* Provide stable contracts for frontend consumption.
-* Enforce application logic and access controls.
-* Abstract database implementation details from the frontend.
-
-### UI/UX Cloud Plane
-
-The centralized cloud plane for ingestion, storage, APIs, visualization, aggregation, and monitoring state.
-
-Responsibilities:
-
-* Accept telemetry from Secure Outbound Telemetry Transport.
-* Persist monitoring state in PostgreSQL.
-* Expose Backend API contracts for frontend clients.
-* Display network health, device status, and telemetry.
-* Provide site and device-level visibility.
-* Present alerts, historical metrics, and operational dashboards.
-* Consume monitoring data exclusively through the Backend API.
-
-## System of Record
-
-PostgreSQL is the authoritative source of system state.
-
-Services may cache data for performance but must not treat caches, message queues, local files, or in-memory state as authoritative.
-
-The UI/UX Cloud Plane receives operational state through the Backend API, which reads from PostgreSQL.
-
-## Design Principles
-
-* The Customer OOB Monitoring Plane contains monitored devices and SNMP collectors only.
-* Cloud communication uses outbound-only collector connections.
-* The UI/UX Cloud Plane owns ingestion, PostgreSQL, Backend API, and frontend experiences.
-* Message transport is a delivery mechanism, not a persistence layer.
-* PostgreSQL is the source of truth.
-* Services communicate through well-defined contracts.
-* Components are independently deployable.
-* Runtime services are containerized.
-* Prefer operational simplicity over premature optimization.
-
-## Non-Goals
-
-The system is not intended to:
-
-* Configure network devices.
-* Provide direct device console access.
-* Provision network infrastructure.
-* Function as an SD-WAN controller.
-* Perform packet capture or packet analysis.
-* Replace existing network management systems.
-
-## Deployment profiles
-
-Operational stacks live under `deployments/`:
-
-* **end-to-end** — single Compose project with every service for client-site validation (real SNMP targets; no simulator).
-* **development** — Mac cloud plane plus a separate OrbStack VM collector attached to GNS3 via a Cloud node.
-* **production** — hybrid skeleton: Azure-hosted cloud services and an on-site VxRail collector (Terraform deferred).
-
-See `deployments/README.md` and `network-topology.md` for plane boundaries and commands.
-
-## Related Documents
-
-* `network-topology.md`
-* `service-boundaries.md`
-* `docs/diagrams/system-design.md`
-* `docs/architecture/*`
-* `deployments/README.md`
+- Customer-network access and reachability evidence remain local; the cloud persists rather than guesses them.
+- Every collector-to-cloud connection is outbound-only, TLS-authenticated, QoS 1, and buffered locally.
+- SNMP communities, TLS material, environment values, raw payloads, and local operator controls never reach cloud clients.
+- v2 supports SNMPv2c read-only collection only. It excludes SNMPv3, configuration/device-console access, automatic enrollment, automatic dependency activation, and cloud-side credential editing.
+- Dependency edges are a local reachability DAG, not a complete physical-network graph.

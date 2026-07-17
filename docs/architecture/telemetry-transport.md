@@ -1,41 +1,9 @@
-# Secure Outbound Telemetry Transport Architecture
+# Secure Outbound Telemetry Transport Architecture — v2
 
-## Purpose
+Secure Outbound Telemetry Transport carries collector telemetry from the Customer OOB Monitoring Plane to cloud ingestion. MQTT/TLS is the current implementation; transport is never the system of record.
 
-Secure Outbound Telemetry Transport delivers monitoring events from SNMP collectors in the Customer OOB Monitoring Plane to cloud ingestion in the UI/UX Cloud Plane.
+Collectors make outbound TLS-authenticated MQTT connections, publish QoS 1 events through a durable SQLite outbox, and retain queued events across outages. The broker acknowledges delivery; collectors remove outbox records only after acknowledgment. Ingestion uses manual acknowledgment and acknowledges a new event only after its PostgreSQL transaction commits.
 
-MQTT/TLS is the current implementation choice for this transport. It is not the product architecture and is not a system of record.
+V2 carries versioned device, interface, health, and collector-heartbeat routes defined in [`contracts.md`](contracts.md). ACLs grant collectors publish-only access to their allowed routes and ingestion subscription access. Topic/body identities and schema versions are validated at ingestion. At-least-once delivery is expected, so `event_id` and natural sample keys make persistence idempotent.
 
-## Responsibilities
-
-The transport layer is responsible for:
-
-- Receiving telemetry from authenticated collectors over outbound-only secure connections.
-- Delivering messages to cloud ingestion services.
-- Decoupling collector polling from cloud processing.
-- Protecting telemetry in transit.
-
-## Communication Model
-
-Publisher:
-
-- SNMP Collector.
-
-Consumer:
-
-- Ingestion Service.
-
-## Security
-
-Production deployment should use:
-
-- TLS.
-- Collector authentication.
-- Restricted route or topic permissions.
-- No required inbound connectivity into the customer network.
-
-## Scaling
-
-Additional collectors can publish telemetry without changing downstream services.
-
-Transport scaling must preserve PostgreSQL as the authoritative system of record.
+The boundary remains outbound-only: no cloud service gains an inbound management path to the customer network. TLS, authentication, least-privilege topic permissions, and secret redaction are mandatory.

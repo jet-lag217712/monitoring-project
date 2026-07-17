@@ -7,8 +7,8 @@ These standards are based on PostgreSQL documentation and the database patterns 
 - Use PostgreSQL as the system of record.
 - Keep the schema normalized for inventory data and append-only for time-series data.
 - Match the existing naming style: lowercase `snake_case` table and column names.
-- `sites`, `devices`, `interfaces`, `metric_types`, and `alerts` are inventory or lifecycle tables.
-- `metric_samples` and `interface_samples` are high-volume sample tables.
+- `sites`, `devices`, `interfaces`, `metric_types`, collector status, and health state are inventory or lifecycle tables.
+- Device/interface samples, component readings, health history, and heartbeat history are append-oriented high-volume tables.
 - Use UUID primary keys for entity tables unless there is a clear reason to use a different key type.
 - Use `BIGSERIAL` or another sequence-backed key for large append-only sample tables when it is the better fit for insert-heavy workloads.
 
@@ -32,6 +32,9 @@ These standards are based on PostgreSQL documentation and the database patterns 
 - Inventory tables should have a clear primary key and required foreign keys.
 - Append-only sample tables should be optimized for insert rate and time-range queries.
 - Alert and lifecycle tables should preserve historical state instead of overwriting it blindly.
+- For v2 health and collector state, retain the original observation timestamp and update a current-state projection only when ordering rules permit it; arrival time is not a substitute for observation time.
+- Store component readings individually (name/index/value/unit/status); do not collapse a multi-sensor device into a fabricated scalar.
+- Use `event_id` uniqueness for v2 telemetry alongside natural sample keys so QoS 1 redelivery is harmless.
 - If a table tracks current status, make the meaning of default values explicit.
 - Use naming that reflects the entity, not the implementation.
 
@@ -76,6 +79,7 @@ These standards are based on PostgreSQL documentation and the database patterns 
 - The current schema already uses `metric_samples(device_id UUID NOT NULL REFERENCES devices(id), metric_type_id UUID NOT NULL REFERENCES metric_types(id), collected_at TIMESTAMPTZ NOT NULL)`.
 - The current schema already uses `interface_samples(interface_id UUID NOT NULL REFERENCES interfaces(id), collected_at TIMESTAMPTZ NOT NULL)`.
 - The current schema already uses dedicated indexes for device, interface, and time-based access.
+- V2 migrations must add documented query indexes for health/dependency evidence, component history, collector heartbeat history, and current-state summaries.
 - Preserve those patterns unless the workload proves they should change.
 
 ## References

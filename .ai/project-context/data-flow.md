@@ -1,87 +1,20 @@
-# Data Flow Architecture
+# Data Flow Architecture — SNMP Collector v2
 
-## Purpose
-
-Defines the complete telemetry lifecycle from monitored network devices to the UI/UX Cloud Plane.
-
-## Approved Telemetry Pipeline
+## Pipeline
 
 ```text
-SNMP Devices
-    ↓
-SNMP Collector
-    ↓
-Secure Outbound Telemetry Transport
-    ↓
-Cloud Ingestion
-    ↓
-PostgreSQL
-    ↓
-Backend API
-    ↓
-UI/UX Cloud Plane
+SNMPv2c devices → collector poll/profile/filter/health evaluation → SQLite outbox
+→ MQTT/TLS QoS 1 → ingestion validate/deduplicate/transaction → PostgreSQL → API → dashboard
 ```
 
-## Customer OOB Monitoring Plane
+The collector writes a durable event before publish and removes it only after broker acknowledgment. Ingestion uses manual acknowledgment: `receive → validate → deduplicate → upsert state/samples → commit → ACK`. Invalid or permanently unsupported messages are acknowledged as rejected; transaction failures are left unacknowledged for redelivery.
 
-The Customer OOB Monitoring Plane runs in the customer environment.
+## Collector observations
 
-Responsibilities:
+Each cycle independently polls every device. Core SNMPv2-MIB and IF-MIB data are collected for all profiles; Cisco and Arista profiles add fixture-tested CPU, memory, temperature, and power data. Device/interface/health events carry the v2 shared envelope, identity, observation time, non-secret configuration revision, and event ID. Heartbeats add collector build/runtime/outbox information.
 
-- Poll monitored devices using SNMP.
-- Parse OID responses.
-- Normalize telemetry into collector events.
-- Buffer telemetry locally during transport interruptions.
-- Initiate outbound-only secure telemetry connections.
+Health is evaluated locally: successful polls are Healthy or temperature-policy Warning; a direct failure reaches Critical after the consecutive-failure threshold; a failed dependent is Unknown only when all configured upstream paths are unavailable. Pending correlation retains prior terminal state. Ingestion persists the stated reason, failure count, policy, unavailable upstreams, and root causes rather than inferring a cascade.
 
-The Customer OOB Monitoring Plane does not host PostgreSQL, cloud ingestion, the Backend API, or the UI/UX Cloud Plane.
+## Failure behavior
 
-## Secure Outbound Telemetry Transport
-
-Secure Outbound Telemetry Transport delivers collector telemetry from the Customer OOB Monitoring Plane to cloud ingestion.
-
-Responsibilities:
-
-- Accept outbound collector connections.
-- Protect telemetry in transit.
-- Decouple device polling from cloud processing.
-- Deliver telemetry to cloud ingestion.
-
-MQTT/TLS is the current transport implementation. Transport is not storage and must not be treated as the source of monitoring state.
-
-## UI/UX Cloud Plane
-
-The UI/UX Cloud Plane owns cloud ingestion, PostgreSQL, Backend API, aggregation, visualization, and monitoring state.
-
-Cloud Ingestion:
-
-- Consumes telemetry from Secure Outbound Telemetry Transport.
-- Validates payloads.
-- Transforms telemetry.
-- Writes monitoring state and history to PostgreSQL.
-
-PostgreSQL:
-
-- Stores inventory, current monitoring state, telemetry history, and alerts.
-- Acts as the authoritative system of record.
-
-Backend API:
-
-- Provides application data to frontend clients.
-- Handles application logic and API contracts.
-- Reads monitoring state from PostgreSQL.
-
-Frontend:
-
-- Consumes data through the Backend API only.
-- Displays network health, device state, interface telemetry, and alerts.
-
-## Failure Handling
-
-Device failures should create unhealthy device states after collector or ingestion validation.
-
-Transport failures should trigger collector buffering and reconnect behavior.
-
-Database failures should prevent acknowledged data loss through retry handling and controlled ingestion errors.
-
-API failures should return controlled errors to clients.
+MQTT outages do not stop polling; events accumulate in SQLite and flush in order when delivery returns. Database failure prevents an ACK, so QoS 1 redelivery plus idempotency protect persistence. A delayed heartbeat is history only when its observation time is older than current collector status. API failure returns controlled errors; dashboard demo mode remains visibly distinct from live data.

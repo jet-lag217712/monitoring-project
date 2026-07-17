@@ -1,4 +1,6 @@
-# Equate OGSD Implementation Plan
+# Equate OGSD MVP Implementation Plan (Historical Baseline)
+
+> **Superseded for collector, telemetry, ingestion, database, API, dashboard, and deployment evolution by [SNMP Collector v2](snmp-collector-v2.md), agreed July 2026.** This document preserves the MVP delivery history; it must not be used as the current wire-contract, health, inventory, profile, or roadmap authority.
 
 > MVP target: ~100–300 devices. Strict build order: Collector → MQTT → Ingestion → Database → API → Dashboard → Deployment.
 

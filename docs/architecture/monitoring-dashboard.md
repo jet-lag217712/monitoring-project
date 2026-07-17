@@ -1,42 +1,9 @@
-# Monitoring Dashboard Architecture
+# Monitoring Dashboard Architecture — v2
 
-## Purpose
+The dashboard is a read-only UI/UX Cloud Plane frontend. It consumes Backend API responses only; it never accesses PostgreSQL, MQTT, SNMP, collector inventory, local TUI controls, or credentials.
 
-The dashboard provides visualization of infrastructure telemetry from the UI/UX Cloud Plane.
+V2 site summaries show healthy, warning, direct-critical, and dependency-impacted counts separately. Device rows and detail render an explicit Unknown treatment for `upstream_unreachable`, including the recorded unavailable-upstream and root-cause context. Unknown is not displayed as Critical.
 
-## Plane Ownership
+Device detail presents current identity (vendor, model, serial, SNMP identity, profile/capabilities), uptime, CPU, memory, primary temperature and history, individual temperature/power components and status, health reason, and dependency evidence. Interface views present selected interface metadata, admin/oper status, counters/errors, speed, and traffic history. Existing site overview, detail, alert, live/demo indication, accessible dense layout, and five-second polling remain unless API freshness requirements change.
 
-Plane: UI/UX Cloud Plane.
-
-The dashboard is a frontend client. It does not run in the Customer OOB Monitoring Plane and does not access monitored devices directly.
-
-## Responsibilities
-
-The frontend is responsible for:
-
-- Displaying site health.
-- Showing device status.
-- Rendering interface telemetry.
-- Displaying alerts.
-- Surfacing current monitoring state from Backend API responses.
-
-The frontend does not:
-
-- Poll SNMP.
-- Access databases directly.
-- Process telemetry transport traffic.
-- Configure monitored devices.
-- Provide device console or management access.
-
-## Data Source
-
-All data is retrieved through the Backend API.
-
-PostgreSQL remains the system of record, but frontend clients must never query PostgreSQL directly.
-
-## Main Views
-
-- Site Overview.
-- Device Details.
-- Interface Details.
-- Alert Dashboard.
+The dashboard visualizes collector-evaluated health; it does not independently apply CPU, memory, power, or topology rules. It must keep all display states, empty data, loading, and demo fallback visibly distinguishable.
