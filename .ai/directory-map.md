@@ -75,7 +75,8 @@ monitoring-dashboard/
 │   ├── production/            # Hybrid skeleton (no Terraform yet)
 │   │   ├── cloud/             # Azure VM Compose
 │   │   └── vxrail/            # On-site collector → Azure Mosquitto
-│   ├── lib/                   # Shared shell helpers
+│   ├── runbooks/              # Install, rotation, queue, rollback, V2 cutover, field acceptance
+│   ├── lib/                   # Shared shell helpers (v2 smoke, MQTT drill)
 │   └── test.sh                # Aggregate validation runner
 │
 ├── remote-server/
@@ -114,6 +115,7 @@ monitoring-dashboard/
 │   ├── collector-4.md
 │   ├── collector-5.md
 │   ├── collector-6.md
+│   ├── collector-7.md
 │   ├── dashboard-1.md
 │   ├── dashboard-2.md
 │   ├── dashboard-3.md

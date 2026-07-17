@@ -31,7 +31,7 @@ discovery:
 publisher:
   mode: stdout
   timeout: 10s
-  telemetry_version: both
+  telemetry_version: v2
 
 devices:
   - id: "dev-001"

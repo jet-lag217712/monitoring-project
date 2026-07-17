@@ -16,19 +16,21 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 
 | File | Purpose |
 |------|---------|
-| [`docker-compose.yml`](docker-compose.yml) | Collector only + persistent SQLite buffer |
+| [`docker-compose.yml`](docker-compose.yml) | Collector only + persistent SQLite state + control socket mount |
 | [`.env.example`](.env.example) | `MQTT_BROKER`, passwords, ports |
-| [`configs/collector.yaml`](configs/collector.yaml) | Site inventory template |
+| [`configs/collector.yaml`](configs/collector.yaml) | Site inventory template (v2 telemetry) |
+| [`run/`](run/) | Host bind for Unix control socket (`control.sock`) |
 | [`certs/`](certs/) | Place production `ca.crt` only (no private keys) |
 
 ## Rollout order
 
-1. Cloud plane healthy and Mosquitto reachable from site
+1. Cloud plane healthy (migrations applied) and Mosquitto reachable from site
 2. Install CA, fill `.env` and the `SNMP_COMMUNITY_*` references, then review inventory
-3. `collector validate -config /configs/collector.yaml` (or run the equivalent image command)
-4. `docker compose up -d --build` (or pull registry image)
-5. Verify `GET /healthz` on collector admin port
-5. Confirm samples appear in cloud API/UI
+3. Ensure state volume is owned by UID `65532` (distroless nonroot) on first create
+4. `collector validate -config /configs/collector.yaml` (or run the equivalent image command)
+5. `docker compose up -d --build` (or pull registry image)
+6. Verify `GET /healthz` and `GET /readyz` on collector admin port
+7. Confirm v2 samples appear in cloud API/UI
 
 ## Verification
 
@@ -36,17 +38,18 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 curl -fsS http://127.0.0.1:9090/healthz
 curl -fsS http://127.0.0.1:9090/readyz
 docker compose logs -f snmp-collector
-# Optional local TUI when admin.control_socket is mounted/available on the host
-# collector tui -socket /run/snmp-collector/control.sock
+# Optional local TUI when the control socket is mounted on the host
+# collector tui -socket ./run/control.sock
 # On cloud: API shows site devices after first successful poll
 ```
 
 ## Notes
 
-- Buffer volume `collector-data` retains telemetry during MQTT outages
-- Managed inventory is stored at `/data/managed-inventory.yaml` and is owner-only (`0600`)
-- Control socket and audit log (when enabled) must remain owner-only (`0600`); never publish them
+- State volume `collector-state` holds `/var/lib/snmp-collector` (buffer + managed inventory + audit)
+- Control socket and audit log must remain owner-only (`0600`); never publish them as TCP ports
+- Admin `:9090` is scrape/liveness only when published
 - Invalid managed writes/reloads leave the prior runtime snapshot active — replace the managed file and reload to roll back overlays
 - Prefer registry image tags in production; build-from-source is a skeleton default
 - Do not commit community strings or production passwords
+- Runbooks: [`../../runbooks/`](../../runbooks/)
 - Least-privilege systemd example: [`services/snmp-collector/deployments/systemd/snmp-collector.service`](../../../services/snmp-collector/deployments/systemd/snmp-collector.service)

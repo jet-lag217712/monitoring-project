@@ -38,7 +38,8 @@ collector still polls every dependent; a responding dependent is
 Healthy/Warning regardless of failed upstreams. Local health events use
 transitions `initial`, `entered`, and `recovered` only. Phase 4 publishes those
 transitions as MQTT v2 health envelopes when `publisher.telemetry_version` is
-`v2` or `both`.
+`v2` or `both` (deployment default is `v2`; see
+[`collector-7.md`](../../.ai/decisions/collector-7.md)).
 
 ## Discovery and local administration
 

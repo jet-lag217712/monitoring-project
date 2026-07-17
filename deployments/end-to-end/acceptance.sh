@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# On-site acceptance: wait for telemetry produced by a real SNMP device via the collector.
+# On-site acceptance: wait for v2 telemetry produced by a real SNMP device via the collector.
 # Requires configs/collector.yaml pointed at reachable devices and ACCEPTANCE_* env vars.
 set -euo pipefail
 
@@ -27,12 +27,26 @@ DEVICE_ID="${ACCEPTANCE_DEVICE_ID:-do-core}"
 API_URL="http://127.0.0.1:${API_HOST_PORT:-8000}/api/devices/${DEVICE_ID}?siteId=${SITE_ID}"
 TIMEOUT_SEC="${ACCEPTANCE_TIMEOUT_SEC:-180}"
 
-echo "Waiting up to ${TIMEOUT_SEC}s for real collector telemetry: ${DEVICE_ID} @ ${SITE_ID}"
+echo "Waiting up to ${TIMEOUT_SEC}s for real collector v2 telemetry: ${DEVICE_ID} @ ${SITE_ID}"
 deadline=$((SECONDS + TIMEOUT_SEC))
 while (( SECONDS < deadline )); do
-  if curl -fsS --max-time 3 "${API_URL}" >/dev/null 2>&1; then
+  if BODY="$(curl -fsS --max-time 3 "${API_URL}" 2>/dev/null)"; then
     echo "Acceptance device visible:"
-    curl -fsS --max-time 3 "${API_URL}"
+    echo "${BODY}"
+    if command -v python3 >/dev/null 2>&1; then
+      if ! printf '%s' "${BODY}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+missing = [k for k in ("id", "site_id", "status") if k not in d]
+if missing:
+    raise SystemExit("missing keys: %s" % missing)
+if d.get("status") is None:
+    raise SystemExit("status is null")
+print("v2 acceptance fields OK (status=%s, status_reason=%s)" % (d.get("status"), d.get("status_reason")))
+'; then
+        echo "Warning: device JSON missing expected v2 projection fields" >&2
+      fi
+    fi
     echo
     echo "end-to-end acceptance: OK"
     exit 0

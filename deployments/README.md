@@ -23,8 +23,8 @@ SNMP devices → Collector → MQTT/TLS → Ingestion → PostgreSQL → Backend
 ```bash
 # End-to-end (all services)
 ./deployments/end-to-end/up.sh
-./deployments/end-to-end/smoke.sh
-./deployments/end-to-end/acceptance.sh   # real SNMP required
+./deployments/end-to-end/smoke.sh          # v2 MQTT → API
+./deployments/end-to-end/acceptance.sh     # real SNMP required
 ./deployments/end-to-end/down.sh
 
 # Development cloud plane (Mac)
@@ -37,6 +37,11 @@ SNMP devices → Collector → MQTT/TLS → Ingestion → PostgreSQL → Backend
 ./deployments/test.sh --quick
 ./deployments/test.sh --with-smoke
 ```
+
+## Runbooks
+
+See [`runbooks/`](runbooks/) for install, inventory, credential rotation, queue
+remediation, rollback/restore, V2 cutover, and GNS3 field acceptance.
 
 ## Port map (defaults)
 
@@ -75,8 +80,9 @@ Never copy Go service trees into `deployments/`. The development VM sync places 
 | Layer | How |
 |-------|-----|
 | Validate compose/config | `*/validate.sh` or `./deployments/test.sh --quick` |
-| Cloud pipeline smoke | Synthetic MQTT → API (`smoke.sh`) |
-| Real SNMP acceptance | `end-to-end/acceptance.sh` |
+| Cloud pipeline smoke | Synthetic **v2** MQTT → API (`smoke.sh`) |
+| MQTT outage drill | `./deployments/lib/mqtt_outage_drill.sh deployments/end-to-end` |
+| Real SNMP acceptance | `end-to-end/acceptance.sh` + [`runbooks/field-acceptance-gns3.md`](runbooks/field-acceptance-gns3.md) |
 | CI | [`.github/workflows/deployments.yml`](../.github/workflows/deployments.yml) |
 
 CI covers unit tests, compose validation, image builds, and cloud smoke. Real SNMP / GNS3 remain manual release gates.

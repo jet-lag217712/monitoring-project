@@ -15,9 +15,11 @@ require_docker
 require_file "${COMPOSE}"
 require_file "${SCRIPT_DIR}/configs/collector.yaml"
 require_file "${ROOT}/services/snmp-collector/Dockerfile"
+mkdir -p "${SCRIPT_DIR}/run"
 
 export MQTT_BROKER=tls://example.com:8883
 export MQTT_PASSWORD=placeholder
+export SNMP_COMMUNITY_CORE_SWITCH=placeholder
 
 docker compose -f "${COMPOSE}" config >/dev/null
 echo "production/vxrail validate: OK"

@@ -274,6 +274,17 @@ Official MIB documentation is sufficient for the Phase 0 mapping matrix. Sanitiz
 - Update deployment examples, least-privilege filesystem ownership, runbooks, and rollback/migration procedures.
 - Exit: operator can install, validate, discover, review, configure thresholds/dependencies, reload, observe, and recover without a collector restart or cloud-side configuration access.
 
+### Phase 7 — Deployment, operations, and final acceptance
+
+- Update the three supported deployment profiles only (`end-to-end`, `development`, `production`); do not add phase-named stacks.
+- Mount static inventory read-only; managed inventory, audit, and SQLite outbox on a least-privilege state volume; Unix control socket on a runtime mount outside public port mappings.
+- Ship V2-only production telemetry (`publisher.telemetry_version: v2`); reconcile contract/roadmap dual-publish language via [`collector-7.md`](../decisions/collector-7.md).
+- Point deployment ingestion at v2 MQTT topics; update smoke/acceptance tooling to validate v2 envelopes; keep migrations before collector enablement.
+- Publish runbooks for install, inventory/discovery, credential/certificate rotation, queue remediation, rollback/restore, V2 cutover, and manual GNS3/VMware field acceptance.
+- Exit: operators can deploy, validate, smoke-test v2 paths, and recover using documented procedures; full hardware field acceptance is a manual checklist.
+
+Phase 7 artifact: [`collector-7.md`](../decisions/collector-7.md).
+
 ## 10. Acceptance criteria
 
 - A single collector polls a configured multi-device inventory concurrently without exceeding its worker limit; one device failure does not block another.

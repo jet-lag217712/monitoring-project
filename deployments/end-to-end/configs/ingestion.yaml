@@ -7,7 +7,9 @@ mqtt:
   username: "ingestion"
   password_env: "MQTT_PASSWORD"
   qos: 1
-  topic: "site/+/device/+/metric/#"
+  topics:
+    - "site/+/device/+/telemetry/v2/#"
+    - "site/+/collector/+/telemetry/v2/heartbeat"
   tls:
     ca_file: "/certs/ca.crt"
   reconnect:

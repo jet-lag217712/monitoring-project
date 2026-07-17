@@ -26,6 +26,10 @@ infrastructure/docker/mqtt-broker/passwords
 **/buffer.db
 **/buffer.db-*
 
+# Collector control sockets (host bind mounts)
+**/run/control.sock
+deployments/**/run/*.sock
+
 # Terraform
 **/.terraform/
 **/.terraform.lock.hcl

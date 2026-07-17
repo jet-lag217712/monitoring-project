@@ -13,9 +13,10 @@ SNMP Collector
 ### Choice Made
 
 Phase 4 dual-publish is controlled by `publisher.telemetry_version` with
-allowed values `v1`, `v2`, and `both`. The default is `both` so existing v1
-consumers remain fed while v2 routes are validated. Deprecating v1 publishing
-requires a separately reviewed change after cutover.
+allowed values `v1`, `v2`, and `both`. The original default was `both` so
+existing v1 consumers remained fed while v2 routes were validated.
+**Superseded by [`collector-7.md`](collector-7.md):** production default is
+`v2`; `v1`/`both` are emergency/lab overrides only.
 
 Envelope `config_revision` is a non-secret SHA-256 fingerprint of the active
 configuration snapshot (site, collector identity, telemetry mode, health

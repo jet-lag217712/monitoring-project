@@ -16,7 +16,7 @@ snmp:
 publisher:
   mode: mqtt
   timeout: 10s
-  telemetry_version: both
+  telemetry_version: v2
 
 buffer:
   path: "./data/buffer.db"

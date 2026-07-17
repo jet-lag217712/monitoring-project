@@ -35,6 +35,7 @@ COMPOSE_NETWORK="${NETWORK}" \
 API_BASE="http://127.0.0.1:${API_HOST_PORT:-8000}" \
 SMOKE_SITE_ID="${SMOKE_SITE_ID:-site-e2e}" \
 SMOKE_DEVICE_ID="${SMOKE_DEVICE_ID:-e2e-smoke-device}" \
-  "${SCRIPT_DIR}/../lib/smoke_mqtt_to_api.sh"
+SMOKE_COLLECTOR_ID="${SMOKE_COLLECTOR_ID:-collector-e2e-smoke}" \
+  "${SCRIPT_DIR}/../lib/smoke_mqtt_v2_to_api.sh"
 
 echo "end-to-end smoke: OK"

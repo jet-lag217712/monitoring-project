@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# LEGACY v1 smoke helper — not used by profile smoke.sh scripts.
+# Prefer smoke_mqtt_v2_to_api.sh. Kept only for emergency telemetry_version=v1|both labs.
 # Publish a schema-valid device metric over MQTT/TLS and wait until the API sees it.
 # Required env: MQTT_PASSWORD, MQTT_CA_FILE, COMPOSE_NETWORK (or MQTT_HOST),
 #               API_BASE (e.g. http://127.0.0.1:8000), SMOKE_SITE_ID, SMOKE_DEVICE_ID

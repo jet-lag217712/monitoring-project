@@ -15,14 +15,8 @@ outbound delivery mechanism.
 
 ## Routes and compatibility
 
-Current v1 routes remain accepted during migration:
-
-```text
-site/{site_id}/device/{device_id}/metric/device
-site/{site_id}/device/{device_id}/metric/interface
-```
-
-V2 uses explicit versioned routes:
+**Production contract is v2 only** ([`collector-7.md`](../../.ai/decisions/collector-7.md)).
+Deployment profiles publish and subscribe to versioned v2 routes:
 
 ```text
 site/{site_id}/device/{device_id}/telemetry/v2/device
@@ -31,9 +25,18 @@ site/{site_id}/device/{device_id}/telemetry/v2/health
 site/{site_id}/collector/{collector_id}/telemetry/v2/heartbeat
 ```
 
-Route identifiers are authoritative. Ingestion cross-checks them against
-envelope identifiers and rejects mismatch, malformed IDs, unknown schema
-versions, unsupported units, invalid transitions, stale timestamps, and
+Legacy v1 routes are deprecated and unsupported for deployment:
+
+```text
+site/{site_id}/device/{device_id}/metric/device
+site/{site_id}/device/{device_id}/metric/interface
+```
+
+Ingestion and collector code may still accept or emit v1 when explicitly
+configured (`publisher.telemetry_version: v1` or `both`) for emergency/lab
+use only. Route identifiers remain authoritative: ingestion cross-checks them
+against envelope identifiers and rejects mismatch, malformed IDs, unknown
+schema versions, unsupported units, invalid transitions, stale timestamps, and
 unknown event types.
 
 ## Formal event envelope
@@ -250,10 +253,11 @@ acknowledged so QoS 1 redelivery occurs. V2 uses `event_id` deduplication while
 retaining natural sample keys: device metrics use device, metric type, and
 observation time; interface samples use interface and observation time.
 
-The rollout is additive: apply storage changes and deploy ingestion support;
-verify compatibility; enable v2 producers with v1 consumption retained; run
-dual-publish validation; then cut over and deprecate v1 publishing through a
-separately reviewed change. Initial v2 retention is append-only with no
+Production deployments use v2-only publishing and ingestion topics
+([`collector-7.md`](../../.ai/decisions/collector-7.md)). The earlier Phase 4
+dual-publish migration window is closed because no production workload ever
+depended on v1 routes. Emergency dual-publish remains a documented override,
+not a deployment default. Initial v2 retention is append-only with no
 automated deletion or archival. Time-based indexes are required; partitioning
 or archival requires a later measured-capacity decision.
 

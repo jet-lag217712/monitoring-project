@@ -14,6 +14,7 @@
    - managed inventory: `/var/lib/snmp-collector/managed-inventory.yaml` (`0600`)
    - audit log: `/var/lib/snmp-collector/managed-inventory.yaml.audit.log` (`0600`)
    - control socket: `/run/snmp-collector/control.sock` (`0600`, via `RuntimeDirectory=`)
+   - set `publisher.telemetry_version: v2` for production
 6. Supply SNMP/MQTT secrets only through `/etc/equate/snmp-collector.env` (`community_env` / `password_env` names in YAML).
 7. `systemctl enable --now snmp-collector`
 
@@ -34,3 +35,10 @@ collector tui -socket /run/snmp-collector/control.sock
 ### Security notes
 
 The unit sets `ProtectSystem=strict`, `PrivateTmp=true`, `NoNewPrivileges=true`, and an empty `CapabilityBoundingSet`. `ReadWritePaths` is limited to collector state and runtime directories. The control socket is local-only; do not expose it over TCP or HTTP.
+
+### Compose profiles and runbooks
+
+Deployment Compose layouts and operational procedures live under
+[`deployments/`](../../../deployments/) and
+[`deployments/runbooks/`](../../../deployments/runbooks/).
+See [`.ai/decisions/collector-7.md`](../../../.ai/decisions/collector-7.md).
