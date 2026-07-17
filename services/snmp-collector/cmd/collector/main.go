@@ -13,10 +13,18 @@ import (
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/buffer"
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
+	"github.com/equate/ogsd/services/snmp-collector/internal/heartbeat"
 	"github.com/equate/ogsd/services/snmp-collector/internal/metrics"
 	"github.com/equate/ogsd/services/snmp-collector/internal/poller"
 	"github.com/equate/ogsd/services/snmp-collector/internal/publisher"
 	"github.com/equate/ogsd/services/snmp-collector/internal/readiness"
+)
+
+// Build metadata injected via -ldflags; defaults keep local builds explicit.
+var (
+	buildVersion   = "unknown"
+	buildGitCommit = "unknown"
+	buildTime      = "unknown"
 )
 
 func main() {
@@ -108,13 +116,28 @@ func main() {
 
 	log.Info("collector starting",
 		"site_id", cfg.SiteID,
+		"collector_id", cfg.Collector.ID,
 		"devices", len(cfg.Devices),
 		"poll_interval", cfg.PollInterval.String(),
 		"max_workers", cfg.MaxWorkers,
 		"publisher_mode", cfg.Publisher.Mode,
+		"telemetry_version", cfg.Publisher.TelemetryVersion,
 	)
 
 	go p.Run(pollCtx)
+	hb := heartbeat.New(
+		configManager,
+		pub,
+		m,
+		log,
+		ready.depthFunc(),
+		heartbeat.BuildInfo{
+			Version:   buildVersion,
+			GitCommit: buildGitCommit,
+			BuildTime: buildTime,
+		},
+	)
+	go hb.Run(pollCtx)
 	go func() {
 		for {
 			select {
@@ -171,6 +194,15 @@ type publisherReadiness struct {
 	mode  string
 	store *buffer.Store
 	mqtt  interface{ IsConnected() bool }
+}
+
+func (r publisherReadiness) depthFunc() heartbeat.DepthFunc {
+	return func() (int64, error) {
+		if r.store == nil {
+			return 0, nil
+		}
+		return r.store.Depth(), nil
+	}
 }
 
 func (r publisherReadiness) storageReady() bool {

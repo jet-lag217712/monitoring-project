@@ -1,6 +1,7 @@
 site_id: "site-001"
 collector:
   id: "collector-example"
+  heartbeat_interval: 60s
 poll_interval: 60s
 max_workers: 10
 
@@ -25,6 +26,7 @@ discovery:
 publisher:
   mode: stdout
   timeout: 10s
+  telemetry_version: both
 
 devices:
   - id: "dev-001"

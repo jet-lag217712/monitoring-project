@@ -97,8 +97,9 @@ type DiscoveryConfig struct {
 
 // PublisherConfig selects the publish backend and poller publish timeout.
 type PublisherConfig struct {
-	Mode    string        `yaml:"mode"` // stdout | mqtt
-	Timeout time.Duration `yaml:"timeout"`
+	Mode              string        `yaml:"mode"` // stdout | mqtt
+	Timeout           time.Duration `yaml:"timeout"`
+	TelemetryVersion  string        `yaml:"telemetry_version"` // v1 | v2 | both
 }
 
 // BufferConfig controls the durable local SQLite buffer (mqtt mode).
@@ -362,6 +363,9 @@ func (c *Config) applyDefaults() {
 	if c.Publisher.Timeout == 0 {
 		c.Publisher.Timeout = defaultPublisherTimeout
 	}
+	if c.Publisher.TelemetryVersion == "" {
+		c.Publisher.TelemetryVersion = "both"
+	}
 	if c.Buffer.Path == "" {
 		c.Buffer.Path = "buffer.db"
 	}
@@ -495,6 +499,11 @@ func (c *Config) validate(requireRuntimeSecrets bool) error {
 	case "stdout", "mqtt":
 	default:
 		return fmt.Errorf("publisher.mode must be \"stdout\" or \"mqtt\"")
+	}
+	switch c.Publisher.TelemetryVersion {
+	case "v1", "v2", "both":
+	default:
+		return fmt.Errorf("publisher.telemetry_version must be \"v1\", \"v2\", or \"both\"")
 	}
 	if c.Publisher.Mode == "mqtt" {
 		if err := c.validateMQTT(); err != nil {
@@ -900,7 +909,6 @@ func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
 }
 
 // TemperaturePolicyRevision returns a non-secret fingerprint of the active temperature policy.
-// Full MQTT config_revision remains a Phase 4 envelope concern.
 func TemperaturePolicyRevision(cfg *Config) string {
 	if cfg == nil {
 		return "policy-none"
@@ -926,6 +934,35 @@ func TemperaturePolicyRevision(cfg *Config) string {
 		_, _ = fmt.Fprintf(h, "%s=%.4f;", item.ID, item.Value)
 	}
 	return fmt.Sprintf("policy-%x", h.Sum(nil)[:8])
+}
+
+// ConfigRevision returns a non-secret fingerprint of the active configuration snapshot
+// used as the MQTT envelope config_revision field.
+func ConfigRevision(cfg *Config) string {
+	if cfg == nil {
+		return "revision-none"
+	}
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "site=%s;collector=%s;telemetry=%s;temp=%.4f;fail=%d;",
+		cfg.SiteID, cfg.Collector.ID, cfg.Publisher.TelemetryVersion,
+		cfg.Health.TemperatureWarningC, cfg.Health.FailureThreshold)
+	devices := append([]DeviceConfig(nil), cfg.Devices...)
+	sort.Slice(devices, func(i, j int) bool { return devices[i].ID < devices[j].ID })
+	for _, d := range devices {
+		_, _ = fmt.Fprintf(h, "dev=%s;host=%s;", d.ID, d.Host)
+		ups := append([]string(nil), d.UpstreamDeviceIDs...)
+		sort.Strings(ups)
+		for _, u := range ups {
+			_, _ = fmt.Fprintf(h, "up=%s;", u)
+		}
+		if d.TemperatureWarningC != nil {
+			_, _ = fmt.Fprintf(h, "tw=%.4f;", *d.TemperatureWarningC)
+		}
+		if d.PollInterval > 0 {
+			_, _ = fmt.Fprintf(h, "pi=%s;", d.PollInterval)
+		}
+	}
+	return fmt.Sprintf("revision-%x", h.Sum(nil)[:10])
 }
 
 // ReadManagedInventory loads a managed inventory file. A missing file is empty.
