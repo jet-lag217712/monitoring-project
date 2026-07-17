@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:equate:ogsd:telemetry:v2:device-event",
+  "title": "SNMP Collector v2 device telemetry event",
+  "allOf": [
+    {
+      "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/baseEnvelope"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "2.0"
+        },
+        "event_type": {
+          "const": "device_telemetry"
+        },
+        "device_id": {
+          "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "identity": {
+              "type": "object",
+              "properties": {
+                "hostname": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "sys_object_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "sys_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "sys_descr": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "vendor": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "model": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "serial": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "snmp_version": {
+                  "const": "2c"
+                }
+              },
+              "required": [
+                "hostname",
+                "sys_object_id",
+                "sys_name",
+                "sys_descr",
+                "snmp_version"
+              ],
+              "additionalProperties": false
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "enum": ["core", "cisco", "arista", "unknown"]
+                },
+                "capabilities": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": ["cpu", "memory", "temperature", "power"]
+                  }
+                }
+              },
+              "required": ["name", "capabilities"],
+              "additionalProperties": false
+            },
+            "readings": {
+              "type": "object",
+              "properties": {
+                "uptime_seconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "cpu_utilization_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "memory_utilization_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "primary_temperature_c": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 250
+                }
+              },
+              "required": ["uptime_seconds"],
+              "additionalProperties": false
+            },
+            "temperature_components": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/temperatureComponent"
+              }
+            },
+            "power_components": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/powerComponent"
+              }
+            }
+          },
+          "required": [
+            "identity",
+            "profile",
+            "readings",
+            "temperature_components",
+            "power_components"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["device_id"]
+    }
+  ],
+  "$defs": {
+    "componentStatus": {
+      "enum": ["ok", "warning", "critical", "not_present", "unknown"]
+    },
+    "temperatureComponent": {
+      "type": "object",
+      "properties": {
+        "component_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "index": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 250
+        },
+        "unit": {
+          "const": "celsius"
+        },
+        "status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "observed_at": {
+          "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "component_id",
+        "name",
+        "index",
+        "value",
+        "unit",
+        "status",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "powerComponent": {
+      "type": "object",
+      "properties": {
+        "component_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "index": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": ["number", "null"]
+        },
+        "unit": {
+          "enum": ["state", "watts", "volts", "amps", "percent"]
+        },
+        "status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "observed_at": {
+          "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "component_id",
+        "name",
+        "index",
+        "value",
+        "unit",
+        "status",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

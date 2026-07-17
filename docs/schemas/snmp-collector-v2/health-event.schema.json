@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:equate:ogsd:telemetry:v2:health-event",
+  "title": "SNMP Collector v2 health state event",
+  "allOf": [
+    {
+      "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/baseEnvelope"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "2.0"
+        },
+        "event_type": {
+          "const": "health_state"
+        },
+        "device_id": {
+          "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": ["healthy", "warning", "critical", "unknown"]
+            },
+            "reason": {
+              "enum": [
+                "reachable",
+                "temperature_threshold",
+                "direct_unreachable",
+                "upstream_unreachable",
+                "recovered"
+              ]
+            },
+            "previous_state": {
+              "type": ["string", "null"],
+              "enum": ["healthy", "warning", "critical", "unknown", null]
+            },
+            "transition": {
+              "enum": ["initial", "entered", "recovered", "reasserted"]
+            },
+            "failure_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failure_threshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "temperature_c": {
+              "type": ["number", "null"],
+              "minimum": -100,
+              "maximum": 250
+            },
+            "temperature_warning_c": {
+              "type": ["number", "null"],
+              "minimum": -100,
+              "maximum": 250
+            },
+            "temperature_policy_revision": {
+              "type": ["string", "null"],
+              "maxLength": 128
+            },
+            "upstream_device_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
+              }
+            },
+            "unavailable_upstream_device_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
+              }
+            },
+            "root_cause_device_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
+              }
+            }
+          },
+          "required": [
+            "state",
+            "reason",
+            "transition",
+            "failure_count",
+            "failure_threshold",
+            "upstream_device_ids",
+            "unavailable_upstream_device_ids",
+            "root_cause_device_ids"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["device_id"]
+    }
+  ],
+  "$comment": "A pending failure does not emit a terminal state transition. It retains the prior state and is represented by failure_count and operational metrics.",
+  "unevaluatedProperties": false
+}

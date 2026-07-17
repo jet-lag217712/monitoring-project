@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:equate:ogsd:telemetry:v2:event-envelope",
+  "title": "SNMP Collector v2 event envelope",
+  "description": "Shared envelope for all SNMP Collector v2 telemetry events.",
+  "type": "object",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseEnvelope": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "2.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_type": {
+          "enum": [
+            "device_telemetry",
+            "interface_telemetry",
+            "health_state",
+            "collector_heartbeat"
+          ]
+        },
+        "site_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "collector_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "device_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "emitted_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "config_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "A non-secret configuration revision identifier."
+        },
+        "payload": {
+          "type": "object",
+          "minProperties": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "site_id",
+        "collector_id",
+        "observed_at",
+        "emitted_at",
+        "config_revision",
+        "payload"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/baseEnvelope"
+    }
+  ],
+  "unevaluatedProperties": false
+}
