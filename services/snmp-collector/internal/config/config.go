@@ -834,6 +834,69 @@ func ValidateDependencies(devices []DeviceConfig) error {
 	return validateDependencies(devices)
 }
 
+// ValidatePendingDependencyMutation checks that applying upstream_device_ids to the
+// on-disk managed inventory would remain valid when merged with static inventory.
+// Un-reloaded managed commits are included so sequential dependency writes cannot
+// persist a cycle that bricks reload or restart.
+func (c *Config) ValidatePendingDependencyMutation(deviceID string, upstreams []string) error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if strings.TrimSpace(c.configPath) == "" {
+		return errors.New("configuration path is required")
+	}
+	staticDevices, err := readStaticDevicesFromConfig(c.configPath)
+	if err != nil {
+		return fmt.Errorf("read static inventory: %w", err)
+	}
+	managed, err := ReadManagedDocument(c.ManagedInventoryPath())
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range managed.Devices {
+		if managed.Devices[i].ID == deviceID {
+			managed.Devices[i].UpstreamDeviceIDs = append([]string(nil), upstreams...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		managed.Devices = append(managed.Devices, DeviceConfig{
+			ID:                deviceID,
+			UpstreamDeviceIDs: upstreams,
+		})
+	}
+	merged := mergeInventories(staticDevices, managed.Devices)
+	deviceExists := false
+	for _, device := range merged {
+		if device.ID == deviceID {
+			deviceExists = true
+			break
+		}
+	}
+	if !deviceExists {
+		return fmt.Errorf("device_id not found in active inventory")
+	}
+	return validateDependencies(merged)
+}
+
+func readStaticDevicesFromConfig(configPath string) ([]DeviceConfig, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	var partial struct {
+		Devices []DeviceConfig `yaml:"devices"`
+	}
+	if err := yaml.Unmarshal(data, &partial); err != nil {
+		return nil, fmt.Errorf("parse config devices: %w", err)
+	}
+	devices := append([]DeviceConfig(nil), partial.Devices...)
+	applyDeviceDefaults(devices)
+	return devices, nil
+}
+
 func validateDependencies(devices []DeviceConfig) error {
 	byID := make(map[string]DeviceConfig, len(devices))
 	for _, device := range devices {

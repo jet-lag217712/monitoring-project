@@ -474,14 +474,7 @@ func (s *Server) validateDependencyTargets(deviceID string, upstreams []string) 
 	if err := s.validateDeviceInInventory(deviceID); err != nil {
 		return err
 	}
-	devices := append([]config.DeviceConfig(nil), s.manager.Current().Devices...)
-	for i := range devices {
-		if devices[i].ID == deviceID {
-			devices[i].UpstreamDeviceIDs = append([]string(nil), upstreams...)
-			break
-		}
-	}
-	if err := config.ValidateDependencies(devices); err != nil {
+	if err := s.manager.Current().ValidatePendingDependencyMutation(deviceID, upstreams); err != nil {
 		return newProtoError(CodeValidationFailed, err.Error())
 	}
 	return nil
