@@ -21,6 +21,9 @@ import (
 	"github.com/equate/ogsd/services/snmp-collector/internal/snmp/vendors"
 )
 
+// profileWalkBudget covers the largest vendor profile walk count in the registry.
+const profileWalkBudget = 13
+
 // ConfigSource supplies immutable collector configuration snapshots.
 type ConfigSource interface {
 	Current() *config.Config
@@ -204,7 +207,7 @@ func (p *Poller) pollDevice(ctx context.Context, cfg *config.Config, device conf
 	p.metrics.PollSuccessTotal.Inc()
 }
 
-func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.DeviceConfig) (returnErr error) {
+func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.DeviceConfig) error {
 	client, err := snmp.NewClient(device, device.EffectiveSNMP(cfg.SNMP))
 	if err != nil {
 		return err
@@ -214,19 +217,20 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 	}
 	defer func() {
 		if err := client.Close(); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("close SNMP client: %w", err))
+			p.log.Warn("close SNMP client", "device_id", device.ID, "err", err)
 		}
 	}()
 
-	pollCtx, cancel := client.WithTimeout(ctx)
-	defer cancel()
-
-	identity, err := core.PollDevice(pollCtx, client)
+	identityCtx, cancelIdentity := client.WithTimeout(ctx)
+	identity, err := core.PollDevice(identityCtx, client)
+	cancelIdentity()
 	if err != nil {
 		return err
 	}
 
-	ifaces, err := core.PollInterfaces(pollCtx, client)
+	interfaceCtx, cancelInterfaces := client.WithScaledTimeout(ctx, core.InterfacePollWalkBudget)
+	ifaces, err := core.PollInterfaces(interfaceCtx, client)
+	cancelInterfaces()
 	if err != nil {
 		return err
 	}
@@ -240,7 +244,9 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 		ifaces,
 	)
 
-	p.enrichProfile(pollCtx, client, &result)
+	profileCtx, cancelProfile := client.WithScaledTimeout(ctx, profileWalkBudget)
+	p.enrichProfile(profileCtx, client, &result)
+	cancelProfile()
 
 	interfaceFilter, err := filter.New(device.InterfaceFilters)
 	if err != nil {

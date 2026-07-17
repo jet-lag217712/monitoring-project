@@ -55,6 +55,9 @@ type Walker interface {
 	Walk(ctx context.Context, rootOID string, walkFn gosnmp.WalkFunc) error
 }
 
+// InterfacePollWalkBudget is the maximum SNMP walks PollInterfaces performs.
+const InterfacePollWalkBudget = 16
+
 // PollInterfaces walks IF-MIB / ifXTable columns and returns every interface.
 // It prefers 64-bit ifHC* octet counters and falls back to 32-bit counters.
 func PollInterfaces(ctx context.Context, client Walker) ([]InterfaceReading, error) {

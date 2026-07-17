@@ -1,8 +1,12 @@
 package snmp
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gosnmp/gosnmp"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
 )
@@ -36,5 +40,29 @@ func TestNewClientDoesNotExposeMissingCommunityValue(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret") {
 		t.Fatalf("error leaked a secret: %v", err)
+	}
+}
+
+func TestWithScaledTimeoutScalesBudget(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{params: &gosnmp.GoSNMP{
+		Timeout: 2 * time.Second,
+		Retries: 1,
+	}}
+	parent, cancelParent := context.WithCancel(context.Background())
+	defer cancelParent()
+
+	const scale = 16
+	ctx, cancel := client.WithScaledTimeout(parent, scale)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected deadline")
+	}
+	want := 2 * time.Second * 2 * scale // timeout * (retries+1) * scale
+	if got := time.Until(deadline); got < want-time.Second || got > want+time.Second {
+		t.Fatalf("deadline in %v, want about %v", got, want)
 	}
 }
