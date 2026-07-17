@@ -1,240 +1,31 @@
-# Ingestion Service Architecture
+# Ingestion Service Architecture — v2
 
-## Purpose
+## Purpose and ownership
 
-The Ingestion Service validates telemetry delivered through Secure Outbound Telemetry Transport, transforms payloads into the platform data model, and persists monitoring data into PostgreSQL.
+The Ingestion Service consumes authenticated MQTT/TLS telemetry and owns the transactional persistence of API-facing monitoring state in PostgreSQL. It never polls SNMP, evaluates local reachability, exposes collector administration, or serves dashboard requests.
 
-The service bridges telemetry delivery and durable storage in the UI/UX Cloud Plane.
+## V2 contract handling
 
-## Plane Ownership
+The service consumes the versioned device, interface, health, and collector-heartbeat routes defined in [`contracts.md`](contracts.md). It cross-checks topic/body identity, accepts only recognized schema versions and units, validates timestamps and state transitions, and rejects malformed or unsupported messages without crashing. v1 routes are retained during the explicit migration window; v2 is enabled only after its migrations and handler compatibility tests are deployed.
 
-Plane: UI/UX Cloud Plane.
-
-The Ingestion Service runs in the cloud plane with access to PostgreSQL. It is not deployed inside the Customer OOB Monitoring Plane.
-
-## Responsibilities
-
-The Ingestion Service is responsible for:
-
-- Consuming telemetry delivered by Secure Outbound Telemetry Transport.
-- Validating payload structure and required fields.
-- Transforming collector string IDs into deterministic UUID primary keys (UUID v5).
-- Creating and updating inventory records (auto-discovery).
-- Storing metric samples and interface samples idempotently.
-- Acknowledging MQTT messages only after successful persistence (or safe reject/dedup).
-- Generating structured ingestion logs and Prometheus metrics.
-- Rejecting malformed messages.
-
-The Ingestion Service is not responsible for:
-
-- SNMP polling.
-- Telemetry transport routing.
-- User authentication.
-- Dashboard rendering.
-- Alert presentation.
-- Device configuration or console access.
-
-## Dependencies
-
-Upstream:
-
-- Secure Outbound Telemetry Transport.
-
-Downstream:
-
-- PostgreSQL Database.
-
-## Data Flow
+The durable processing pipeline is:
 
 ```text
-SNMP Collector
-    ↓
-Secure Outbound Telemetry Transport
-    ↓
-Ingestion Service
-    ↓
-PostgreSQL
+MQTT receive → validate → deduplicate → transaction → MQTT acknowledge
 ```
 
-No other service should write monitoring data directly into PostgreSQL.
+For a new event the single transaction upserts required inventory/current state, writes history and samples, and commits before acknowledgment. Invalid or non-retryable unsupported events are acknowledged and logged as rejected. Duplicates are acknowledged without changing state. Database failure is not acknowledged, so QoS 1 redelivery occurs. `event_id` is the primary v2 deduplication key; natural sample uniqueness remains an additional safeguard.
 
-MQTT/TLS is the current telemetry transport implementation. Implementation-specific topic names may be used by the transport, but architecture docs should describe the boundary as Secure Outbound Telemetry Transport.
+## Persistence model
 
-## Transport Contract Shape
+Ingestion persists enriched device identity/profile/fingerprint and interface metadata; normalized device and interface samples; individual temperature and power components; health current state and history; topology evidence; current collector operational state; and heartbeat history. It must preserve the actual collector observation time.
 
-Topics match [`contracts.md`](contracts.md). The metric *kind* is in the topic path (`device` or `interface`), not a metric name.
+Health state uses `healthy`, `warning`, `critical`, and `unknown`. State/history records retain reason, failure count, temperature threshold and policy revision when relevant, configured/unavailable upstream IDs, and root causes. The collector supplies this local evidence; ingestion persists and exposes it rather than independently guessing a cascade.
 
-```text
-site/{site_id}/device/{device_id}/metric/device
-site/{site_id}/device/{device_id}/metric/interface
-```
+Current collector status is updated only when the incoming heartbeat's `observed_at` is newer than the stored observation time. Delayed outbox delivery therefore cannot regress a collector’s apparent status.
 
-Examples:
+## IDs, security, and observability
 
-```text
-site/site-001/device/dev-001/metric/device
-site/site-001/device/dev-001/metric/interface
-```
+String site/device identifiers are deterministically mapped to UUID v5 entity keys. Interfaces remain unique by `(device_id, if_index)`. Ingestion credentials are restricted to its database write responsibilities and telemetry connections are TLS-authenticated.
 
-Topic path IDs are authoritative. The collector may also include `site_id` and `device_id` in the JSON body; when present they must match the topic.
-
-## Payload Structure
-
-All payloads are JSON. Shapes match the collector wire format and [`contracts.md`](contracts.md).
-
-### Device metric
-
-```json
-{
-  "timestamp": "2026-06-01T18:00:00Z",
-  "site_id": "site-001",
-  "device_id": "dev-001",
-  "metric": "uptime_seconds",
-  "value": 12345.0
-}
-```
-
-Required body fields: `timestamp`, `metric`, `value`. Optional: `site_id`, `device_id` (cross-checked against topic when present).
-
-### Interface metric
-
-```json
-{
-  "timestamp": "2026-06-01T18:00:00Z",
-  "site_id": "site-001",
-  "device_id": "dev-001",
-  "if_index": 2,
-  "in_octets": 123,
-  "out_octets": 456,
-  "in_errors": 0,
-  "out_errors": 0
-}
-```
-
-Required body fields: `timestamp`, `if_index`, `in_octets`, `out_octets`, `in_errors`, `out_errors`. Optional: `site_id`, `device_id`.
-
-## Idempotent Ingestion Pipeline
-
-MQTT QoS 1 with **manual acknowledgment**. Never ACK a new message before the database transaction commits.
-
-```text
-MQTT Receive → Validate → Deduplicate → DB Commit → ACK
-```
-
-| Condition | Action |
-|-----------|--------|
-| Invalid messages | ACK immediately and log `rejected` (prevent poison-queue loops) |
-| Duplicates | ACK without insert (idempotent success); log `deduplicated` |
-| New messages | ACK **only** after transaction commits; log `accepted` |
-| DB failures | No ACK; broker redelivers; log `database_error` |
-| Unknown metric type | ACK and reject (non-retryable until seed data exists) |
-
-Consumer settings: QoS 1, manual ACK, `Clean Session = false` (session recovery).
-
-### Idempotency keys
-
-| Message type | Natural key |
-|--------------|-------------|
-| Device metric | `(device_id, metric_type_id, collected_at)` |
-| Interface metric | `(interface_id, collected_at)` |
-
-Enforced by `UNIQUE` constraints plus `INSERT ... ON CONFLICT DO NOTHING`.
-
-## Identifier Mapping
-
-Collector uses string IDs (`site-001`, `dev-001`). PostgreSQL entity tables use UUID primary keys.
-
-Ingestion derives deterministic **UUID v5** values from a fixed OGSD namespace:
-
-- Site UUID from `site_id`
-- Device UUID from `site_id` + `device_id`
-- Interface UUID from device UUID + `if_index`
-
-This enables stable auto-discovery without a separate ID registry.
-
-## Device Discovery
-
-The Ingestion Service automatically creates inventory records when previously unknown devices are received. Site → device upserts, sample insert, and `devices.last_seen` update run in a **single transaction**.
-
-## Interface Discovery
-
-Interface records are created automatically when interface telemetry is received. Interfaces are uniquely identified by `(device_id, if_index)`.
-
-## Validation Rules
-
-Every message must pass validation before persistence:
-
-- Valid JSON.
-- Valid RFC3339 timestamp.
-- Required fields present for the message kind.
-- Numeric values where required.
-- Valid topic format (`.../metric/device` or `.../metric/interface`).
-- Topic/body ID consistency when body IDs are present.
-
-Invalid messages are rejected and logged. The service must never crash due to malformed payloads.
-
-## Database Writes
-
-Device updates include `last_seen` and `status`.
-
-Device-level metrics are stored in `metric_samples`. Interface-level metrics are stored in `interface_samples`.
-
-## Error Handling
-
-All processing failures are logged. Categories: invalid payload, validation failure, database failure, transport failure. Failed messages must not terminate the service.
-
-## Logging
-
-Structured JSON logs. Each processed message includes timestamp, site ID, device ID, metric name (when applicable), and processing result:
-
-- `accepted`
-- `rejected`
-- `deduplicated`
-- `database_error`
-
-## Observability
-
-Prometheus metrics on the admin port (`/metrics`):
-
-- `ingestion_messages_received_total`
-- `ingestion_messages_accepted_total`
-- `ingestion_messages_rejected_total`
-- `ingestion_messages_deduplicated_total`
-- `ingestion_db_write_failure_total`
-- `ingestion_processing_duration_seconds`
-- `ingestion_mqtt_connected`
-
-## Availability Requirements
-
-The service is stateless with respect to monitoring data (PostgreSQL is the system of record). Temporary restarts must not result in data corruption; MQTT session recovery plus idempotent inserts handle redelivery.
-
-## Security
-
-All telemetry transport communication must use TLS. The Ingestion Service accepts messages only from authenticated transport paths. Database access is restricted to a dedicated ingestion account with write permissions. Direct public access is prohibited.
-
-## Future Enhancements
-
-Potential future capabilities include:
-
-- Dead-letter handling.
-- Batch database writes.
-- Alert generation.
-- Metric enrichment.
-- High-volume ingestion optimization.
-- Stream processing.
-
-## Deployment Boundary
-
-The Ingestion Service runs in the UI/UX Cloud Plane.
-
-Network flow:
-
-```text
-Secure Outbound Telemetry Transport
-    ↓
-Ingestion Service
-    ↓
-PostgreSQL
-```
-
-No direct access from the frontend is permitted.
+Structured logs include processing result, route/event identity, and safe site/device/collector IDs; they never include credentials, certificates, raw payloads, or secrets. Prometheus metrics retain receive/accept/reject/dedup/database/processing/MQTT coverage and distinguish v2 validation or handler failures by bounded reason.

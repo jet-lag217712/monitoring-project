@@ -1,59 +1,9 @@
-# PostgreSQL Architecture
+# PostgreSQL Architecture — v2
 
-## Purpose
+PostgreSQL stores authoritative monitoring state and history in the UI/UX Cloud Plane. Collectors and frontend clients never connect directly.
 
-PostgreSQL stores authoritative monitoring state and historical telemetry in the UI/UX Cloud Plane.
+V2 requires migrations for enriched device/profile identity, interface metadata, component readings, health current state/history and dependency evidence, collector current status/history, plus seeded CPU, memory, temperature, and supported power metric types. All real-world timestamps use `TIMESTAMPTZ`; history tables remain append-oriented and current-state rows are updated only by valid, newer observations where ordering matters.
 
-## Responsibilities
+Ingestion performs `validate → deduplicate → transactional upsert/sample/history write → commit → MQTT ACK`. v2 uses `event_id` as the message idempotency key in addition to existing natural keys: `metric_samples` `(device_id, metric_type_id, collected_at)` and `interface_samples` `(interface_id, collected_at)`. Health and heartbeat histories must likewise reject duplicate event IDs.
 
-PostgreSQL stores:
-
-- Sites.
-- Monitored devices.
-- Interfaces.
-- Metrics.
-- Alerts.
-- User data when application authentication is implemented.
-
-## Design Goals
-
-The database should support:
-
-- Time-series queries.
-- Device history.
-- Dashboard queries.
-- Alert generation inputs.
-- Backend API contracts.
-
-## Operational Requirements
-
-Production deployment should include:
-
-- Backups.
-- Indexing.
-- Migration management.
-- Storage monitoring.
-- Access controls separating ingestion writes from API reads.
-
-## Migrations and Roles
-
-Schema changes are applied with [golang-migrate](https://github.com/golang-migrate/migrate) from [`database/migrations/`](../../database/migrations/). See [`database/README.md`](../../database/README.md).
-
-| Role | Purpose |
-|------|---------|
-| `ogsd_admin` | DDL / migrations (Azure Flexible Server administrator) |
-| `ogsd_ingestion` | INSERT/UPDATE for auto-discovery; INSERT+SELECT on samples (ON CONFLICT); SELECT on reference tables |
-| `ogsd_api` | SELECT only |
-
-Idempotency is enforced at the database:
-
-- `metric_samples`: `UNIQUE (device_id, metric_type_id, collected_at)`
-- `interface_samples`: `UNIQUE (interface_id, collected_at)`
-
-Azure provisioning: [`infrastructure/terraform/modules/postgresql/`](../../infrastructure/terraform/modules/postgresql/).
-
-## Deployment Boundary
-
-PostgreSQL belongs to the UI/UX Cloud Plane and is the system of record.
-
-Collectors and frontend clients must never connect directly to PostgreSQL.
+Roles remain intentionally narrow: `ogsd_admin` applies migrations, `ogsd_ingestion` writes monitoring inventory/state/history and reads reference data, and `ogsd_api` is SELECT-only. New tables and indexes are introduced through [`database/migrations/`](../../database/migrations/), using additive rollout and production-like validation before collector v2 enablement.

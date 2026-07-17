@@ -1,172 +1,25 @@
-# Database Architecture
+# Database Architecture — v2
 
 ## Purpose
 
-PostgreSQL is the system of record for the OGSD monitoring platform.
+PostgreSQL is the UI/UX Cloud Plane system of record for inventory, telemetry, evaluated health evidence, collector operational state, and history. Only the Ingestion Service writes monitoring data; the Backend API exposes read-only contracts to frontend clients.
 
-It stores normalized site inventory, monitored device inventory, interface information, collected metric samples, current monitoring state, and generated alerts. The database provides a queryable historical view of network state for consumption by the Backend API and UI/UX Cloud Plane.
+## V2 data model
 
-## Plane Ownership
+The core hierarchy remains Site → Device → Interface. v2 enriches it with:
 
-Plane: UI/UX Cloud Plane.
+- Device identity, vendor/model/serial, SNMP fingerprint, detected profile, and capabilities.
+- Device and interface time-series samples, including uptime, CPU, memory, primary temperature, traffic, errors, counters, and status.
+- Temperature and power component inventory/readings, preserving component name/index/unit/status instead of a fabricated single value.
+- Current health and health history, including state, reason, observation time, failure count, temperature policy evidence, configured/unavailable upstream IDs, and root-cause IDs.
+- Current collector status and heartbeat history, including configured identity, build metadata, runtime values, and SQLite queue depth.
 
-PostgreSQL is not deployed inside the Customer OOB Monitoring Plane as part of the product architecture.
+Metric types include CPU, memory, temperature, and supported power readings with recognized units. Device health and collector status are current-state projections backed by history, not MQTT or collector-local state.
 
-## Responsibilities
+## Consistency and ordering
 
-The database is responsible for:
+Ingestion writes each accepted event in a transaction, deduplicates v2 messages by event ID, and preserves natural sample uniqueness. Observation timestamps, not arrival order, govern current collector status. Valid state transition and topic/body validation occur before writes. Schema rollout is additive: deploy migrations and ingestion handling first, then enable v2 collectors while v1 consumption remains compatible for the migration period.
 
-- Site inventory storage.
-- Device inventory storage.
-- Interface inventory storage.
-- Historical metric retention.
-- Current monitoring state.
-- Alert storage and lifecycle tracking.
-- Providing queryable state to the Backend API.
+## Retention and access
 
-The database is not responsible for:
-
-- SNMP polling.
-- Telemetry transport processing.
-- Alert generation logic.
-- User interface rendering.
-- Device configuration or console access.
-
-## Data Model
-
-The system is organized around the following hierarchy:
-
-```text
-Site
-└── Device
-    ├── Interface
-    ├── Metric Samples
-    └── Alerts
-```
-
-### Sites
-
-Represents a physical location or customer site.
-
-Examples:
-
-- Hub Site.
-- Remote Site A.
-- Remote Site B.
-
-### Devices
-
-Represents a monitored network device.
-
-Examples:
-
-- Router.
-- Switch.
-- Firewall.
-
-Each device belongs to exactly one site.
-
-### Interfaces
-
-Represents a network interface discovered through IF-MIB.
-
-Examples:
-
-- `GigabitEthernet0/0`
-- `GigabitEthernet0/1`
-- `Serial0/0`
-
-Each interface belongs to exactly one device.
-
-### Metric Types
-
-Defines a metric category.
-
-Examples:
-
-- `cpu_utilization`
-- `memory_utilization`
-- `uptime_seconds`
-
-Metric types are metadata and rarely change.
-
-### Metric Samples
-
-Stores time-series measurements collected from monitored devices.
-
-Examples:
-
-- CPU utilization.
-- Memory utilization.
-- Device uptime.
-
-### Alerts
-
-Stores alert lifecycle information.
-
-Examples:
-
-- Device down.
-- High CPU.
-- Interface down.
-
-Alerts may reference a device, an interface, or both.
-
-## Data Flow
-
-```text
-Cloud Ingestion
-    ↓
-PostgreSQL Database
-    ↓
-Backend API
-    ↓
-UI/UX Cloud Plane
-```
-
-The database only accepts monitoring writes from the Ingestion Service.
-
-The Backend API is the only service expected to perform application read operations for frontend consumers.
-
-## Retention Strategy
-
-Metric samples are expected to grow significantly faster than inventory tables.
-
-High-volume tables:
-
-- `metric_samples`
-- `interface_samples`
-
-Low-volume tables:
-
-- `sites`
-- `devices`
-- `interfaces`
-- `alerts`
-- `metric_types`
-
-Future versions should implement partitioning and archival policies for time-series data.
-
-## Availability Requirements
-
-The database is the authoritative source of monitoring data.
-
-Temporary database outages will prevent:
-
-- Metric ingestion.
-- Alert persistence.
-- Dashboard updates.
-
-The database should be backed up regularly and monitored for storage, replication, query health, and migration state.
-
-## Future Scaling
-
-Potential future enhancements:
-
-- Monthly partitioning.
-- Read replicas.
-- TimescaleDB evaluation.
-- Data retention policies.
-- Alert correlation tables.
-- User management tables.
-- Dashboard preferences.
+Time-series, component-reading, health-history, and heartbeat-history tables require time-range indexes and a future retention/partitioning policy based on measured volume. The API needs efficient current site/device summaries, device/interface detail, metric history, dependency impact, and collector status reads. Database roles remain separated: administration/migrations, ingestion writes, and API read-only access.

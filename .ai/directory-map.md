@@ -2,31 +2,31 @@
 
 ## Project Structure
 ```
-equate-ogsd/
+monitoring-dashboard/
 ├── .ai/
 ├── .github/
 ├── docs/
 │   ├── architecture/
-│   ├── decisions/
 │   └── diagrams/
 │       └── system-design.md
 │
 ├── services/
 │   ├── snmp-collector/
 │   │   ├── cmd/
-│   │   ├── internal/
+│   │   ├── internal/          # config, inventory, health DAG, discovery, TUI/socket,
+│   │   │                      # SQLite outbox, SNMP core + vendors/{cisco,arista}
 │   │   ├── configs/
+│   │   ├── data/
 │   │   ├── deployments/
 │   │   ├── tests/
 │   │   ├── Dockerfile
 │   │   ├── go.mod
 │   │   └── README.md
 │   │
-│   ├── ingestion-service/
+│   ├── ingestion-service/     # v1/v2 validation, dedup, transactional persistence
 │   │   ├── cmd/
 │   │   ├── internal/
 │   │   ├── configs/
-│   │   ├── deployments/
 │   │   ├── tests/
 │   │   ├── Dockerfile
 │   │   └── README.md
@@ -35,19 +35,18 @@ equate-ogsd/
 │       ├── cmd/
 │       ├── internal/
 │       ├── configs/
-│       ├── deployments/
 │       ├── tests/
 │       ├── Dockerfile
 │       └── README.md
 │
 ├── frontend/
-│   └── monitoring-dashboard/
-│       ├── src/
-│       ├── assets/
-│       ├── Dockerfile
-│       ├── index.html
-│       ├── package.json
-│       └── vite.config.js
+│   ├── src/
+│   ├── assets/
+│   ├── docs/
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
 │
 ├── infrastructure/
 │   ├── terraform/
@@ -57,11 +56,10 @@ equate-ogsd/
 │   │   └── modules/
 │   │
 │   ├── docker/
-│   │   ├── telemetry-transport/
+│   │   ├── mqtt-broker/
 │   │   ├── postgres/
 │   │   └── local-dev/
-│   │
-│   └── scripts/
+│   └── script/
 │
 ├── database/
 │   ├── migrations/
@@ -80,9 +78,8 @@ equate-ogsd/
 │   ├── lib/                   # Shared shell helpers
 │   └── test.sh                # Aggregate validation runner
 │
-├── remote-servers/
-│   ├── configs/
-│   └── keys/
+├── remote-server/
+│   └── configurations/
 │
 ├── AGENTS.md
 ├── README.md
@@ -95,6 +92,9 @@ equate-ogsd/
 .ai/
 ├── project-context/
 │   ├── architecture.md
+│   ├── aws-deployment.md
+│   ├── data-flow.md
+│   ├── monitoring-requirements.md
 │   ├── network-topology.md
 │   └── service-boundaries.md
 │
@@ -107,17 +107,14 @@ equate-ogsd/
 │   └── security-standards.md
 │
 ├── decisions/
+│   ├── awsdeploy-1.md
+│   ├── dashboard-1.md
+│   ├── dashboard-2.md
 │   └── instructions.md
 │
-├── prompts/
-│   ├── backend-engineer.md
-│   ├── frontend-engineer.md
-│   └── reviewer.md
-│
 ├── roadmap/
-│   ├── mvp.md
-│   ├── phase-2.md
-│   └── backlog.md
+│   ├── mvp-implementation-plan.md  # historical baseline
+│   └── snmp-collector-v2.md        # current roadmap authority
 └── directory-map.md
 ```
 
@@ -130,3 +127,7 @@ Three deployment profiles under [`deployments/`](../deployments/):
 - **`deployments/production/`** — hybrid skeleton: Azure cloud Compose + on-site VxRail collector (Terraform deferred)
 
 Do not add phase-named stacks under these profiles. Extend `end-to-end/`, `development/`, or `production/` instead.
+
+## SNMP Collector v2 documentation
+
+The v2 roadmap is [`.ai/roadmap/snmp-collector-v2.md`](roadmap/snmp-collector-v2.md). The versioned wire contract is [`docs/architecture/contracts.md`](../docs/architecture/contracts.md). Collector implementation keeps core MIB work under `services/snmp-collector/internal/snmp/core/`, vendor profiles under `internal/snmp/vendors/{cisco,arista}/`, and separates runtime configuration/inventory, discovery, health dependency evaluation, local TUI/control, and durable outbox concerns.
