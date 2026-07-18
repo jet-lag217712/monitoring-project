@@ -22,7 +22,7 @@
 
 ```bash
 collector validate -config /etc/equate/collector.yaml
-collector tui -socket /run/snmp-collector/control.sock
+collector tui -socket /run/snmp-collector/control.sock -theme auto
 # or: systemctl reload snmp-collector   # SIGHUP
 ```
 

@@ -235,7 +235,7 @@ func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 		UpstreamDeviceIDs:      emptyToNil(proj.UpstreamDeviceIDs),
 		UnavailableUpstreamIDs: emptyToNil(proj.UnavailableUpstreamIDs),
 		RootCauseDeviceIDs:     emptyToNil(proj.RootCauseDeviceIDs),
-		Role:                   "",
+		Role:                   d.Role,
 		CPUPct:                 d.CPUPct,
 		MemoryPct:              d.MemoryPct,
 		TemperatureC:           d.TemperatureC,
@@ -435,9 +435,12 @@ func projectDevice(d store.DeviceRow, online bool) derive.DeviceProjection {
 }
 
 func toDeviceSummary(d store.DeviceRow, proj derive.DeviceProjection) models.DeviceSummary {
+	ip := derive.NormalizeIP(d.IPAddress)
 	return models.DeviceSummary{
+		DeviceID:               d.InventoryDeviceID,
 		Hostname:               d.Hostname,
-		Role:                   "",
+		IPAddress:              ip,
+		Role:                   d.Role,
 		Status:                 proj.Status,
 		StatusReason:           proj.StatusReason,
 		FailureCount:           proj.FailureCount,

@@ -6,8 +6,8 @@ Day-to-day lab workflow:
 2. **OrbStack Ubuntu VM (collector plane)** — SNMP collector attached to GNS3 via a **Cloud** node (not a GNS3 Docker node)
 
 ```text
-GNS3 devices ──SNMP──▶ collector (VM macvlan 10.254.254.2)
-                              │ MQTT/TLS :8883
+GNS3 devices ──SNMP──▶ collector site containers (VM; default 4 sites)
+                              │ MQTT/TLS :8883 (shared broker + SNMP community)
                               ▼
                      Mac Mosquitto → ingestion → Postgres → API → UI
 ```
@@ -20,7 +20,8 @@ cp deployments/development/.env.example deployments/development/.env
 ./deployments/development/up.sh
 ./deployments/development/validate.sh
 ./deployments/development/smoke.sh
-./deployments/development/down.sh   # -v wipes volumes
+./deployments/development/down.sh              # wipes all volumes (clean test reset)
+./deployments/development/down.sh --keep-data  # stop only; preserve DB/MQTT state
 ```
 
 | Service | Host port (default) |
@@ -41,9 +42,10 @@ cp deployments/development/.env.example deployments/development/.env
 # On VM
 cd /home/gns3/ogsd-vxrail   # or VXRAIL_REMOTE_DIR
 cp -n .env.example .env
-# Set MQTT_BROKER=tls://<mac-host-ip>:8883
+# Set MQTT_BROKER=tls://<mac-host-ip>:8883 and SNMP_COMMUNITY values
 sudo ./setup-gns3-bridge.sh
 ./bootstrap.sh
+# Setup wizard: choose site count (default 4) and one CIDR per site
 ```
 
 Configure SSH target in [`vxrail/.env`](vxrail/.env.example): `VXRAIL_SSH_HOST`, `VXRAIL_SSH_USER`, `VXRAIL_REMOTE_DIR`.

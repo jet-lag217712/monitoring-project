@@ -12,6 +12,7 @@ const mutedCellStyle = {
 }
 
 export default function DeviceRow({ ip, device, renderStatus, onClick }) {
+  const displayIP = device.ip_address && device.ip_address !== '0.0.0.0' ? device.ip_address : ip
   const interactiveProps = onClick
     ? {
         className: 'clickable-row',
@@ -24,7 +25,7 @@ export default function DeviceRow({ ip, device, renderStatus, onClick }) {
 
   return (
     <tr {...interactiveProps}>
-      <td><span className="ups-ip">{ip}</span></td>
+      <td><span className="ups-ip">{displayIP}</span></td>
       <td style={mutedCellStyle}>{device.hostname ?? '—'}</td>
       <td style={mutedCellStyle}>{device.role ?? '—'}</td>
       <td>{renderStatus(device.status)}</td>

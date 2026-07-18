@@ -12,11 +12,13 @@ services:
     environment:
       MQTT_BROKER: ${MQTT_BROKER:?}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?}
-      SNMP_COMMUNITY_CORE_SWITCH: ${SNMP_COMMUNITY_CORE_SWITCH:?}
+      SNMP_COMMUNITY: ${SNMP_COMMUNITY:?}
+      SNMP_DISCOVERY_COMMUNITY: ${SNMP_DISCOVERY_COMMUNITY:-${SNMP_COMMUNITY:?}}
     volumes:
       - ./configs/collector.yaml:/configs/collector.yaml:ro
       - ./certs/ca.crt:/certs/ca.crt:ro
       - collector-state:/var/lib/snmp-collector
+      - ./managed:/var/lib/snmp-collector/managed
       - ./run:/run/snmp-collector
     ports:
       # Optional scrape/liveness only; control socket is Unix and not published.

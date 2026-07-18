@@ -1,0 +1,2 @@
+ALTER TABLE devices DROP COLUMN IF EXISTS inventory_device_id;
+ALTER TABLE devices DROP COLUMN IF EXISTS role;

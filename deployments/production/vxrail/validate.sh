@@ -19,7 +19,8 @@ mkdir -p "${SCRIPT_DIR}/run"
 
 export MQTT_BROKER=tls://example.com:8883
 export MQTT_PASSWORD=placeholder
-export SNMP_COMMUNITY_CORE_SWITCH=placeholder
+export SNMP_COMMUNITY=placeholder
+export SNMP_DISCOVERY_COMMUNITY=placeholder
 
 docker compose -f "${COMPOSE}" config >/dev/null
 echo "production/vxrail validate: OK"

@@ -46,14 +46,16 @@ type DeviceTelemetryPayload struct {
 
 // DeviceIdentityPayload holds SNMP identity fields.
 type DeviceIdentityPayload struct {
-	Hostname    string `json:"hostname"`
-	SysObjectID string `json:"sys_object_id"`
-	SysName     string `json:"sys_name"`
-	SysDescr    string `json:"sys_descr"`
-	Vendor      string `json:"vendor,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Serial      string `json:"serial,omitempty"`
-	SNMPVersion string `json:"snmp_version"`
+	Hostname          string `json:"hostname"`
+	ManagementAddress string `json:"management_address,omitempty"`
+	Role              string `json:"role,omitempty"`
+	SysObjectID       string `json:"sys_object_id"`
+	SysName           string `json:"sys_name"`
+	SysDescr          string `json:"sys_descr"`
+	Vendor            string `json:"vendor,omitempty"`
+	Model             string `json:"model,omitempty"`
+	Serial            string `json:"serial,omitempty"`
+	SNMPVersion       string `json:"snmp_version"`
 }
 
 // ProfilePayload holds detected profile metadata.

@@ -29,6 +29,18 @@ func (s *Server) handle(ctx context.Context, req Request) (map[string]any, error
 		return s.handleConfigGet()
 	case "discovery.status":
 		return s.handleDiscoveryStatus()
+	case "discovery.candidates.list":
+		return s.handleDiscoveryCandidatesList()
+	case "discovery.scan.start":
+		return s.handleDiscoveryScanStart(ctx)
+	case "discovery.policy.prepare":
+		return s.handleDiscoveryPolicyPrepare(req.Params)
+	case "discovery.policy.commit":
+		return s.handleDiscoveryPolicyCommit(req.Params)
+	case "discovery.accept.prepare":
+		return s.handleDiscoveryAcceptPrepare(req.Params)
+	case "discovery.accept.commit":
+		return s.handleDiscoveryAcceptCommit(req.Params)
 	case "config.reload":
 		return s.handleConfigReload()
 	case "thresholds.prepare":
@@ -86,6 +98,7 @@ func (s *Server) handleInventoryList() (map[string]any, error) {
 			"host":                device.Host,
 			"port":                device.Port,
 			"community_env":       device.CommunityEnv,
+			"role":                device.Role,
 			"upstream_device_ids": append([]string(nil), device.UpstreamDeviceIDs...),
 		}
 		if device.TemperatureWarningC != nil {
@@ -212,7 +225,7 @@ func (s *Server) handleDiscoveryStatus() (map[string]any, error) {
 		"max_targets":           cfg.Discovery.MaxTargets,
 		"max_workers":           cfg.Discovery.MaxWorkers,
 		"community_env":         cfg.Discovery.CommunityEnv,
-		"note":                  "discovery runs via collector discover or future control orchestration; never auto-enrolls",
+		"note":                  "use discovery.scan.start or collector discover; never auto-enrolls",
 	}, nil
 }
 

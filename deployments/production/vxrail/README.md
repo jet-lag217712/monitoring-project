@@ -19,18 +19,26 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 | [`docker-compose.yml`](docker-compose.yml) | Collector only + persistent SQLite state + control socket mount |
 | [`.env.example`](.env.example) | `MQTT_BROKER`, passwords, ports |
 | [`configs/collector.yaml`](configs/collector.yaml) | Site inventory template (v2 telemetry) |
+| [`managed/managed-inventory.yaml`](managed/managed-inventory.yaml) | Operator-managed discovery CIDRs + accepted devices (host bind) |
 | [`run/`](run/) | Host bind for Unix control socket (`control.sock`) |
 | [`certs/`](certs/) | Place production `ca.crt` only (no private keys) |
 
 ## Rollout order
 
 1. Cloud plane healthy (migrations applied) and Mosquitto reachable from site
-2. Install CA, fill `.env` and the `SNMP_COMMUNITY_*` references, then review inventory
-3. Ensure state volume is owned by UID `65532` (distroless nonroot) on first create
+2. Install CA at `certs/ca.crt`
+3. Run first-boot setup (writes `.env`, managed discovery policy, starts collector, discovers devices):
+
+```bash
+./bootstrap.sh
+# or: collector setup -dir . -theme auto
+```
+
 4. `collector validate -config /configs/collector.yaml` (or run the equivalent image command)
-5. `docker compose up -d --build` (or pull registry image)
-6. Verify `GET /healthz` and `GET /readyz` on collector admin port
-7. Confirm v2 samples appear in cloud API/UI
+5. Verify `GET /healthz` and `GET /readyz` on collector admin port
+6. Confirm v2 samples appear in cloud API/UI
+
+Subsequent starts skip the wizard when `.setup-complete` exists.
 
 ## Verification
 
@@ -38,8 +46,11 @@ Runs only the SNMP collector on a customer VxRail Ubuntu VM. All other services 
 curl -fsS http://127.0.0.1:9090/healthz
 curl -fsS http://127.0.0.1:9090/readyz
 docker compose logs -f snmp-collector
-# Optional local TUI when the control socket is mounted on the host
-# collector tui -socket ./run/control.sock
+
+# Branded local TUI when the control socket is mounted on the host:
+collector tui -socket ./run/control.sock -theme auto
+# Force light or dark: -theme light | -theme dark
+
 # On cloud: API shows site devices after first successful poll
 ```
 

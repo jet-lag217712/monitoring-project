@@ -1,0 +1,173 @@
+health:
+    temperature_warning_c: 55
+discovery:
+    allowed_cidrs:
+        - 10.255.0.0/24
+    community_env: SNMP_DISCOVERY_COMMUNITY
+    max_probes_per_second: 5
+    probe_burst: 2
+devices:
+    - id: do-core
+      host: 10.255.0.1
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Core Switch
+      poll_interval: 0s
+      timeout: 0s
+      retries: 0
+      temperature_warning_c: null
+      upstream_device_ids: []
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-a-mdf
+      host: 10.255.0.11
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Distribution Switch
+      upstream_device_ids:
+        - do-core
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-a-idf1
+      host: 10.255.0.12
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Access Switch
+      upstream_device_ids:
+        - site-a-mdf
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-a-idf2
+      host: 10.255.0.13
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Access Switch
+      upstream_device_ids:
+        - site-a-mdf
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-b-mdf
+      host: 10.255.0.21
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Distribution Switch
+      upstream_device_ids:
+        - do-core
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-c-mdf
+      host: 10.255.0.31
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Distribution Switch
+      upstream_device_ids:
+        - do-core
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []
+    - id: site-c-idf1
+      host: 10.255.0.32
+      port: 161
+      community_env: SNMP_COMMUNITY
+      version: 2c
+      vendor: cisco
+      role: Access Switch
+      upstream_device_ids:
+        - site-c-mdf
+      interface_filters:
+        rules: []
+        include_if_indexes: []
+        exclude_if_indexes: []
+        include_name_regex: []
+        exclude_name_regex: []
+        include_alias_regex: []
+        exclude_alias_regex: []
+        include_types: []
+        exclude_types: []
+        include_admin_statuses: []
+        exclude_admin_statuses: []
+        include_oper_statuses: []
+        exclude_oper_statuses: []

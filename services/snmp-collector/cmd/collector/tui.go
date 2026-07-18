@@ -14,6 +14,7 @@ func runTUI(args []string) int {
 	fs.SetOutput(os.Stderr)
 	configPath := fs.String("config", "configs/collector.example.yaml", "path to collector config file")
 	socketPath := fs.String("socket", "", "control socket path (overrides config admin.control_socket)")
+	themeName := fs.String("theme", "auto", "color theme: auto, light, or dark")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -35,7 +36,8 @@ func runTUI(args []string) int {
 		fmt.Fprintln(os.Stderr, "control socket path is required (-socket or admin.control_socket)")
 		return 2
 	}
-	if err := tui.Run(path); err != nil {
+	opts := tui.Options{Theme: tui.ParseThemeName(*themeName)}
+	if err := tui.Run(path, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 		return 1
 	}

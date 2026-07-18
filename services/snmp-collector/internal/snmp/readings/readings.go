@@ -79,6 +79,8 @@ type DevicePollResult struct {
 	DeviceID   string
 	IPAddress  string
 	ObservedAt time.Time
+	// InventoryRole is operator metadata from managed inventory (not from SNMP).
+	InventoryRole string
 
 	Identity   core.DeviceIdentity
 	Interfaces []InterfaceResult

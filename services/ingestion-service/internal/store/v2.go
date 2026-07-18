@@ -2,14 +2,12 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/equate/ogsd/services/ingestion-service/internal/transform"
 	"github.com/equate/ogsd/services/ingestion-service/internal/validate"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // PersistDeviceTelemetry upserts enriched device inventory, samples, and components.
@@ -152,6 +150,10 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 		return 0, err
 	}
 
+	upstream := nonNilStrings(sample.UpstreamDeviceIDs)
+	unavailable := nonNilStrings(sample.UnavailableUpstreamDeviceIDs)
+	rootCause := nonNilStrings(sample.RootCauseDeviceIDs)
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO device_health_history (
 			device_id, site_id, state, reason, transition, previous_state,
@@ -163,8 +165,8 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 		)
 	`, sample.DeviceUUID, sample.SiteUUID, sample.State, sample.Reason, sample.Transition, sample.PreviousState,
 		sample.FailureCount, sample.FailureThreshold, sample.TemperatureC, sample.TemperatureWarningC,
-		sample.TemperaturePolicyRevision, sample.UpstreamDeviceIDs, sample.UnavailableUpstreamDeviceIDs,
-		sample.RootCauseDeviceIDs, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
+		sample.TemperaturePolicyRevision, upstream, unavailable,
+		rootCause, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
 	if err != nil {
 		return 0, fmt.Errorf("insert device_health_history: %w", err)
 	}
@@ -199,8 +201,8 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 		WHERE device_health_current.observed_at <= EXCLUDED.observed_at
 	`, sample.DeviceUUID, sample.SiteUUID, sample.State, sample.Reason, sample.Transition, sample.PreviousState,
 		sample.FailureCount, sample.FailureThreshold, sample.TemperatureC, sample.TemperatureWarningC,
-		sample.TemperaturePolicyRevision, sample.UpstreamDeviceIDs, sample.UnavailableUpstreamDeviceIDs,
-		sample.RootCauseDeviceIDs, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
+		sample.TemperaturePolicyRevision, upstream, unavailable,
+		rootCause, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
 	if err != nil {
 		return 0, fmt.Errorf("upsert device_health_current: %w", err)
 	}
@@ -298,18 +300,18 @@ func insertIngestedEvent(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, even
 	if deviceID != "" {
 		device = &deviceID
 	}
-	_, err = tx.Exec(ctx, `
+	// ON CONFLICT DO NOTHING keeps the transaction usable on QoS 1 redelivery.
+	// A plain unique-violation abort would make the later Commit fail with
+	// "commit unexpectedly resulted in rollback".
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO ingested_events (event_id, event_type, site_id, collector_id, device_id, observed_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (event_id) DO NOTHING
 	`, eventID, eventType, siteID, collector, device, observedAt)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return true, nil
-		}
 		return false, fmt.Errorf("insert ingested_events: %w", err)
 	}
-	return false, nil
+	return tag.RowsAffected() == 0, nil
 }
 
 func upsertDeviceV2(ctx context.Context, tx pgx.Tx, sample transform.DeviceTelemetrySample) error {
@@ -325,21 +327,33 @@ func upsertDeviceV2(ctx context.Context, tx pgx.Tx, sample transform.DeviceTelem
 		INSERT INTO devices (
 			id, site_id, hostname, ip_address, vendor, model, snmp_version, status, last_seen,
 			serial, sys_object_id, sys_name, sys_descr, profile_name, capabilities,
-			collector_id, config_revision, last_observed_at
+			collector_id, config_revision, last_observed_at, role, inventory_device_id
 		) VALUES (
-			$1, $2, $3, '0.0.0.0'::inet, $4, $5, $6, 'online', $7,
-			NULLIF($8, ''), $9, $10, $11, $12, $13, $14, $15, $7
+			$1, $2, $3, COALESCE(NULLIF($4, ''), '0.0.0.0')::inet, $5, $6, $7, 'online', $8,
+			NULLIF($9, ''), $10, $11, $12, $13, $14, $15, $16, $8, NULLIF($17, ''), NULLIF($18, '')
 		)
 		ON CONFLICT (id) DO UPDATE SET
 			last_seen = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.last_seen ELSE devices.last_seen END,
 			status = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN 'online' ELSE devices.status END,
 			hostname = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.hostname ELSE devices.hostname END,
+			ip_address = CASE
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $4 <> '' THEN EXCLUDED.ip_address
+				ELSE devices.ip_address
+			END,
+			role = CASE
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND NULLIF($17, '') IS NOT NULL THEN EXCLUDED.role
+				ELSE devices.role
+			END,
+			inventory_device_id = CASE
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND NULLIF($18, '') IS NOT NULL THEN EXCLUDED.inventory_device_id
+				ELSE devices.inventory_device_id
+			END,
 			vendor = CASE
-				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $4 <> 'unknown' THEN EXCLUDED.vendor
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $5 <> 'unknown' THEN EXCLUDED.vendor
 				ELSE devices.vendor
 			END,
 			model = CASE
-				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $5 <> 'unknown' THEN EXCLUDED.model
+				WHEN devices.last_observed_at < EXCLUDED.last_observed_at AND $6 <> 'unknown' THEN EXCLUDED.model
 				ELSE devices.model
 			END,
 			snmp_version = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.snmp_version ELSE devices.snmp_version END,
@@ -352,9 +366,9 @@ func upsertDeviceV2(ctx context.Context, tx pgx.Tx, sample transform.DeviceTelem
 			collector_id = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.collector_id ELSE devices.collector_id END,
 			config_revision = CASE WHEN devices.last_observed_at < EXCLUDED.last_observed_at THEN EXCLUDED.config_revision ELSE devices.config_revision END,
 			last_observed_at = GREATEST(devices.last_observed_at, EXCLUDED.last_observed_at)
-	`, sample.DeviceUUID, sample.SiteUUID, sample.Hostname, vendor, model, sample.SNMPVersion, sample.ObservedAt,
+	`, sample.DeviceUUID, sample.SiteUUID, sample.Hostname, sample.ManagementAddress, vendor, model, sample.SNMPVersion, sample.ObservedAt,
 		sample.Serial, sample.SysObjectID, sample.SysName, sample.SysDescr, sample.ProfileName, sample.Capabilities,
-		sample.CollectorID, sample.ConfigRevision)
+		sample.CollectorID, sample.ConfigRevision, sample.Role, sample.DeviceID)
 	if err != nil {
 		return fmt.Errorf("upsert device v2: %w", err)
 	}
@@ -473,3 +487,11 @@ func insertPowerReading(ctx context.Context, tx pgx.Tx, deviceID, eventID uuid.U
 }
 
 func floatPtr(v float64) *float64 { return &v }
+
+// nonNilStrings copies in and always returns a non-nil slice so pgx encodes
+// TEXT[] as '{}' instead of NULL. append([]string(nil), empty...) yields nil.
+func nonNilStrings(in []string) []string {
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}

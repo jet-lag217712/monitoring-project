@@ -72,11 +72,13 @@ func DeviceTelemetry(ctx Context, result readings.DevicePollResult) events.Devic
 
 	payload := events.DeviceTelemetryPayload{
 		Identity: events.DeviceIdentityPayload{
-			Hostname:    hostname,
-			SysObjectID: result.Identity.SysObjectID,
-			SysName:     result.Identity.SysName,
-			SysDescr:    result.Identity.SysDescr,
-			SNMPVersion: "2c",
+			Hostname:          hostname,
+			ManagementAddress: result.IPAddress,
+			Role:              result.InventoryRole,
+			SysObjectID:       result.Identity.SysObjectID,
+			SysName:           result.Identity.SysName,
+			SysDescr:          result.Identity.SysDescr,
+			SNMPVersion:       "2c",
 		},
 		Profile: events.ProfilePayload{
 			Name:         profileName,

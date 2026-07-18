@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -160,6 +161,7 @@ type DeviceConfig struct {
 	Timeout             time.Duration         `yaml:"timeout"`
 	Retries             int                   `yaml:"retries"`
 	TemperatureWarningC *float64              `yaml:"temperature_warning_c"`
+	Role                string                `yaml:"role"`
 	UpstreamDeviceIDs   []string              `yaml:"upstream_device_ids"`
 	InterfaceFilters    InterfaceFilterConfig `yaml:"interface_filters"`
 }
@@ -198,11 +200,17 @@ type ManagedHealthPolicy struct {
 	TemperatureWarningC *float64 `yaml:"temperature_warning_c"`
 }
 
-// ManagedDiscoveryPolicy is the optional discovery rate override in the managed file.
-// CIDR allowlists remain static-authoritative and are never accepted here.
+// ManagedDiscoveryPolicy is the optional discovery overlay in the managed file.
+// When set, fields override the static discovery policy for operator workflows.
 type ManagedDiscoveryPolicy struct {
-	MaxProbesPerSecond *float64 `yaml:"max_probes_per_second"`
-	ProbeBurst         *int     `yaml:"probe_burst"`
+	AllowedCIDRs       []string `yaml:"allowed_cidrs,omitempty"`
+	CommunityEnv       string   `yaml:"community_env,omitempty"`
+	MaxTargets         *int     `yaml:"max_targets,omitempty"`
+	MaxWorkers         *int     `yaml:"max_workers,omitempty"`
+	Retries            *int     `yaml:"retries,omitempty"`
+	Timeout            string   `yaml:"timeout,omitempty"`
+	MaxProbesPerSecond *float64 `yaml:"max_probes_per_second,omitempty"`
+	ProbeBurst         *int     `yaml:"probe_burst,omitempty"`
 }
 
 // ManagedInventory is the on-disk shape written by local operator tooling.
@@ -340,6 +348,9 @@ func validateManagedDocument(managed ManagedInventory, staticDevices []DeviceCon
 	if managed.Discovery.ProbeBurst != nil && *managed.Discovery.ProbeBurst <= 0 {
 		return fmt.Errorf("managed discovery.probe_burst must be positive")
 	}
+	if err := validateManagedDiscoveryPolicy(managed.Discovery); err != nil {
+		return err
+	}
 
 	staticIDs := make(map[string]struct{}, len(staticDevices))
 	for _, device := range staticDevices {
@@ -396,11 +407,84 @@ func applyManagedPolicy(cfg *Config, managed ManagedInventory) {
 	if managed.Health.TemperatureWarningC != nil {
 		cfg.Health.TemperatureWarningC = *managed.Health.TemperatureWarningC
 	}
+	if len(managed.Discovery.AllowedCIDRs) > 0 {
+		cfg.Discovery.AllowedCIDRs = append([]string(nil), managed.Discovery.AllowedCIDRs...)
+	}
+	if strings.TrimSpace(managed.Discovery.CommunityEnv) != "" {
+		cfg.Discovery.CommunityEnv = strings.TrimSpace(managed.Discovery.CommunityEnv)
+	}
+	if managed.Discovery.MaxTargets != nil {
+		cfg.Discovery.MaxTargets = *managed.Discovery.MaxTargets
+	}
+	if managed.Discovery.MaxWorkers != nil {
+		cfg.Discovery.MaxWorkers = *managed.Discovery.MaxWorkers
+	}
+	if managed.Discovery.Retries != nil {
+		cfg.Discovery.Retries = *managed.Discovery.Retries
+	}
+	if strings.TrimSpace(managed.Discovery.Timeout) != "" {
+		if d, err := time.ParseDuration(strings.TrimSpace(managed.Discovery.Timeout)); err == nil {
+			cfg.Discovery.Timeout = d
+		}
+	}
 	if managed.Discovery.MaxProbesPerSecond != nil {
 		cfg.Discovery.MaxProbesPerSecond = *managed.Discovery.MaxProbesPerSecond
 	}
 	if managed.Discovery.ProbeBurst != nil {
 		cfg.Discovery.ProbeBurst = *managed.Discovery.ProbeBurst
+	}
+	applyDiscoveryDefaults(&cfg.Discovery)
+}
+
+func validateManagedDiscoveryPolicy(policy ManagedDiscoveryPolicy) error {
+	for i, cidr := range policy.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+			return fmt.Errorf("managed discovery.allowed_cidrs[%d] is invalid: %w", i, err)
+		}
+	}
+	if policy.CommunityEnv != "" {
+		if err := validateEnvName(policy.CommunityEnv, "managed discovery.community_env"); err != nil {
+			return err
+		}
+	}
+	if policy.MaxTargets != nil && *policy.MaxTargets <= 0 {
+		return fmt.Errorf("managed discovery.max_targets must be positive")
+	}
+	if policy.MaxWorkers != nil && *policy.MaxWorkers <= 0 {
+		return fmt.Errorf("managed discovery.max_workers must be positive")
+	}
+	if policy.Retries != nil && *policy.Retries < 0 {
+		return fmt.Errorf("managed discovery.retries must not be negative")
+	}
+	if strings.TrimSpace(policy.Timeout) != "" {
+		if _, err := time.ParseDuration(strings.TrimSpace(policy.Timeout)); err != nil {
+			return fmt.Errorf("managed discovery.timeout is invalid: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyDiscoveryDefaults(d *DiscoveryConfig) {
+	if len(d.AllowedCIDRs) == 0 {
+		return
+	}
+	if d.MaxTargets == 0 {
+		d.MaxTargets = 256
+	}
+	if d.Timeout == 0 {
+		d.Timeout = 2 * time.Second
+	}
+	if d.MaxWorkers == 0 {
+		d.MaxWorkers = 4
+	}
+	if d.MaxProbesPerSecond == 0 {
+		d.MaxProbesPerSecond = 5
+	}
+	if d.ProbeBurst == 0 {
+		d.ProbeBurst = 2
+	}
+	if d.CommunityEnv == "" {
+		d.CommunityEnv = "SNMP_DISCOVERY_COMMUNITY"
 	}
 }
 
@@ -449,6 +533,9 @@ func applyDeviceOverlay(base, overlay DeviceConfig) DeviceConfig {
 	}
 	if overlay.UpstreamDeviceIDs != nil {
 		base.UpstreamDeviceIDs = append([]string(nil), overlay.UpstreamDeviceIDs...)
+	}
+	if strings.TrimSpace(overlay.Role) != "" {
+		base.Role = strings.TrimSpace(overlay.Role)
 	}
 	if hasInterfaceFilterConfig(overlay.InterfaceFilters) {
 		base.InterfaceFilters = cloneInterfaceFilters(overlay.InterfaceFilters)
@@ -672,7 +759,7 @@ func (c *Config) validate(requireRuntimeSecrets bool) error {
 	if err := validateDiscovery(c.Discovery); err != nil {
 		return err
 	}
-	if len(c.Devices) == 0 {
+	if len(c.Devices) == 0 && len(c.Discovery.AllowedCIDRs) == 0 {
 		return fmt.Errorf("at least one device is required")
 	}
 	if err := validateDeviceSource(c.Devices, "devices"); err != nil {
@@ -1296,7 +1383,7 @@ func WriteManagedDocument(path string, inventory ManagedInventory) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close managed inventory: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := replaceManagedInventoryFile(tmpName, path); err != nil {
 		return fmt.Errorf("replace managed inventory: %w", err)
 	}
 	cleanup = false
@@ -1312,6 +1399,29 @@ func WriteManagedDocument(path string, inventory ManagedInventory) error {
 		return fmt.Errorf("close managed inventory directory: %w", err)
 	}
 	return nil
+}
+
+func replaceManagedInventoryFile(tmpName, path string) error {
+	if err := os.Rename(tmpName, path); err == nil {
+		return nil
+	} else if !isCrossDeviceRenameError(err) {
+		return err
+	}
+	data, err := os.ReadFile(tmpName)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return os.Remove(tmpName)
+}
+
+func isCrossDeviceRenameError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.EXDEV) || strings.Contains(err.Error(), "cross-device")
 }
 
 // WriteManagedInventory atomically persists managed devices while preserving

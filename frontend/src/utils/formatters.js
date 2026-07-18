@@ -44,3 +44,10 @@ export function formatNumber(n) {
   if (n == null || Number.isNaN(n)) return '—'
   return n.toLocaleString()
 }
+
+/** Format a utilization percentage for display (bar width still uses the raw value). */
+export function formatPercent(value, decimals = 2) {
+  const n = Number(value)
+  if (value == null || Number.isNaN(n)) return '—'
+  return n.toFixed(decimals)
+}

@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -83,8 +85,50 @@ func TestManagedOverlayAppliesAllowedFieldsOnly(t *testing.T) {
 	if cfg.Devices[0].TemperatureWarningC == nil || *cfg.Devices[0].TemperatureWarningC != 72 {
 		t.Fatalf("device temperature overlay=%v", cfg.Devices[0].TemperatureWarningC)
 	}
-	if len(cfg.Devices[0].InterfaceFilters.ExcludeNameRegex) != 1 {
-		t.Fatalf("interface filter overlay=%#v", cfg.Devices[0].InterfaceFilters)
+}
+
+func TestManagedDiscoveryCIDROverlay(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "collector.yaml")
+	writeFile(t, configPath, "site_id: site-001\ncollector:\n  id: collector-001\ndiscovery:\n  community_env: SNMP_DISCOVERY_COMMUNITY\n  max_targets: 4\n  timeout: 2s\n  retries: 0\n  max_workers: 4\n  max_probes_per_second: 5\n  probe_burst: 2\ninventory:\n  managed_path: managed.yaml\ndevices:\n  - id: static-device\n    host: 127.0.0.1\n    community_env: SNMP_COMMUNITY_STATIC\n", 0o600)
+	writeFile(t, filepath.Join(root, "managed.yaml"), "discovery:\n  allowed_cidrs: [\"10.255.0.0/24\"]\n  max_probes_per_second: 8\n  probe_burst: 3\n", 0o600)
+
+	cfg, err := LoadForValidation(configPath)
+	if err != nil {
+		t.Fatalf("LoadForValidation: %v", err)
+	}
+	if len(cfg.Discovery.AllowedCIDRs) != 1 || cfg.Discovery.AllowedCIDRs[0] != "10.255.0.0/24" {
+		t.Fatalf("cidrs=%#v", cfg.Discovery.AllowedCIDRs)
+	}
+	if cfg.Discovery.MaxProbesPerSecond != 8 || cfg.Discovery.ProbeBurst != 3 {
+		t.Fatalf("rate=%v burst=%v", cfg.Discovery.MaxProbesPerSecond, cfg.Discovery.ProbeBurst)
+	}
+}
+
+func TestZeroDevicesAllowedWhenDiscoveryConfigured(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "collector.yaml")
+	writeFile(t, configPath, "site_id: site-001\ncollector:\n  id: collector-001\ndiscovery:\n  community_env: SNMP_DISCOVERY_COMMUNITY\n  max_targets: 4\n  timeout: 2s\n  retries: 0\n  max_workers: 4\n  max_probes_per_second: 5\n  probe_burst: 2\ninventory:\n  managed_path: managed.yaml\ndevices: []\n", 0o600)
+	writeFile(t, filepath.Join(root, "managed.yaml"), "discovery:\n  allowed_cidrs: [\"10.255.0.0/24\"]\n", 0o600)
+
+	cfg, err := LoadForValidation(configPath)
+	if err != nil {
+		t.Fatalf("LoadForValidation: %v", err)
+	}
+	if len(cfg.Devices) != 0 {
+		t.Fatalf("devices=%#v", cfg.Devices)
+	}
+	if len(cfg.Discovery.AllowedCIDRs) != 1 {
+		t.Fatalf("cidrs=%#v", cfg.Discovery.AllowedCIDRs)
+	}
+}
+
+func TestIsCrossDeviceRenameError(t *testing.T) {
+	if !isCrossDeviceRenameError(syscall.Errno(syscall.EXDEV)) {
+		t.Fatal("expected EXDEV to be cross-device")
+	}
+	if isCrossDeviceRenameError(errors.New("permission denied")) {
+		t.Fatal("expected permission error to be distinct")
 	}
 }
 

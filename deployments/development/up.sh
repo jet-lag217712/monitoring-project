@@ -67,6 +67,6 @@ Export for host-run integration tests:
   export MQTT_CA_FILE=${MQTT_DIR}/certs/ca.crt
   export DATABASE_URL=${INGESTION_DSN}
 
-Stop:
+Stop (wipes volumes by default; use down.sh --keep-data to preserve):
   ./deployments/development/down.sh
 EOF

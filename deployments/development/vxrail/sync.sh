@@ -35,12 +35,13 @@ require_file "${SCRIPT_DIR}/bootstrap.sh"
 echo "Sync target: ${REMOTE}:${VXRAIL_REMOTE_DIR}"
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo "Would sync: docker-compose.yml, configs/, .env.example, bootstrap.sh, setup-gns3-bridge.sh, services/snmp-collector/, ca.crt"
+  echo "Would not overwrite remote .env, sites/, docker-compose.sites.generated.yml, or .setup-complete"
   exit 0
 fi
 
 ssh "${REMOTE}" "mkdir -p '${VXRAIL_REMOTE_DIR}/certs' '${VXRAIL_REMOTE_DIR}/src/services'"
 
-# Profile files
+# Profile files (runtime state under sites/ is intentionally excluded)
 tar -C "${SCRIPT_DIR}" -cf - \
   docker-compose.yml \
   validate.sh \
@@ -48,7 +49,6 @@ tar -C "${SCRIPT_DIR}" -cf - \
   setup-gns3-bridge.sh \
   .env.example \
   configs \
-  run \
   README.md \
   | ssh "${REMOTE}" "tar -C '${VXRAIL_REMOTE_DIR}' -xf -"
 

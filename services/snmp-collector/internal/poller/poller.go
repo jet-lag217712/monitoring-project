@@ -189,6 +189,11 @@ func dueDevices(cfg *config.Config, nextDue map[string]time.Time, firstCycle boo
 }
 
 func nextDueWait(nextDue map[string]time.Time, now time.Time) time.Duration {
+	if len(nextDue) == 0 {
+		// Empty inventory or post-reload device add: avoid blocking for an hour
+		// before re-reading config.Devices (see dueDevices firstCycle path).
+		return time.Second
+	}
 	wait := time.Hour
 	for _, scheduled := range nextDue {
 		if scheduled.Before(now) {
@@ -398,6 +403,7 @@ func (p *Poller) doPoll(ctx context.Context, cfg *config.Config, device config.D
 		return outcome, fmt.Errorf("compile interface filter: %w", err)
 	}
 	interfaceFilter.Apply(&result)
+	result.InventoryRole = device.Role
 	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.Selected)).Add(float64(result.Filter.Selected))
 	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedDefault)).Add(float64(result.Filter.ExcludedDefault))
 	p.metrics.InterfaceSelectionTotal.WithLabelValues(string(readings.ExcludedRule)).Add(float64(result.Filter.ExcludedRule))

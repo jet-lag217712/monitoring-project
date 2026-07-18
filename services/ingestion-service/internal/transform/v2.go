@@ -19,6 +19,8 @@ type DeviceTelemetrySample struct {
 	ConfigRevision        string
 	ObservedAt            time.Time
 	Hostname              string
+	ManagementAddress     string
+	Role                  string
 	SysObjectID           string
 	SysName               string
 	SysDescr              string
@@ -127,6 +129,8 @@ func DeviceTelemetryFromValidated(msg validate.DeviceTelemetryV2) DeviceTelemetr
 		ConfigRevision:        msg.Envelope.ConfigRevision,
 		ObservedAt:            msg.Envelope.ObservedAt,
 		Hostname:              msg.Hostname,
+		ManagementAddress:     msg.ManagementAddress,
+		Role:                  msg.Role,
 		SysObjectID:           msg.SysObjectID,
 		SysName:               msg.SysName,
 		SysDescr:              msg.SysDescr,
@@ -135,7 +139,7 @@ func DeviceTelemetryFromValidated(msg validate.DeviceTelemetryV2) DeviceTelemetr
 		Serial:                msg.Serial,
 		SNMPVersion:           msg.SNMPVersion,
 		ProfileName:           msg.ProfileName,
-		Capabilities:          append([]string(nil), msg.Capabilities...),
+		Capabilities:          cloneStrings(msg.Capabilities),
 		UptimeSeconds:         msg.UptimeSeconds,
 		CPUUtilizationPct:     msg.CPUUtilizationPct,
 		MemoryUtilizationPct:  msg.MemoryUtilizationPct,
@@ -194,9 +198,9 @@ func HealthFromValidated(msg validate.HealthStateV2) HealthSample {
 		TemperatureC:                 msg.TemperatureC,
 		TemperatureWarningC:          msg.TemperatureWarningC,
 		TemperaturePolicyRevision:    msg.TemperaturePolicyRevision,
-		UpstreamDeviceIDs:            append([]string(nil), msg.UpstreamDeviceIDs...),
-		UnavailableUpstreamDeviceIDs: append([]string(nil), msg.UnavailableUpstreamDeviceIDs...),
-		RootCauseDeviceIDs:           append([]string(nil), msg.RootCauseDeviceIDs...),
+		UpstreamDeviceIDs:            cloneStrings(msg.UpstreamDeviceIDs),
+		UnavailableUpstreamDeviceIDs: cloneStrings(msg.UnavailableUpstreamDeviceIDs),
+		RootCauseDeviceIDs:           cloneStrings(msg.RootCauseDeviceIDs),
 	}
 }
 
@@ -219,4 +223,12 @@ func HeartbeatFromValidated(msg validate.HeartbeatV2) HeartbeatSample {
 		MemoryUsageBytes: msg.MemoryUsageBytes,
 		GoroutineCount:   msg.GoroutineCount,
 	}
+}
+
+// cloneStrings copies in and always returns a non-nil slice.
+// append([]string(nil), empty...) yields nil, which pgx encodes as SQL NULL.
+func cloneStrings(in []string) []string {
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
 }

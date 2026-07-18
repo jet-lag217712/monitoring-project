@@ -40,7 +40,16 @@ mqtt:
     max: 60s
 
 inventory:
-  managed_path: "/var/lib/snmp-collector/managed-inventory.yaml"
+  managed_path: "/var/lib/snmp-collector/managed/managed-inventory.yaml"
+
+discovery:
+  community_env: "SNMP_DISCOVERY_COMMUNITY"
+  max_targets: 256
+  timeout: 2s
+  retries: 0
+  max_workers: 4
+  max_probes_per_second: 5
+  probe_burst: 2
 
 devices:
   - id: "core-switch"

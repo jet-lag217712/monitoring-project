@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
@@ -43,6 +44,8 @@ type Server struct {
 
 	pending *pendingStore
 
+	discovery *discoveryStore
+
 	mu         sync.Mutex
 	mutationMu sync.Mutex
 	listener   net.Listener
@@ -50,6 +53,7 @@ type Server struct {
 
 // Options configures a control server.
 type Options struct {
+	StateDir   string
 	SocketPath string
 	Manager    ConfigManager
 	Status     *status.Store
@@ -88,6 +92,10 @@ func NewServer(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	stateDir := opts.StateDir
+	if stateDir == "" && opts.SocketPath != "" {
+		stateDir = filepath.Dir(opts.SocketPath)
+	}
 	return &Server{
 		socketPath: opts.SocketPath,
 		manager:    opts.Manager,
@@ -98,6 +106,7 @@ func NewServer(opts Options) (*Server, error) {
 		log:        opts.Log,
 		timeout:    opts.Timeout,
 		pending:    newPendingStore(),
+		discovery:  newDiscoveryStore(stateDir),
 	}, nil
 }
 
@@ -107,7 +116,12 @@ func (s *Server) SocketPath() string { return s.socketPath }
 // AuditPath returns the audit log path.
 func (s *Server) AuditPath() string { return s.audit.Path() }
 
-// Listen binds the Unix socket with mode 0600.
+// Listen binds the Unix socket and best-effort sets mode 0600.
+//
+// Docker Desktop / macOS host bind mounts often reject chmod on Unix sockets
+// with EINVAL. In that case we keep the listener up and log a warning: OS
+// path access still gates the socket, and Linux volumes/systemd RuntimeDirectory
+// continue to get a real 0600 mode.
 func (s *Server) Listen() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,17 +132,41 @@ func (s *Server) Listen() error {
 		return fmt.Errorf("create control socket directory: %w", err)
 	}
 	_ = os.Remove(s.socketPath)
+
+	// Prefer creating the socket as 0600 when the filesystem honors umask.
+	oldMask := syscall.Umask(0o077)
 	ln, err := net.Listen("unix", s.socketPath)
+	syscall.Umask(oldMask)
 	if err != nil {
 		return fmt.Errorf("listen control socket: %w", err)
 	}
 	if err := os.Chmod(s.socketPath, 0o600); err != nil {
-		_ = ln.Close()
-		_ = os.Remove(s.socketPath)
-		return fmt.Errorf("chmod control socket: %w", err)
+		if isSocketChmodUnsupported(err) {
+			s.log.Warn("control socket chmod unsupported on this filesystem; continuing without 0600",
+				"socket", s.socketPath,
+				"err", err,
+			)
+		} else {
+			_ = ln.Close()
+			_ = os.Remove(s.socketPath)
+			return fmt.Errorf("chmod control socket: %w", err)
+		}
 	}
 	s.listener = ln
 	return nil
+}
+
+// isSocketChmodUnsupported reports filesystems that cannot chmod Unix sockets
+// (notably Docker Desktop bind mounts on macOS).
+func isSocketChmodUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	return errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.EOPNOTSUPP)
 }
 
 // Serve accepts connections until ctx is cancelled or Close is called.

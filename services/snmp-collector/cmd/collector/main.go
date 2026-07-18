@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -38,6 +39,10 @@ func main() {
 			os.Exit(runDiscover(os.Args[2:]))
 		case "tui":
 			os.Exit(runTUI(os.Args[2:]))
+		case "setup":
+			os.Exit(runSetup(os.Args[2:]))
+		case "rpc":
+			os.Exit(runRPC(os.Args[2:]))
 		}
 	}
 
@@ -123,8 +128,13 @@ func main() {
 	var controlServer *control.Server
 	if cfg.Admin.ControlSocket != "" {
 		auditPath := ""
+		stateDir := ""
 		if managed := cfg.ManagedInventoryPath(); managed != "" {
 			auditPath = managed + ".audit.log"
+			stateDir = filepath.Dir(managed)
+		}
+		if stateDir == "" || stateDir == "." {
+			stateDir = filepath.Dir(cfg.Buffer.Path)
 		}
 		controlServer, err = control.NewServer(control.Options{
 			SocketPath: cfg.Admin.ControlSocket,
@@ -133,6 +143,7 @@ func main() {
 			Health:     p.Tracker(),
 			Transport:  ready,
 			AuditPath:  auditPath,
+			StateDir:   stateDir,
 			Log:        log,
 		})
 		if err != nil {

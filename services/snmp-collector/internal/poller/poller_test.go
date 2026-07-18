@@ -77,6 +77,13 @@ func TestEnrichProfilePreservesCoreOnFailure(t *testing.T) {
 	}
 }
 
+func TestNextDueWaitEmptyScheduleRechecksSoon(t *testing.T) {
+	wait := nextDueWait(map[string]time.Time{}, time.Now())
+	if wait != time.Second {
+		t.Fatalf("wait=%v, want %v", wait, time.Second)
+	}
+}
+
 func TestPruneNextDueDropsRemovedDevices(t *testing.T) {
 	now := time.Now()
 	nextDue := map[string]time.Time{

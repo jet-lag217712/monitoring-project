@@ -1,5 +1,6 @@
 import { SiteStatusBadge } from '../common/StatusBadge.jsx'
 import { MiniBar } from '../common/UtilizationBar.jsx'
+import { formatPercent } from '../utils/formatters.js'
 
 export default function SiteCard({ site, onClick }) {
   const {
@@ -34,12 +35,12 @@ export default function SiteCard({ site, onClick }) {
       <div className="site-metrics">
         <div className="metric-item">
           <div className="metric-label">Avg CPU</div>
-          <div className="metric-value">{avg_cpu}%</div>
+          <div className="metric-value">{formatPercent(avg_cpu)}%</div>
           <MiniBar value={avg_cpu} />
         </div>
         <div className="metric-item">
           <div className="metric-label">Avg memory</div>
-          <div className="metric-value">{avg_memory}%</div>
+          <div className="metric-value">{formatPercent(avg_memory)}%</div>
           <MiniBar value={avg_memory} />
         </div>
         <div className="metric-item">

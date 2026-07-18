@@ -76,7 +76,9 @@ type DeviceRow struct {
 	SiteName       string
 	Hostname       string
 	IPAddress      string
-	Vendor         string
+	Role               string
+	InventoryDeviceID  string
+	Vendor             string
 	Model          string
 	Serial         *string
 	SysObjectID    *string
@@ -255,6 +257,8 @@ const deviceSelect = `
 			s.name,
 			d.hostname,
 			d.ip_address::text,
+			COALESCE(d.role, ''),
+			COALESCE(d.inventory_device_id, ''),
 			COALESCE(d.vendor, ''),
 			COALESCE(d.model, ''),
 			d.serial,
@@ -588,7 +592,7 @@ type scannable interface {
 func scanDeviceFields(row scannable) (DeviceRow, error) {
 	var r DeviceRow
 	err := row.Scan(
-		&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress,
+		&r.ID, &r.SiteID, &r.SiteName, &r.Hostname, &r.IPAddress, &r.Role, &r.InventoryDeviceID,
 		&r.Vendor, &r.Model, &r.Serial, &r.SysObjectID, &r.SysName, &r.SysDescr,
 		&r.ProfileName, &r.Capabilities, &r.Status, &r.LastSeen, &r.UptimeSeconds,
 		&r.CPUPct, &r.MemoryPct, &r.TemperatureC,

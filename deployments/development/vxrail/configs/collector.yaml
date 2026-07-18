@@ -28,7 +28,7 @@ buffer:
   idle_backoff: 500ms
 
 mqtt:
-  broker: "tls://CHANGE_ME.example.com:8883"
+  broker: "tls://192.168.10.54:8883"
   client_id: "development-vxrail-collector"
   username: "collector"
   password_env: "MQTT_PASSWORD"
@@ -40,54 +40,15 @@ mqtt:
     max: 60s
 
 inventory:
-  managed_path: "/var/lib/snmp-collector/managed-inventory.yaml"
+  managed_path: "/var/lib/snmp-collector/managed/managed-inventory.yaml"
 
-devices:
-  - id: "do-core"
-    host: "10.255.0.1"
-    port: 161
-    community_env: "SNMP_COMMUNITY_DO_CORE"
-    version: "2c"
-    vendor: "cisco"
+discovery:
+  community_env: "SNMP_DISCOVERY_COMMUNITY"
+  max_targets: 256
+  timeout: 2s
+  retries: 0
+  max_workers: 4
+  max_probes_per_second: 5
+  probe_burst: 2
 
-  - id: "site-a-mdf"
-    host: "10.255.0.11"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_MDF"
-    version: "2c"
-    vendor: "cisco"
-
-  - id: "site-a-idf1"
-    host: "10.255.0.12"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_IDF1"
-    version: "2c"
-    vendor: "cisco"
-
-  - id: "site-a-idf2"
-    host: "10.255.0.13"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_A_IDF2"
-    version: "2c"
-    vendor: "cisco"
-
-  - id: "site-b-mdf"
-    host: "10.255.0.21"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_B_MDF"
-    version: "2c"
-    vendor: "cisco"
-
-  - id: "site-c-mdf"
-    host: "10.255.0.31"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_C_MDF"
-    version: "2c"
-    vendor: "cisco"
-
-  - id: "site-c-idf1"
-    host: "10.255.0.32"
-    port: 161
-    community_env: "SNMP_COMMUNITY_SITE_C_IDF1"
-    version: "2c"
-    vendor: "cisco"
+devices: []

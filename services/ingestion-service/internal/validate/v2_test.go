@@ -124,6 +124,43 @@ func TestValidateV2_RejectsInvalidHealthState(t *testing.T) {
 	}
 }
 
+func TestValidateV2_EmptyUpstreamArraysAreNonNil(t *testing.T) {
+	payload := []byte(`{
+		"schema_version":"2.0",
+		"event_id":"018f3e2c-7a9d-7b20-8f63-1e2d3c4b5a63",
+		"event_type":"health_state",
+		"site_id":"site-001",
+		"collector_id":"collector-west-01",
+		"device_id":"access-01",
+		"observed_at":"2026-07-16T18:00:00Z",
+		"emitted_at":"2026-07-16T18:00:02Z",
+		"config_revision":"rev-1",
+		"payload":{
+			"state":"healthy",
+			"reason":"reachable",
+			"transition":"initial",
+			"failure_count":0,
+			"failure_threshold":2,
+			"upstream_device_ids":[],
+			"unavailable_upstream_device_ids":[],
+			"root_cause_device_ids":[]
+		}
+	}`)
+	msg, err := validate.Validate("site/site-001/device/access-01/telemetry/v2/health", payload)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if msg.HealthV2 == nil {
+		t.Fatal("expected health message")
+	}
+	if msg.HealthV2.UpstreamDeviceIDs == nil {
+		t.Fatal("upstream_device_ids must be non-nil empty slice for TEXT[] inserts")
+	}
+	if msg.HealthV2.UnavailableUpstreamDeviceIDs == nil || msg.HealthV2.RootCauseDeviceIDs == nil {
+		t.Fatal("evidence arrays must be non-nil")
+	}
+}
+
 func TestValidateV2_RejectsExtraEnvelopeField(t *testing.T) {
 	payload := []byte(`{
 		"schema_version":"2.0",

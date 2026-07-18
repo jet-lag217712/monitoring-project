@@ -50,6 +50,8 @@ type ComponentReading struct {
 type DeviceTelemetryV2 struct {
 	Envelope              EnvelopeV2
 	Hostname              string
+	ManagementAddress     string
+	Role                  string
 	SysObjectID           string
 	SysName               string
 	SysDescr              string
@@ -130,14 +132,16 @@ type envelopeRaw struct {
 
 type devicePayloadV2 struct {
 	Identity struct {
-		Hostname    string `json:"hostname"`
-		SysObjectID string `json:"sys_object_id"`
-		SysName     string `json:"sys_name"`
-		SysDescr    string `json:"sys_descr"`
-		Vendor      string `json:"vendor"`
-		Model       string `json:"model"`
-		Serial      string `json:"serial"`
-		SNMPVersion string `json:"snmp_version"`
+		Hostname          string `json:"hostname"`
+		ManagementAddress string `json:"management_address"`
+		Role              string `json:"role"`
+		SysObjectID       string `json:"sys_object_id"`
+		SysName           string `json:"sys_name"`
+		SysDescr          string `json:"sys_descr"`
+		Vendor            string `json:"vendor"`
+		Model             string `json:"model"`
+		Serial            string `json:"serial"`
+		SNMPVersion       string `json:"snmp_version"`
 	} `json:"identity"`
 	Profile struct {
 		Name         string   `json:"name"`
@@ -450,6 +454,8 @@ func validateDeviceV2(env EnvelopeV2, payload json.RawMessage) (DeviceTelemetryV
 	return DeviceTelemetryV2{
 		Envelope:              env,
 		Hostname:              p.Identity.Hostname,
+		ManagementAddress:     strings.TrimSpace(p.Identity.ManagementAddress),
+		Role:                  strings.TrimSpace(p.Identity.Role),
 		SysObjectID:           p.Identity.SysObjectID,
 		SysName:               p.Identity.SysName,
 		SysDescr:              p.Identity.SysDescr,
@@ -575,9 +581,9 @@ func validateHealthV2(env EnvelopeV2, payload json.RawMessage) (HealthStateV2, e
 		TemperatureC:                 p.TemperatureC,
 		TemperatureWarningC:          p.TemperatureWarningC,
 		TemperaturePolicyRevision:    p.TemperaturePolicyRevision,
-		UpstreamDeviceIDs:            append([]string(nil), p.UpstreamDeviceIDs...),
-		UnavailableUpstreamDeviceIDs: append([]string(nil), p.UnavailableUpstreamDeviceIDs...),
-		RootCauseDeviceIDs:           append([]string(nil), p.RootCauseDeviceIDs...),
+		UpstreamDeviceIDs:            cloneStrings(p.UpstreamDeviceIDs),
+		UnavailableUpstreamDeviceIDs: cloneStrings(p.UnavailableUpstreamDeviceIDs),
+		RootCauseDeviceIDs:           cloneStrings(p.RootCauseDeviceIDs),
 	}, nil
 }
 
@@ -727,4 +733,12 @@ func checkStatusEnum(v, field string) error {
 	default:
 		return fmt.Errorf("invalid %s %q", field, v)
 	}
+}
+
+// cloneStrings copies in and always returns a non-nil slice.
+// append([]string(nil), empty...) yields nil, which pgx encodes as SQL NULL.
+func cloneStrings(in []string) []string {
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
 }

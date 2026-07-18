@@ -62,7 +62,9 @@ type SiteDetailLatest struct {
 
 // DeviceSummary is a device row in site detail / device list.
 type DeviceSummary struct {
+	DeviceID               string   `json:"device_id,omitempty"`
 	Hostname               string   `json:"hostname"`
+	IPAddress              string   `json:"ip_address,omitempty"`
 	Role                   string   `json:"role"`
 	Status                 int      `json:"status"`
 	StatusReason           string   `json:"status_reason,omitempty"`

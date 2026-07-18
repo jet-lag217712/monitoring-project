@@ -15,17 +15,17 @@ require_docker
 require_file "${COMPOSE}"
 require_file "${SCRIPT_DIR}/configs/collector.yaml"
 require_file "${ROOT}/services/snmp-collector/Dockerfile"
-mkdir -p "${SCRIPT_DIR}/run"
 
 export MQTT_BROKER=tls://example.com:8883
 export MQTT_PASSWORD=placeholder
-export SNMP_COMMUNITY_DO_CORE=placeholder
-export SNMP_COMMUNITY_SITE_A_MDF=placeholder
-export SNMP_COMMUNITY_SITE_A_IDF1=placeholder
-export SNMP_COMMUNITY_SITE_A_IDF2=placeholder
-export SNMP_COMMUNITY_SITE_B_MDF=placeholder
-export SNMP_COMMUNITY_SITE_C_MDF=placeholder
-export SNMP_COMMUNITY_SITE_C_IDF1=placeholder
+export SNMP_COMMUNITY=placeholder
+export SNMP_DISCOVERY_COMMUNITY=placeholder
 
 docker compose -f "${COMPOSE}" config >/dev/null
+
+(
+  cd "${ROOT}/services/snmp-collector"
+  go test ./internal/tui/setup -run 'Test(BuildSiteSpecs|GenerateComposeFourSites)' -count=1
+)
+
 echo "development/vxrail validate: OK"

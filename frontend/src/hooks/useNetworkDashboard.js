@@ -29,7 +29,7 @@ function emptySiteDetail(siteId) {
 }
 
 function resolveCollectorDeviceId(deviceSummary, mapKey) {
-  return deviceSummary?.hostname || mapKey
+  return deviceSummary?.device_id || deviceSummary?.hostname || mapKey
 }
 
 export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
