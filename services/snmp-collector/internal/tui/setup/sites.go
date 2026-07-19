@@ -82,7 +82,7 @@ func (s SiteSpec) ManagedDir(deployDir string) string {
 }
 
 func (s SiteSpec) VolumeName() string {
-	return "collector-state-" + s.SiteID
+	return volumeNameForSiteID(s.SiteID)
 }
 
 func (s SiteSpec) AdminURL() string {
@@ -105,8 +105,17 @@ func mqttClientIDForSiteID(siteID string) string {
 	return "development-vxrail-collector-" + siteID
 }
 
+// dockerResourceSlug lowercases site IDs for Docker service/image/volume names.
+func dockerResourceSlug(siteID string) string {
+	return strings.ToLower(siteID)
+}
+
 func serviceNameForSiteID(siteID string) string {
-	return "snmp-collector-" + siteID
+	return "snmp-collector-" + dockerResourceSlug(siteID)
+}
+
+func volumeNameForSiteID(siteID string) string {
+	return "collector-state-" + dockerResourceSlug(siteID)
 }
 
 // BuildSiteSpecs derives per-site identities and ports from operator-provided IDs and CIDRs.
@@ -122,6 +131,7 @@ func BuildSiteSpecs(count int, siteIDs, cidrs []string) ([]SiteSpec, error) {
 	}
 	specs := make([]SiteSpec, 0, count)
 	seenSiteID := make(map[string]struct{}, count)
+	seenSiteIDLower := make(map[string]string, count)
 	seenCIDR := make(map[string]struct{}, count)
 	for i := 1; i <= count; i++ {
 		siteID := strings.TrimSpace(siteIDs[i-1])
@@ -131,7 +141,12 @@ func BuildSiteSpecs(count int, siteIDs, cidrs []string) ([]SiteSpec, error) {
 		if _, ok := seenSiteID[siteID]; ok {
 			return nil, fmt.Errorf("site %d: duplicate site id %q", i, siteID)
 		}
+		lowerSiteID := strings.ToLower(siteID)
+		if orig, ok := seenSiteIDLower[lowerSiteID]; ok {
+			return nil, fmt.Errorf("site %d: site id %q conflicts with %q (case-insensitive)", i, siteID, orig)
+		}
 		seenSiteID[siteID] = struct{}{}
+		seenSiteIDLower[lowerSiteID] = siteID
 		cidr := strings.TrimSpace(cidrs[i-1])
 		if err := validateCIDR(cidr); err != nil {
 			return nil, fmt.Errorf("site %d: %w", i, err)
@@ -140,7 +155,7 @@ func BuildSiteSpecs(count int, siteIDs, cidrs []string) ([]SiteSpec, error) {
 			return nil, fmt.Errorf("site %d: duplicate CIDR %q", i, cidr)
 		}
 		seenCIDR[cidr] = struct{}{}
-		specs = append(specs, SiteSpec{
+		spec := SiteSpec{
 			Index:        i,
 			SiteID:       siteID,
 			CollectorID:  collectorIDForSiteID(siteID),
@@ -148,7 +163,16 @@ func BuildSiteSpecs(count int, siteIDs, cidrs []string) ([]SiteSpec, error) {
 			ServiceName:  serviceNameForSiteID(siteID),
 			CIDR:         cidr,
 			AdminPort:    baseAdminPort + (i - 1),
+		}
+		// #region agent log
+		agentLog("A", "sites.go:BuildSiteSpecs", "built site spec", "pre-fix", map[string]any{
+			"siteID":      spec.SiteID,
+			"serviceName": spec.ServiceName,
+			"volumeName":  spec.VolumeName(),
+			"hasUpper":    spec.SiteID != strings.ToLower(spec.SiteID),
 		})
+		// #endregion
+		specs = append(specs, spec)
 	}
 	return specs, nil
 }

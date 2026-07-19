@@ -35,7 +35,7 @@ const (
 	colorLightBG2          = "#f6f4ee"
 	colorLightInk          = "#0a0a0a"
 	colorLightInkSoft      = "#3d3d3d"
-	colorLightInkMuted     = "#7a7a7a"
+	colorLightInkMuted     = "#3d3d3d"
 	colorLightBorder       = "#eceae3"
 	colorLightBorderStrong = "#7a7a7a"
 

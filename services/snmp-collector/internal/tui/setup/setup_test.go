@@ -53,7 +53,10 @@ func TestWriteEnvFile(t *testing.T) {
 }
 
 func TestNewModelInitialStep(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight))
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test")
+	if !m.splash {
+		t.Fatal("expected splash screen on launch")
+	}
 	if m.step != stepEnv {
 		t.Fatalf("step=%v", m.step)
 	}
@@ -130,9 +133,9 @@ func TestBuildSiteSpecsRejectsInvalidInput(t *testing.T) {
 }
 
 func TestBuildSiteSpecsCustomIDs(t *testing.T) {
-	siteIDs := []string{"do-core", "site-a-mdf"}
-	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24"}
-	specs, err := BuildSiteSpecs(2, siteIDs, cidrs)
+	siteIDs := []string{"do-core", "site-a-mdf", "School-B"}
+	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24"}
+	specs, err := BuildSiteSpecs(3, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +147,21 @@ func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 	}
 	if specs[1].CollectorID != "collector-development-vxrail-site-a-mdf" {
 		t.Fatalf("collector_id=%q", specs[1].CollectorID)
+	}
+	if specs[2].SiteID != "School-B" {
+		t.Fatalf("site_id=%q", specs[2].SiteID)
+	}
+	if specs[2].ServiceName != "snmp-collector-school-b" {
+		t.Fatalf("service=%q", specs[2].ServiceName)
+	}
+	if specs[2].VolumeName() != "collector-state-school-b" {
+		t.Fatalf("volume=%q", specs[2].VolumeName())
+	}
+}
+
+func TestBuildSiteSpecsRejectsCaseInsensitiveDuplicate(t *testing.T) {
+	if _, err := BuildSiteSpecs(2, []string{"School-A", "school-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+		t.Fatal("expected case-insensitive duplicate site id error")
 	}
 }
 

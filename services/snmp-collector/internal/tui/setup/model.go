@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/equate/ogsd/services/snmp-collector/internal/tui"
 )
 
@@ -26,6 +27,10 @@ const (
 type model struct {
 	deployDir string
 	theme     tui.Theme
+	version   string
+	splash    bool
+	width     int
+	height    int
 	step      step
 	err       string
 	body      string
@@ -46,7 +51,15 @@ type model struct {
 	reviewResults []string
 }
 
-func newModel(deployDir string, theme tui.Theme) model {
+func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
+	ti.Prompt = ""
+	ti.TextStyle = lipgloss.NewStyle().Foreground(th.Ink)
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(th.InkMuted)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(th.Ink).Background(th.Ink)
+	return ti
+}
+
+func newModel(deployDir string, theme tui.Theme, version string) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = theme.Spinner
@@ -62,7 +75,7 @@ func newModel(deployDir string, theme tui.Theme) model {
 	}
 	envInputs := make([]textinput.Model, len(fields))
 	for i, f := range fields {
-		envInputs[i] = textinput.New()
+		envInputs[i] = styleTextInput(textinput.New(), theme)
 		envInputs[i].Placeholder = f.placeholder
 		envInputs[i].CharLimit = 256
 		envInputs[i].Width = 50
@@ -72,13 +85,13 @@ func newModel(deployDir string, theme tui.Theme) model {
 	}
 	envInputs[0].Focus()
 
-	siteCountInput := textinput.New()
+	siteCountInput := styleTextInput(textinput.New(), theme)
 	siteCountInput.Placeholder = "number of site containers"
 	siteCountInput.CharLimit = 2
 	siteCountInput.Width = 8
 	siteCountInput.SetValue(strconv.Itoa(defaultSiteCount))
 
-	thresholdInput := textinput.New()
+	thresholdInput := styleTextInput(textinput.New(), theme)
 	thresholdInput.Placeholder = "temperature warning °C"
 	thresholdInput.CharLimit = 4
 	thresholdInput.Width = 8
@@ -87,6 +100,8 @@ func newModel(deployDir string, theme tui.Theme) model {
 	m := model{
 		deployDir:      deployDir,
 		theme:          theme,
+		version:        version,
+		splash:         true,
 		step:           stepEnv,
 		spinner:        sp,
 		envInputs:      envInputs,
@@ -113,7 +128,7 @@ func (m *model) resizeSiteInputs(count int) {
 	siteIDs := make([]textinput.Model, count)
 	cidrs := make([]textinput.Model, count)
 	for i := range siteIDs {
-		siteIDs[i] = textinput.New()
+		siteIDs[i] = styleTextInput(textinput.New(), m.theme)
 		siteIDs[i].Placeholder = siteIDForIndex(i + 1)
 		siteIDs[i].CharLimit = maxSiteIDLen
 		siteIDs[i].Width = 20
@@ -123,7 +138,7 @@ func (m *model) resizeSiteInputs(count int) {
 			siteIDs[i].SetValue(siteIDForIndex(i + 1))
 		}
 
-		cidrs[i] = textinput.New()
+		cidrs[i] = styleTextInput(textinput.New(), m.theme)
 		cidrs[i].Placeholder = defaultCIDRForIndex(i + 1)
 		cidrs[i].CharLimit = 64
 		cidrs[i].Width = 24
@@ -151,7 +166,23 @@ type asyncDoneMsg struct {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyMsg:
+		if m.splash {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			if msg.String() == "enter" {
+				m.splash = false
+				m.envFocus = 0
+				m = m.updateEnvFocus()
+				return m, textinput.Blink
+			}
+			return m, nil
+		}
 		if !m.loading && m.step == stepReview && m.err != "" {
 			switch msg.String() {
 			case "r", "R":
@@ -499,132 +530,171 @@ func (m model) applyThreshold() tea.Cmd {
 }
 
 func (m model) View() string {
+	if m.splash {
+		return m.viewSplash()
+	}
 	th := m.theme
-	var b strings.Builder
-	b.WriteString(th.LogoMark.Render("//"))
-	b.WriteString(" ")
-	b.WriteString(th.Wordmark.Render("Equate"))
-	b.WriteString("  ")
-	b.WriteString(th.Eyebrow.Render("COLLECTOR SETUP"))
-	b.WriteString("\n")
-	b.WriteString(m.progressRail())
-	b.WriteString("\n\n")
+	var body strings.Builder
+	body.WriteString(m.progressRail())
+	body.WriteString("\n\n")
 	if m.err != "" {
-		b.WriteString(th.Error.Render("error: " + m.err))
-		b.WriteString("\n\n")
+		body.WriteString(th.Error.Render("error: " + m.err))
+		body.WriteString("\n\n")
 	}
 	if m.loading {
-		b.WriteString(th.Spinner.Render(m.spinner.View()))
-		b.WriteString(" ")
+		body.WriteString(th.Spinner.Render(m.spinner.View()))
+		body.WriteString(" ")
 		switch m.step {
 		case stepStart:
-			b.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
+			body.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
 		case stepReview:
-			b.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
+			body.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
 		case stepThresholds:
-			b.WriteString(th.Muted.Render("Applying threshold to all sites…"))
+			body.WriteString(th.Muted.Render("Applying threshold to all sites…"))
 		default:
-			b.WriteString(th.Muted.Render("working…"))
+			body.WriteString(th.Muted.Render("working…"))
 		}
-		return b.String()
+		return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
 	}
 	switch m.step {
 	case stepEnv:
-		b.WriteString(th.Title.Render("Step 1 — Shared environment"))
-		b.WriteString("\n\n")
+		body.WriteString(th.Title.Render("Step 1 - Shared environment"))
+		body.WriteString("\n\n")
 		for i, input := range m.envInputs {
-			b.WriteString(th.Label.Render(fmt.Sprintf("%d", i+1)))
-			b.WriteString(" ")
-			b.WriteString(input.View())
-			b.WriteString("\n")
+			body.WriteString(th.Soft.Render(fmt.Sprintf("%d", i+1)))
+			body.WriteString(" ")
+			body.WriteString(th.Confirm.Render(">"))
+			body.WriteString(" ")
+			body.WriteString(input.View())
+			body.WriteString("\n")
 		}
-		b.WriteString(th.Muted.Render("tab next field · enter continue"))
+		body.WriteString(th.Muted.Render("tab next field · enter continue"))
 	case stepSites:
-		b.WriteString(th.Title.Render("Step 2 — Site containers"))
-		b.WriteString("\n\n")
-		b.WriteString(th.Label.Render("count"))
-		b.WriteString(" ")
-		b.WriteString(m.siteCountInput.View())
-		b.WriteString("\n")
+		body.WriteString(th.Title.Render("Step 2 - Site containers"))
+		body.WriteString("\n\n")
+		body.WriteString(th.Label.Render("count"))
+		body.WriteString(" ")
+		body.WriteString(m.siteCountInput.View())
+		body.WriteString("\n")
 		for i := range m.cidrInputs {
-			b.WriteString(th.Label.Render("site id"))
-			b.WriteString(" ")
-			b.WriteString(m.siteIDInputs[i].View())
-			b.WriteString("  ")
-			b.WriteString(th.Label.Render("cidr"))
-			b.WriteString(" ")
-			b.WriteString(m.cidrInputs[i].View())
-			b.WriteString("\n")
+			body.WriteString(th.Label.Render("site id"))
+			body.WriteString(" ")
+			body.WriteString(m.siteIDInputs[i].View())
+			body.WriteString("  ")
+			body.WriteString(th.Label.Render("cidr"))
+			body.WriteString(" ")
+			body.WriteString(m.cidrInputs[i].View())
+			body.WriteString("\n")
 		}
 		if m.body != "" {
-			b.WriteString("\n")
-			b.WriteString(th.Value.Render(m.body))
-			b.WriteString("\n")
+			body.WriteString("\n")
+			body.WriteString(th.Value.Render(m.body))
+			body.WriteString("\n")
 		}
-		b.WriteString("\n")
-		b.WriteString(th.Muted.Render("tab next field · enter on last CIDR to save artifacts"))
+		body.WriteString("\n")
+		body.WriteString(th.Muted.Render("tab next field · enter on last CIDR to save artifacts"))
 	case stepStart, stepReview:
 		if m.step == stepStart {
-			b.WriteString(th.Title.Render("Step 3 — Starting collectors"))
-			b.WriteString("\n\n")
+			body.WriteString(th.Title.Render("Step 3 - Starting collectors"))
+			body.WriteString("\n\n")
 			if m.body != "" {
-				b.WriteString(th.Value.Render(m.body))
-				b.WriteString("\n\n")
+				body.WriteString(th.Value.Render(m.body))
+				body.WriteString("\n\n")
 			}
-			b.WriteString(th.Muted.Render("enter to build and start all site containers"))
+			body.WriteString(th.Muted.Render("enter to build and start all site containers"))
 		} else {
-			b.WriteString(th.Title.Render("Step 4 — Review inventory"))
-			b.WriteString("\n")
+			body.WriteString(th.Title.Render("Step 4 - Review inventory"))
+			body.WriteString("\n")
 			if m.body != "" {
-				b.WriteString(th.Value.Render(m.body))
-				b.WriteString("\n")
+				body.WriteString(th.Value.Render(m.body))
+				body.WriteString("\n")
 			}
 			if m.err != "" {
-				b.WriteString("\n")
-				b.WriteString(th.Muted.Render("r retry discovery · s skip and continue"))
+				body.WriteString("\n")
+				body.WriteString(th.Muted.Render("r retry discovery · s skip and continue"))
 			} else if !m.loading {
-				b.WriteString("\n")
-				b.WriteString(th.Muted.Render("enter to run discovery for each site"))
+				body.WriteString("\n")
+				body.WriteString(th.Muted.Render("enter to run discovery for each site"))
 			}
 		}
 	case stepThresholds:
-		b.WriteString(th.Title.Render("Step 5 — Thresholds"))
-		b.WriteString("\n\n")
-		b.WriteString(th.Label.Render("Global temperature warning °C"))
-		b.WriteString(" ")
-		b.WriteString(m.thresholdInput.View())
-		b.WriteString("\n\n")
-		b.WriteString(th.Muted.Render("enter to apply to all sites and finish setup"))
+		body.WriteString(th.Title.Render("Step 5 - Thresholds"))
+		body.WriteString("\n\n")
+		body.WriteString(th.Label.Render("Global temperature warning °C"))
+		body.WriteString(" ")
+		body.WriteString(m.thresholdInput.View())
+		body.WriteString("\n\n")
+		body.WriteString(th.Muted.Render("enter to apply to all sites and finish setup"))
 	case stepDone:
-		b.WriteString(th.Title.Render("Setup complete"))
-		b.WriteString("\n\n")
-		b.WriteString(th.Value.Render(m.body))
-		b.WriteString("\n\n")
-		b.WriteString(th.Muted.Render("Per-site operator TUI examples:"))
-		b.WriteString("\n")
+		body.WriteString(th.Title.Render("Setup complete"))
+		body.WriteString("\n\n")
+		body.WriteString(th.Value.Render(m.body))
+		body.WriteString("\n\n")
+		body.WriteString(th.Muted.Render("Per-site operator TUI examples:"))
+		body.WriteString("\n")
 		if manifest, err := LoadManifest(m.deployDir); err == nil {
 			for _, spec := range manifest.Sites {
-				b.WriteString(th.Muted.Render(fmt.Sprintf(
+				body.WriteString(th.Muted.Render(fmt.Sprintf(
 					"docker compose exec -it %s /collector tui -socket /run/snmp-collector/control.sock -theme auto",
 					spec.ServiceName,
 				)))
-				b.WriteString("\n")
+				body.WriteString("\n")
 			}
 		}
-		b.WriteString(th.Muted.Render("press q to quit"))
+		body.WriteString(th.Muted.Render("press q to quit"))
 	}
-	return b.String()
+	return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
 }
 
 func (m model) progressRail() string {
 	labels := []string{"Env", "Sites", "Start", "Review", "Thresholds", "Done"}
 	parts := make([]string, len(labels))
 	for i, label := range labels {
-		if step(i) <= m.step {
+		if step(i) == m.step {
 			parts[i] = m.theme.TabActive.Render(label)
 		} else {
 			parts[i] = m.theme.TabIdle.Render(label)
 		}
 	}
-	return strings.Join(parts, "  ·  ")
+	return strings.Join(parts, " · ")
+}
+
+func (m model) viewSplash() string {
+	th := m.theme
+	width := m.width
+	height := m.height
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+
+	var belowLogo strings.Builder
+	belowLogo.WriteString(th.Title.Render("Equate SNMP Collector Configuration"))
+	belowLogo.WriteString("\n\n")
+	belowLogo.WriteString(th.Confirm.Render("→"))
+	belowLogo.WriteString(th.Muted.Render(" enter to continue"))
+
+	headerBlock := lipgloss.NewStyle().Padding(1, 0, 0, 0).Render(
+		lipgloss.JoinVertical(lipgloss.Left, splashLogo(th), withSectionGap(belowLogo.String())),
+	)
+
+	ver := formatVersion(m.version)
+	heart := lipgloss.NewStyle().Foreground(th.StatusAlert).Render("❤")
+	footerMuted := lipgloss.NewStyle().Foreground(th.InkMuted).Faint(true)
+	footerLine := footerMuted.Render("V."+ver+" · Made with ") + heart + footerMuted.Render(" in West Lafayette")
+	footer := lipgloss.Place(width, 1, lipgloss.Right, lipgloss.Center, footerLine)
+
+	bodyHeight := max(1, height-lipgloss.Height(footer)-viewTopPadding)
+	body := lipgloss.Place(width, bodyHeight, lipgloss.Left, lipgloss.Top, headerBlock)
+	return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, body, footer))
+}
+
+func formatVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" || version == "unknown" {
+		return "1.5.0"
+	}
+	return version
 }

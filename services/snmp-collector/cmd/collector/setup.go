@@ -21,7 +21,7 @@ func runSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "setup accepts no positional arguments")
 		return 2
 	}
-	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName)); err != nil {
+	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName), buildVersion); err != nil {
 		fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 		return 1
 	}

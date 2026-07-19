@@ -97,7 +97,8 @@ docker compose "${COMPOSE_FILES[@]}" up -d --build --remove-orphans "${SERVICES[
 
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-ogsd-development-vxrail}"
 for site_id in "${SITE_IDS[@]}"; do
-  docker run --rm -v "${PROJECT_NAME}_collector-state-${site_id}:/var/lib/snmp-collector" busybox:1.36 \
+  vol_slug=$(printf '%s' "$site_id" | tr '[:upper:]' '[:lower:]')
+  docker run --rm -v "${PROJECT_NAME}_collector-state-${vol_slug}:/var/lib/snmp-collector" busybox:1.36 \
     chown -R 65532:65532 /var/lib/snmp-collector >/dev/null 2>&1 || true
   docker run --rm -v "${SCRIPT_DIR}/sites/${site_id}/run:/run/snmp-collector" busybox:1.36 \
     rm -f /run/snmp-collector/control.sock >/dev/null 2>&1 || true

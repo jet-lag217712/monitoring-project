@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-const debugLogPath = "/Users/jeetlad/Projects/Equate/monitoring-dashboard/.cursor/debug-116639.log"
+const debugLogPath = "/Users/jeetlad/Projects/Equate/monitoring-dashboard/.cursor/debug-36805e.log"
 
 // #region agent log
 func agentLog(hypothesisID, location, message, runID string, data map[string]any) {
 	payload := map[string]any{
-		"sessionId":    "116639",
+		"sessionId":    "36805e",
 		"hypothesisId": hypothesisID,
 		"location":     location,
 		"message":      message,
