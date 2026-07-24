@@ -42,58 +42,6 @@ func formatInventory(th Theme, result map[string]any) string {
 	return b.String()
 }
 
-func formatDevice(th Theme, result map[string]any) string {
-	id, _ := result["id"].(string)
-	rows := [][2]string{
-		{"id", id},
-		{"host", fmt.Sprint(result["host"])},
-		{"port", fmt.Sprint(result["port"])},
-		{"version", fmt.Sprint(result["version"])},
-		{"community_env", fmt.Sprint(result["community_env"])},
-		{"temp_warning_c", fmt.Sprint(result["temperature_warning_c"])},
-		{"upstreams", formatStringSlice(result["upstream_device_ids"])},
-		{"revision", shortRev(fmt.Sprint(result["config_revision"]))},
-	}
-	var b strings.Builder
-	b.WriteString(renderKVPanel(th, "Device "+id, rows))
-	b.WriteString("\n\n")
-	if health, ok := result["health"].(map[string]any); ok {
-		b.WriteString(th.Title.Render("Health"))
-		b.WriteString("  ")
-		b.WriteString(renderStatusBadge(th, fmt.Sprint(health["state"])))
-		b.WriteString("\n")
-		healthRows := [][2]string{
-			{"reason", fmt.Sprint(health["reason"])},
-			{"failures", fmt.Sprint(health["failure_count"])},
-			{"unavailable_upstreams", formatStringSlice(health["unavailable_upstream_device_ids"])},
-			{"root_cause", formatStringSlice(health["root_cause_device_ids"])},
-		}
-		b.WriteString(renderKVPanel(th, "", healthRows))
-		b.WriteString("\n\n")
-	}
-	if poll := result["last_poll"]; poll != nil {
-		b.WriteString(th.Title.Render("Last Poll"))
-		b.WriteString("\n")
-		b.WriteString(th.Value.Render(formatLastPoll(poll)))
-		if m, ok := poll.(map[string]any); ok {
-			b.WriteString("\n")
-			extra := [][2]string{}
-			for _, k := range sortedKeys(m) {
-				if k == "at" || k == "timestamp" || k == "time" {
-					continue
-				}
-				extra = append(extra, [2]string{k, fmt.Sprint(m[k])})
-			}
-			if len(extra) > 0 {
-				b.WriteString(renderKVPanel(th, "", extra))
-			}
-		}
-		b.WriteString("\n\n")
-	}
-	b.WriteString(th.Muted.Render("t edit threshold  ·  d edit dependencies"))
-	return strings.TrimRight(b.String(), "\n")
-}
-
 func formatDiscovery(th Theme, result map[string]any) string {
 	rows := [][2]string{
 		{"allowed_cidrs", formatStringSlice(result["allowed_cidrs"])},
@@ -114,9 +62,7 @@ func formatDiscovery(th Theme, result map[string]any) string {
 
 func formatDiscoveryView(th Theme, status, candidates map[string]any) string {
 	var b strings.Builder
-	b.WriteString(formatDiscovery(th, status))
-	b.WriteString("\n\n")
-	b.WriteString(th.Title.Render("Candidates"))
+	b.WriteString(th.Title.Render("Discovery Results"))
 	b.WriteString("\n")
 	raw, _ := candidates["candidates"].([]any)
 	if len(raw) == 0 {
@@ -139,42 +85,21 @@ func formatDiscoveryView(th Theme, status, candidates map[string]any) string {
 		}
 		b.WriteString(renderTable(th, headers, rows))
 	}
-	b.WriteString("\n\n")
-	b.WriteString(th.Muted.Render("S scan  ·  A accept successful  ·  e edit CIDR policy"))
+	_ = status
 	return b.String()
 }
 
-func formatThresholds(th Theme, result map[string]any) string {
-	health, _ := result["health"].(map[string]any)
-	rows := [][2]string{
-		{"site_id", fmt.Sprint(result["site_id"])},
-		{"collector_id", fmt.Sprint(result["collector_id"])},
-		{"revision", shortRev(fmt.Sprint(result["config_revision"]))},
-		{"temp_policy_rev", shortRev(fmt.Sprint(result["temperature_policy_revision"]))},
-	}
-	if health != nil {
-		rows = append(rows,
-			[2]string{"temperature_warning_c", fmt.Sprint(health["temperature_warning_c"])},
-			[2]string{"failure_threshold", fmt.Sprint(health["failure_threshold"])},
-		)
-	}
-	var b strings.Builder
-	b.WriteString(renderKVPanel(th, "Thresholds", rows))
-	b.WriteString("\n\n")
-	b.WriteString(th.Muted.Render("Press t to edit global temperature warning (°C), then confirm commit."))
-	return b.String()
-}
-
-func formatTransport(th Theme, result map[string]any) string {
+func formatTransit(th Theme, result map[string]any) string {
 	mqtt := "n/a"
 	if v, ok := result["mqtt_connected"]; ok {
-		mqtt = fmt.Sprint(v)
 		if b, ok := v.(bool); ok {
 			if b {
-				mqtt = renderStatusBadge(th, "ok") + " connected"
+				mqtt = renderStatusBadge(th, "ok") + " (ACTIVE)"
 			} else {
-				mqtt = renderStatusBadge(th, "alert") + " disconnected"
+				mqtt = renderStatusBadge(th, "alert") + " (DISCONNECTED)"
 			}
+		} else {
+			mqtt = fmt.Sprint(v)
 		}
 	}
 	rows := [][2]string{
@@ -185,7 +110,7 @@ func formatTransport(th Theme, result map[string]any) string {
 		{"mqtt", mqtt},
 		{"revision", shortRev(fmt.Sprint(result["config_revision"]))},
 	}
-	return renderKVPanel(th, "Transport", rows)
+	return renderKVPanel(th, "Transit Configuration", rows)
 }
 
 func formatConfig(th Theme, result map[string]any) string {

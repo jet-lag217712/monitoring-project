@@ -3,7 +3,9 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -36,17 +38,107 @@ func TestNewThemeLightAndDark(t *testing.T) {
 	}
 }
 
+func TestLayoutChromeDiagnostics(t *testing.T) {
+	th := NewTheme(ThemeDark)
+	now := time.Now()
+	header := renderHeader(th, "site-a", "", "", now, false)
+	tabs := renderTabs(th, viewInventory)
+
+	if !strings.HasSuffix(header, "\n") {
+		t.Fatalf("header must end with newline")
+	}
+	joined := header + tabs
+	if idx := strings.Index(joined, "Inventory |"); idx >= 0 {
+		lineStart := strings.LastIndex(joined[:idx], "\n") + 1
+		lineEnd := strings.Index(joined[idx:], "\n")
+		if lineEnd < 0 {
+			lineEnd = len(joined) - idx
+		}
+		line := joined[lineStart : idx+lineEnd]
+		if strings.Contains(line, "╚═╝") {
+			t.Fatalf("tabs share line with logo art: %q", line)
+		}
+	}
+
+	m := newModel(nil, th)
+	m.siteID = "site-a"
+	m.lastUpdated = now
+	m.body = formatInventory(th, map[string]any{
+		"config_revision": "revision-b72",
+		"devices": []any{
+			map[string]any{
+				"id": "site-a-mdf", "host": "10.255.1.1", "port": 161,
+				"health": map[string]any{"state": "healthy"},
+			},
+		},
+	})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.viewport = viewport.New(120, 20)
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	tabsLine := lineAt(lines, findLineContaining(lines, "Inventory |"))
+	if strings.Contains(tabsLine, "╚═╝") {
+		t.Fatalf("tabs still on logo line: %q", tabsLine)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(tabsLine), "Inventory") {
+		t.Fatalf("tabs not left-aligned: %q", tabsLine)
+	}
+}
+
+func TestDiscoveryAcceptanceRequiresConfirmation(t *testing.T) {
+	m := newModel(nil, NewTheme(ThemeLight))
+	next, _ := m.Update(pendingPreparedMsg{
+		token:    "accept-token",
+		revision: "revision-1",
+		action:   "discovery.accept",
+	})
+	updated := next.(model)
+	if updated.confirmPrompt != "commit" {
+		t.Fatalf("confirm prompt = %q, want commit", updated.confirmPrompt)
+	}
+	if updated.pendingAction != "discovery.accept" {
+		t.Fatalf("pending action = %q", updated.pendingAction)
+	}
+}
+
+func findLineContaining(lines []string, substr string) int {
+	for i, line := range lines {
+		if strings.Contains(line, substr) {
+			return i
+		}
+	}
+	return -1
+}
+
+func lineAt(lines []string, idx int) string {
+	if idx < 0 || idx >= len(lines) {
+		return ""
+	}
+	return lines[idx]
+}
+
+func TestLogoRendersBlockArt(t *testing.T) {
+	out := Logo(NewTheme(ThemeDark))
+	if !strings.Contains(out, "█") {
+		t.Fatalf("expected block art, got %q", out)
+	}
+}
+
 func TestModelSwitchesViewsWithoutPanic(t *testing.T) {
 	m := newModel(nil, NewTheme(ThemeLight))
 	m.body = "initial"
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	updated := next.(model)
-	if updated.view != viewDevice {
+	if updated.view != viewDiscovery {
 		t.Fatalf("view=%v", updated.view)
 	}
-	next, _ = updated.Update(refreshMsg{body: "device body"})
+	next, _ = updated.Update(refreshMsg{body: "discovery body"})
 	updated = next.(model)
-	if updated.body != "device body" {
+	if updated.body != "discovery body" {
 		t.Fatalf("body=%q", updated.body)
 	}
 	next, _ = updated.Update(pendingPreparedMsg{token: "tok", revision: "rev", action: "thresholds"})
@@ -90,27 +182,23 @@ func TestFormatInventoryHasNoMapLeak(t *testing.T) {
 	}
 }
 
-func TestFormatDeviceHasNoMapLeak(t *testing.T) {
+func TestFormatDiscoveryViewHasNoMapLeak(t *testing.T) {
 	th := NewTheme(ThemeLight)
-	out := formatDevice(th, map[string]any{
-		"id":                    "dev-001",
-		"host":                  "10.0.0.1",
-		"port":                  161,
-		"version":               "2c",
-		"community_env":         "SNMP_COMMUNITY_DEV_001",
-		"temperature_warning_c": 65.0,
-		"upstream_device_ids":   []string{"core-1"},
-		"config_revision":       "rev1234567890",
-		"health": map[string]any{
-			"state":                           "warning",
-			"reason":                          "temperature",
-			"failure_count":                   0,
-			"unavailable_upstream_device_ids": []string{},
-			"root_cause_device_ids":           []string{},
+	out := formatDiscoveryView(th, map[string]any{}, map[string]any{
+		"candidates": []any{
+			map[string]any{
+				"ip":               "10.0.0.1",
+				"detected_profile": "cisco",
+				"hostname":         "switch-1",
+				"result":           "success",
+			},
 		},
 	})
 	if strings.Contains(out, "map[") {
-		t.Fatalf("device output leaked map dump: %q", out)
+		t.Fatalf("discovery output leaked map dump: %q", out)
+	}
+	if !strings.Contains(out, "10.0.0.1") {
+		t.Fatalf("discovery missing candidate: %q", out)
 	}
 }
 

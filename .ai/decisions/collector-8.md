@@ -31,7 +31,7 @@ operator TUI that mirrors the Network Dashboard visual language from
 - Tabs for inventory, device, discovery, thresholds, transport, and config.
 - Auto-refresh every 5s, viewport scrolling, spinner while loading.
 - Threshold edits use text input; dependency overlays are editable from the
-  device view. Mutations still use revision-bound prepare/commit + reload.
+  inventory view. Mutations still use revision-bound prepare/commit + reload.
 
 #### Non-goals
 

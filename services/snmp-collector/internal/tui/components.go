@@ -9,66 +9,53 @@ import (
 )
 
 var viewTabs = []struct {
-	key  string
 	name string
 	v    view
 }{
-	{"1", "Inventory", viewInventory},
-	{"2", "Device", viewDevice},
-	{"3", "Discovery", viewDiscovery},
-	{"4", "Thresholds", viewThresholds},
-	{"5", "Transport", viewTransport},
-	{"6", "Config", viewConfig},
+	{"Inventory", viewInventory},
+	{"Discovery", viewDiscovery},
+	{"Transit", viewTransit},
+	{"Settings", viewSettings},
 }
 
 func renderHeader(th Theme, siteID, collectorID, revision string, lastUpdated time.Time, loading bool) string {
-	var b strings.Builder
-	b.WriteString(th.LogoMark.Render("//"))
-	b.WriteString(" ")
-	b.WriteString(th.Wordmark.Render("Equate"))
-	b.WriteString("  ")
-	b.WriteString(th.Eyebrow.Render("SNMP COLLECTOR"))
-	if loading {
-		b.WriteString("  ")
-		b.WriteString(th.Spinner.Render("…"))
-	}
-	b.WriteString("\n")
+	logo := Logo(th)
 
-	meta := []string{}
+	var meta strings.Builder
+	meta.WriteString(th.Eyebrow.Render("SNMP COLLECTOR"))
+	if loading {
+		meta.WriteString("  ")
+		meta.WriteString(th.Spinner.Render("…"))
+	}
+	meta.WriteString("\n")
 	if siteID != "" {
-		meta = append(meta, "site "+siteID)
-	}
-	if collectorID != "" {
-		meta = append(meta, "collector "+collectorID)
-	}
-	if revision != "" {
-		short := revision
-		if len(short) > 12 {
-			short = short[:12]
-		}
-		meta = append(meta, "rev "+short)
+		meta.WriteString(th.Muted.Render(siteID))
+		meta.WriteString("\n")
+	} else if collectorID != "" {
+		meta.WriteString(th.Muted.Render(collectorID))
+		meta.WriteString("\n")
 	}
 	if !lastUpdated.IsZero() {
-		meta = append(meta, "updated "+lastUpdated.Format("15:04:05"))
+		meta.WriteString(th.Muted.Render("updated " + lastUpdated.Format("15:04:05")))
 	}
-	if len(meta) > 0 {
-		b.WriteString(th.Muted.Render(strings.Join(meta, "  ·  ")))
-		b.WriteString("\n")
-	}
-	return b.String()
+
+	header := JoinBlocks(logo, "  ", meta.String())
+	return WithTopPadding(header) + "\n"
 }
 
 func renderTabs(th Theme, active view) string {
-	parts := make([]string, 0, len(viewTabs))
-	for _, tab := range viewTabs {
-		label := fmt.Sprintf("%s %s", tab.key, tab.name)
+	parts := make([]string, 0, len(viewTabs)*2-1)
+	for i, tab := range viewTabs {
+		if i > 0 {
+			parts = append(parts, th.Muted.Render(" | "))
+		}
 		if tab.v == active {
-			parts = append(parts, th.TabActive.Render(label))
+			parts = append(parts, lipgloss.NewStyle().Foreground(th.Salmon).Bold(true).Render(tab.name))
 		} else {
-			parts = append(parts, th.TabIdle.Render(label))
+			parts = append(parts, th.TabIdle.Render(tab.name))
 		}
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(parts, "")
 }
 
 func renderStatusBadge(th Theme, state string) string {
@@ -120,7 +107,6 @@ func renderTable(th Theme, headers []string, rows [][]string) string {
 			}
 		}
 	}
-	// Cap columns so wide terminals stay readable.
 	for i := range widths {
 		if widths[i] > 40 {
 			widths[i] = 40
@@ -165,9 +151,18 @@ func padClip(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(runes))
 }
 
+func renderActions(th Theme, v view) string {
+	switch v {
+	case viewDiscovery:
+		return th.Muted.Render("S scan  ·  A accept successful  ·  E edit CIDRs")
+	default:
+		return ""
+	}
+}
+
 func renderHelp(th Theme) string {
 	keys := []string{
-		"1-6 views",
+		"1-4 views",
 		"tab/←→ switch",
 		"r refresh",
 		"R reload",

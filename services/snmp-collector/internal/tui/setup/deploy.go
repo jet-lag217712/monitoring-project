@@ -475,6 +475,13 @@ func runDiscoveryScan(client controlCaller) ([]map[string]any, error) {
 
 func reviewSite(spec SiteSpec, deployDir string) (string, error) {
 	client := newDeployControl(deployDir, spec)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if reload, err := client.Call(ctx, "rs0", "config.reload", nil); err != nil {
+		return "", err
+	} else if !reload.OK {
+		return "", fmt.Errorf("%s: %s", reload.Error.Code, reload.Error.Message)
+	}
 	candidates, err := runDiscoveryScan(client)
 	if err != nil {
 		return "", err
