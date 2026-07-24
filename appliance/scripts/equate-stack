@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+current=/opt/equate/releases/current
+compose="${current}/compose.yaml"
+rendered=/run/equate/rendered
+
+[[ -L "${current}" ]] || { echo "no active Equate release" >&2; exit 1; }
+[[ -f "${compose}" ]] || { echo "active release lacks compose.yaml" >&2; exit 1; }
+
+if [[ -f "${current}/release.env" ]]; then
+  cat "${current}/release.env" "${rendered}/database-admin.env" >"${rendered}/compose.env"
+else
+  cp "${rendered}/database-admin.env" "${rendered}/compose.env"
+fi
+chmod 0600 "${rendered}/compose.env"
+
+compose_cmd=(docker compose --project-name equate --env-file "${rendered}/compose.env" --file "${compose}")
+case "${1:-}" in
+  start)
+    "${compose_cmd[@]}" run --rm migrate
+    "${compose_cmd[@]}" up --detach --remove-orphans
+    ;;
+  stop)
+    "${compose_cmd[@]}" down --remove-orphans
+    ;;
+  *)
+    echo "usage: equate-stack {start|stop}" >&2
+    exit 2
+    ;;
+esac

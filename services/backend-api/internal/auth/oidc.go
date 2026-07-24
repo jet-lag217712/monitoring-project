@@ -34,9 +34,11 @@ func NewGoogleVerifier(ctx context.Context, clientID string) (*Verifier, error) 
 
 // Claims are the identity fields we expose to handlers after verification.
 type Claims struct {
-	Subject string
-	Email   string
-	Name    string
+	Subject       string
+	Email         string
+	Name          string
+	EmailVerified bool
+	HostedDomain  string
 }
 
 // Verify parses and validates a raw Google ID token.
@@ -55,6 +57,7 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (*Claims, error)
 		Email         string `json:"email"`
 		EmailVerified bool   `json:"email_verified"`
 		Name          string `json:"name"`
+		HostedDomain  string `json:"hd"`
 	}
 	if err := idToken.Claims(&payload); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
@@ -64,8 +67,10 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (*Claims, error)
 	}
 
 	return &Claims{
-		Subject: idToken.Subject,
-		Email:   payload.Email,
-		Name:    payload.Name,
+		Subject:       idToken.Subject,
+		Email:         payload.Email,
+		Name:          payload.Name,
+		EmailVerified: payload.EmailVerified,
+		HostedDomain:  payload.HostedDomain,
 	}, nil
 }

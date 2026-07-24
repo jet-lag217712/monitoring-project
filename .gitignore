@@ -1,7 +1,6 @@
 # Node/Vite
 frontend/node_modules/
 frontend/dist
-frontend/package-lock.json
 frontend/.DS_Store
 frontend/.env
 frontend/.env.local
@@ -25,6 +24,10 @@ infrastructure/docker/mqtt-broker/passwords
 # Collector local SQLite buffer
 **/buffer.db
 **/buffer.db-*
+
+# Appliance build products and transient ISO-build context.
+/build/
+/dist/
 
 # Collector control sockets (host bind mounts)
 **/run/control.sock

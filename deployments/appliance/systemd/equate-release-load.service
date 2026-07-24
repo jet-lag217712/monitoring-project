@@ -1,0 +1,14 @@
+[Unit]
+Description=Load and verify the initial Equate immutable release
+Requires=docker.service
+After=docker.service local-fs.target
+Before=equate-stack.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/equate/equate-release-load
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

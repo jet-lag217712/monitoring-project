@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# Remaster the checksum-locked Debian DVD with the Equate installer payload.
+# This avoids Simple-CDD and Docker during ISO assembly. The only Docker use in
+# the overall Make target remains building the five OCI service images.
+set -euo pipefail
+umask 077
+
+build_dir=${1:?build directory is required}
+dist_dir=${2:?distribution directory is required}
+version=${3:?version is required}
+arch=${4:?architecture is required}
+
+case "${arch}" in
+  amd64) installer_kernel=install.amd ; efi_boot=bootx64.efi ;;
+  arm64) installer_kernel=install.a64 ; efi_boot=bootaa64.efi ;;
+  *) echo "unsupported architecture: ${arch}" >&2; exit 2 ;;
+esac
+
+for command in curl docker xorriso shasum tar gzip awk; do
+  command -v "${command}" >/dev/null || { echo "missing required command: ${command}" >&2; exit 1; }
+done
+
+release="${build_dir}/release"
+equate_binary="${build_dir}/equate"
+collector_binary="${build_dir}/collector"
+[[ -f "${release}/checksums.txt" && -f "${release}/VERSION" ]] || {
+  echo "missing release bundle; run appliance-release first" >&2
+  exit 1
+}
+[[ -x "${equate_binary}" ]] || { echo "missing Equate console binary" >&2; exit 1; }
+[[ -x "${collector_binary}" ]] || { echo "missing collector TUI binary" >&2; exit 1; }
+(cd "${release}" && shasum -a 256 -c checksums.txt >/dev/null)
+
+# Debian 12 does not include Compose v2. Bundle its checksum-verified plugin
+# so the installed appliance never needs Internet access.
+source appliance/compose-plugin.lock
+case "${arch}" in
+  amd64) compose_suffix=x86_64; compose_sha256=${compose_amd64_sha256} ;;
+  arm64) compose_suffix=aarch64; compose_sha256=${compose_arm64_sha256} ;;
+esac
+compose_plugin="${build_dir}/docker-compose-${compose_version}-${arch}"
+if [[ ! -f "${compose_plugin}" ]] || ! printf '%s  %s\n' "${compose_sha256}" "${compose_plugin}" | shasum -a 256 -c - >/dev/null 2>&1; then
+  curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+    "https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-linux-${compose_suffix}" \
+    -o "${compose_plugin}"
+fi
+printf '%s  %s\n' "${compose_sha256}" "${compose_plugin}" | shasum -a 256 -c -
+chmod 0755 "${compose_plugin}"
+
+source appliance/debian-dvd.lock
+case "${arch}" in
+  amd64) dvd_sha512=${debian_amd64_dvd1_sha512} ;;
+  arm64) dvd_sha512=${debian_arm64_dvd1_sha512} ;;
+esac
+dvd_name="debian-${debian_version}-${arch}-DVD-1.iso"
+dvd_cache="${EQUATE_DVD_CACHE:-${build_dir}/debian-dvd}"
+dvd_path="${dvd_cache}/${dvd_name}"
+dvd_mirror="${EQUATE_DEBIAN_DVD_MIRROR:-${debian_dvd_mirror}}"
+mkdir -p "${dvd_cache}" "${dist_dir}"
+if [[ ! -f "${dvd_path}" ]] || ! printf '%s  %s\n' "${dvd_sha512}" "${dvd_path}" | shasum -a 512 -c - >/dev/null 2>&1; then
+  rm -f "${dvd_path}"
+  echo "Downloading checksum-locked Debian ${debian_version} ${arch} DVD-1 (one-time cache)..."
+  curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+    "${dvd_mirror}/${debian_version}/${arch}/iso-dvd/${dvd_name}" \
+    -o "${dvd_path}"
+fi
+printf '%s  %s\n' "${dvd_sha512}" "${dvd_path}" | shasum -a 512 -c -
+
+# DVD-1 deliberately does not carry Docker Engine. Resolve the exact Debian
+# dependency closure once into a cached, flat local APT repository. Docker is
+# used here only as a disposable Linux package resolver; xorriso assembles the
+# ISO natively and the installed appliance never accesses the Internet.
+apt_repo_parent="${EQUATE_APT_CACHE:-${build_dir}/debian-apt}"
+mkdir -p "${apt_repo_parent}"
+apt_repo="$(cd "${apt_repo_parent}" && pwd)/${arch}-${debian_version}-${debian_snapshot}"
+repo_valid=false
+if [[ -f "${apt_repo}/Packages.gz" ]]; then
+  deb_count=$(find "${apt_repo}" -maxdepth 1 -name '*.deb' -type f | wc -l | tr -d ' ')
+  hash_count=$(gzip -dc "${apt_repo}/Packages.gz" | grep -Ec '^SHA256: [0-9a-f]{64}$' || true)
+  if [[ ${deb_count} -gt 0 && ${hash_count} -eq ${deb_count} ]]; then
+    repo_valid=true
+  fi
+fi
+if [[ ${repo_valid} != true ]]; then
+  rm -rf "${apt_repo}"
+  mkdir -p "${apt_repo}"
+  docker run --rm --platform="linux/${arch}" \
+    -e EQUATE_SNAPSHOT="${debian_snapshot}" \
+    -v "${apt_repo}:/out" \
+    debian:12.10-slim@sha256:4b50eb66f977b4062683ff434ef18ac191da862dbe966961bc11990cf5791a8d \
+    /bin/sh -ec '
+      printf "deb http://snapshot.debian.org/archive/debian/%s/ bookworm main\\n" "$EQUATE_SNAPSHOT" > /etc/apt/sources.list
+      rm -f /etc/apt/sources.list.d/debian.sources
+      printf "Acquire::Check-Valid-Until \\\"false\\\";\\nAcquire::Check-Date \\\"false\\\";\\nAcquire::Retries \\\"5\\\";\\n" > /etc/apt/apt.conf.d/99equate-snapshot
+      apt-get update
+      mkdir -p /out/partial
+      apt-get -y --download-only -o Dir::Cache::archives=/out install docker.io open-vm-tools openssh-server openssl age zstd ca-certificates curl
+      rm -rf /out/partial
+      : > /out/Packages
+      for deb in /out/*.deb; do
+        dpkg-deb -f "$deb" >> /out/Packages
+        printf "Filename: ./%s\\nSize: %s\\nSHA256: %s\\n\\n" "$(basename "$deb")" "$(stat -c %s "$deb")" "$(sha256sum "$deb" | cut -d " " -f1)" >> /out/Packages
+      done
+      gzip -n -9 -c /out/Packages > /out/Packages.gz
+      chmod -R a+rX /out
+    '
+fi
+for package in docker.io open-vm-tools openssh-server openssl age zstd ca-certificates curl; do
+  if ! gzip -dc "${apt_repo}/Packages.gz" | awk -v package="${package}" 'BEGIN { RS="" } $0 ~ ("^Package: " package "\n") { found=1 } END { exit !found }'; then
+    echo "offline APT repository is missing required package: ${package}" >&2
+    exit 1
+  fi
+done
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/equate-iso.XXXXXX")"
+trap 'rm -rf "${work}"' EXIT
+installer="${work}/installer"
+assets="${installer}/assets"
+mkdir -p "${assets}"
+
+cp -a "${release}" "${installer}/release"
+install -m 0755 appliance/scripts/install-target "${installer}/install-target"
+install -m 0755 appliance/scripts/equate-init "${assets}/equate-init"
+install -m 0755 appliance/scripts/equate-stack "${assets}/equate-stack"
+install -m 0755 appliance/scripts/equate-release-load "${assets}/equate-release-load"
+install -m 0755 appliance/scripts/equate-login "${assets}/equate-login"
+install -m 0755 "${equate_binary}" "${assets}/equate"
+install -m 0755 "${collector_binary}" "${assets}/collector"
+install -m 0755 "${compose_plugin}" "${assets}/docker-compose"
+install -m 0644 "${release}/application.yaml" "${assets}/application.yaml"
+install -m 0644 deployments/appliance/systemd/equate-init.service "${assets}/equate-init.service"
+install -m 0644 deployments/appliance/systemd/equate-release-load.service "${assets}/equate-release-load.service"
+install -m 0644 deployments/appliance/systemd/equate-stack.service "${assets}/equate-stack.service"
+install -m 0644 deployments/appliance/systemd/equate-manager.service "${assets}/equate-manager.service"
+install -m 0644 deployments/appliance/systemd/equate-console@.service "${assets}/equate-console@.service"
+install -m 0644 deployments/appliance/systemd/50-equate-ssh.conf "${assets}/50-equate-ssh.conf"
+install -m 0644 deployments/appliance/systemd/20-equate-dhcp.network "${assets}/20-equate-dhcp.network"
+tar -C "${installer}" -cf "${work}/equate-installer.tar" .
+
+cat >"${work}/preseed.cfg" <<'EOF'
+d-i debian-installer/locale string en_US.UTF-8
+d-i keyboard-configuration/xkb-keymap select us
+d-i netcfg/enable boolean false
+d-i netcfg/get_hostname string equate
+d-i netcfg/get_domain string local
+d-i mirror/country string manual
+d-i apt-setup/use_mirror boolean false
+d-i apt-setup/cdrom/set-first boolean true
+d-i apt-setup/local0/repository string file:/cdrom/equate-apt ./
+d-i apt-setup/local0/comment string Equate offline package repository
+d-i apt-setup/local0/source boolean false
+d-i apt-setup/services-select multiselect
+d-i clock-setup/utc boolean true
+d-i time/zone string UTC
+d-i passwd/root-login boolean false
+d-i passwd/make-user boolean false
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman-auto/method string regular
+d-i partman-auto/expert_recipe string equate :: \
+  512 512 512 fat32 \
+    ${primary{ } ${bootable{ } \
+    method{ efi } format{ } . \
+  1024 10000 -1 ext4 \
+    ${primary{ } \
+    method{ format } format{ } \
+    use_filesystem{ } filesystem{ ext4 } \
+    mountpoint{ / } .
+d-i partman-auto/choose_recipe select equate
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i base-installer/install-recommends boolean false
+d-i pkgsel/upgrade select none
+d-i pkgsel/include string docker.io open-vm-tools openssh-server openssl age zstd ca-certificates curl
+d-i grub-installer/only_debian boolean true
+d-i finish-install/reboot_in_progress note
+# `partman-auto/disk` is registered only once the partitioner has loaded.  Do
+# not set it from preseed/early_command: doing so makes Debian Installer exit
+# and restart before it reaches the partitioner on ARM64 Fusion.
+d-i partman/early_command string disk="$(list-devices disk | head -n 1)"; debconf-set partman-auto/disk "${disk}"
+d-i preseed/late_command string mkdir -p /target/opt/equate/installer; tar -xf /cdrom/equate-installer.tar -C /target/opt/equate/installer; in-target /bin/bash /opt/equate/installer/install-target
+EOF
+
+cat >"${work}/grub.cfg" <<EOF
+set default=1
+set timeout=-1
+
+menuentry 'Install Equate Appliance - Erases First Disk' {
+    search --file --set=root /.disk/info
+    linux /${installer_kernel}/vmlinuz auto=true priority=critical preseed/file=/cdrom/preseed.cfg
+    initrd /${installer_kernel}/initrd.gz
+}
+
+menuentry 'Cancel - reboot without installing' {
+    reboot
+}
+EOF
+
+name="Equate-Appliance-${version}-${arch}.iso"
+final_iso="${dist_dir}/${name}"
+rm -f "${final_iso}"
+xorriso -indev "${dvd_path}" -outdev "${final_iso}" \
+  -map "${work}/preseed.cfg" /preseed.cfg \
+  -map "${work}/equate-installer.tar" /equate-installer.tar \
+  -map "${apt_repo}" /equate-apt \
+  -map "${work}/grub.cfg" /boot/grub/grub.cfg \
+  -boot_image any replay \
+  -commit -end
+
+verify_dir="${work}/verify"
+mkdir -p "${verify_dir}"
+el_torito_report=$(xorriso -indev "${final_iso}" -report_el_torito plain 2>&1)
+grep -qi 'EFI' <<<"${el_torito_report}"
+efi_listing=$(xorriso -indev "${final_iso}" -find /boot/grub/efi.img -type f -exec lsdl 2>/dev/null)
+grep -q efi.img <<<"${efi_listing}"
+xorriso -osirrox on -indev "${final_iso}" -extract /boot/grub/efi.img "${verify_dir}/efi.img" >/dev/null 2>&1
+efi_marker=$(printf '%s' "${efi_boot}" | tr -d '.' | tr '[:lower:]' '[:upper:]')
+efi_strings=$(strings "${verify_dir}/efi.img")
+# FAT's 8.3 directory entries sometimes render the extension with a space
+# (for example, "BOOTX64 EFI") and sometimes without one.  Normalize that
+# cosmetic difference before checking that the architecture-specific EFI
+# loader is present.
+efi_strings_normalized=$(printf '%s' "${efi_strings}" | tr -d '[:space:].')
+grep -q "${efi_marker}" <<<"${efi_strings_normalized}"
+xorriso -osirrox on -indev "${final_iso}" -extract /boot/grub/grub.cfg "${verify_dir}/grub.cfg" >/dev/null 2>&1
+grep -F 'Install Equate Appliance - Erases First Disk' "${verify_dir}/grub.cfg" >/dev/null
+xorriso -osirrox on -indev "${final_iso}" -extract /equate-installer.tar "${verify_dir}/equate-installer.tar" >/dev/null 2>&1
+apt_listing=$(xorriso -indev "${final_iso}" -find /equate-apt/Packages.gz -type f -exec lsdl 2>/dev/null)
+grep -q Packages.gz <<<"${apt_listing}"
+tar -tf "${verify_dir}/equate-installer.tar" >"${verify_dir}/installer-files.txt"
+grep -Eq '^\./release/(manifest\.json|checksums\.txt)$' "${verify_dir}/installer-files.txt"
+if grep -Eq '(^|/)(secrets/.*\.age|identity\.cred)$' "${verify_dir}/installer-files.txt"; then
+  echo "installer archive contains a secret" >&2
+  exit 1
+fi
+mkdir "${verify_dir}/payload"
+tar -xf "${verify_dir}/equate-installer.tar" -C "${verify_dir}/payload"
+(cd "${verify_dir}/payload/release" && shasum -a 256 -c checksums.txt >/dev/null)
+
+cat >"${dist_dir}/${name}.validation" <<EOF
+architecture=${arch}
+version=${version}
+uefi=ok
+offline_packages=ok
+release_checksums=ok
+secrets=absent
+cloud_init=not_selected
+boot_confirmation=ok
+base_dvd_sha512=${dvd_sha512}
+EOF
+
+shasum -a 256 "${final_iso}" >"${dist_dir}/${name}.sha256"

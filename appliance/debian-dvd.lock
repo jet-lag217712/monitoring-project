@@ -1,0 +1,8 @@
+# Debian 12.10 DVD-1 is the immutable, UEFI-capable base for the appliance
+# installer. The mirror may be overridden at build time, but the checksum may
+# not: every downloaded base image is verified before it is remastered.
+debian_version=12.10.0
+debian_snapshot=20250320T000000Z
+debian_dvd_mirror=https://mirror.pilotfiber.com/debian-cd
+debian_amd64_dvd1_sha512=fdfd6ff4f794e0f3253a68a8f4e8e1f78bcb99f5e44e1bde2337168059da390b232da714f7da3206076de9113c952c38c0603d4f405c1922456e42894a678eaa
+debian_arm64_dvd1_sha512=4a0b6efe35e64f173fe0b287e56b95c02c246cfc1175780cb5581e68fd545ee1544cce044e7f48e60872ac123a9559fb30e8eec18678517b881309f3225fa095

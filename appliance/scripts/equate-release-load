@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Load and activate the initial immutable release after Docker is available.
+set -euo pipefail
+umask 077
+
+releases=${EQUATE_RELEASES:-/opt/equate/releases}
+state=${EQUATE_DATA:-/var/lib/equate}/release-loader
+current="${releases}/current"
+
+choose_initial_release() {
+  local candidates=()
+  local entry
+  shopt -s nullglob
+  for entry in "${releases}"/*; do
+    [[ -d "${entry}" ]] && candidates+=("${entry}")
+  done
+  shopt -u nullglob
+  [[ ${#candidates[@]} -eq 1 ]] || {
+    echo "cannot choose an initial release" >&2
+    exit 1
+  }
+  printf '%s\n' "${candidates[0]}"
+}
+
+if [[ -L "${current}" ]]; then
+  release="$(readlink -f "${current}")"
+else
+  release="$(choose_initial_release)"
+fi
+
+[[ -f "${release}/VERSION" && -f "${release}/checksums.txt" && -d "${release}/images" ]] || {
+  echo "initial Equate release is incomplete" >&2
+  exit 1
+}
+version="$(tr -d '\n' <"${release}/VERSION")"
+[[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][A-Za-z0-9.-]+)?$ ]] || {
+  echo "invalid release version" >&2
+  exit 1
+}
+[[ "$(readlink -f "$(dirname "${release}")")" == "$(readlink -f "${releases}")" ]] || {
+  echo "release escapes release root" >&2
+  exit 1
+}
+
+install -d -m 0700 "${state}"
+marker="${state}/${version}.loaded"
+if [[ ! -f "${marker}" ]]; then
+  (cd "${release}" && sha256sum -c checksums.txt)
+  shopt -s nullglob
+  images=("${release}/images/"*.tar)
+  shopt -u nullglob
+  [[ ${#images[@]} -gt 0 ]] || { echo "release has no OCI images" >&2; exit 1; }
+  for image in "${images[@]}"; do
+    docker load --input "${image}"
+  done
+  find "${release}" -type f -exec chmod 0444 {} +
+  find "${release}" -type d -exec chmod 0555 {} +
+  touch "${marker}"
+  chmod 0600 "${marker}"
+fi
+
+if [[ ! -L "${current}" ]]; then
+  pending="${releases}/.current-next"
+  rm -f "${pending}"
+  ln -s "${version}" "${pending}"
+  # current is absent in this branch, so plain rename is an atomic, portable
+  # replacement without GNU mv's non-portable -T flag.
+  mv -f "${pending}" "${current}"
+fi

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+EQUATE_ETC=/etc/equate
+EQUATE_SECRETS=${EQUATE_ETC}/secrets
+EQUATE_RUN=/run/equate
+EQUATE_RENDERED=${EQUATE_RUN}/rendered
+EQUATE_DATA=/var/lib/equate
+
+install -d -m 0750 "${EQUATE_ETC}" "${EQUATE_DATA}" "${EQUATE_DATA}/postgres" "${EQUATE_DATA}/core" "${EQUATE_DATA}/backups" "${EQUATE_DATA}/updates" "${EQUATE_DATA}/cache"
+install -d -m 0700 "${EQUATE_SECRETS}" "${EQUATE_RUN}" "${EQUATE_RENDERED}" "${EQUATE_RENDERED}/certificates" "${EQUATE_RUN}/sockets"
+install -d -m 0750 "${EQUATE_ETC}/certificates"
+install -d -m 0750 "${EQUATE_RUN}/manager"
+chown 999:999 "${EQUATE_DATA}/postgres"
+chown 65532:65532 "${EQUATE_DATA}/core" "${EQUATE_RUN}/sockets"
+chown root:equate "${EQUATE_RUN}/manager"
+
+if [[ ! -f "${EQUATE_SECRETS}/identity.cred" ]]; then
+  age-keygen -o "${EQUATE_RUN}/identity.txt" >/dev/null
+  systemd-creds encrypt --name=equate-age-identity "${EQUATE_RUN}/identity.txt" "${EQUATE_SECRETS}/identity.cred"
+  rm -f "${EQUATE_RUN}/identity.txt"
+fi
+systemd-creds decrypt "${EQUATE_SECRETS}/identity.cred" "${EQUATE_RUN}/identity.txt"
+chmod 0600 "${EQUATE_RUN}/identity.txt"
+
+recipient="$(age-keygen -y "${EQUATE_RUN}/identity.txt")"
+write_secret() {
+  local name=$1 value=$2
+  if [[ ! -f "${EQUATE_SECRETS}/${name}.age" ]]; then
+    printf '%s' "${value}" | age -r "${recipient}" -o "${EQUATE_SECRETS}/${name}.age"
+    chmod 0600 "${EQUATE_SECRETS}/${name}.age"
+  fi
+}
+read_secret() {
+  age -d -i "${EQUATE_RUN}/identity.txt" "${EQUATE_SECRETS}/$1.age"
+}
+
+write_secret postgres_password "$(openssl rand -base64 36)"
+postgres_password="$(read_secret postgres_password)"
+
+cat >"${EQUATE_RENDERED}/postgres.env" <<EOF
+POSTGRES_USER=equate
+POSTGRES_PASSWORD=${postgres_password}
+POSTGRES_DB=equate
+EOF
+cat >"${EQUATE_RENDERED}/database-admin.env" <<EOF
+DATABASE_URL=postgres://equate:${postgres_password}@postgres:5432/equate?sslmode=disable
+EOF
+cp "${EQUATE_RENDERED}/database-admin.env" "${EQUATE_RENDERED}/api.env"
+cp "${EQUATE_RENDERED}/database-admin.env" "${EQUATE_RENDERED}/core.env"
+if [[ -f "${EQUATE_SECRETS}/snmp.community.age" ]]; then
+  printf 'SNMP_COMMUNITY=%s\n' "$(read_secret snmp.community)" >>"${EQUATE_RENDERED}/core.env"
+fi
+if [[ -f "${EQUATE_SECRETS}/snmp.discovery-community.age" ]]; then
+  printf 'SNMP_DISCOVERY_COMMUNITY=%s\n' "$(read_secret snmp.discovery-community)" >>"${EQUATE_RENDERED}/core.env"
+fi
+chmod 0600 "${EQUATE_RENDERED}"/*.env
+
+# TLS private keys remain encrypted at rest. Before SNMP setup imports a
+# client-CA leaf certificate, provide an ephemeral bootstrap certificate so the
+# dashboard service always starts but Google sign-in remains unavailable.
+if [[ -f "${EQUATE_SECRETS}/tls.key.age" && -f "${EQUATE_ETC}/certificates/tls.crt" ]]; then
+  read_secret tls.key >"${EQUATE_RENDERED}/certificates/tls.key"
+  cp "${EQUATE_ETC}/certificates/tls.crt" "${EQUATE_RENDERED}/certificates/tls.crt"
+else
+  openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
+    -keyout "${EQUATE_RENDERED}/certificates/tls.key" \
+    -out "${EQUATE_RENDERED}/certificates/tls.crt" \
+    -subj "/CN=equate-bootstrap.local" >/dev/null 2>&1
+fi
+chmod 0600 "${EQUATE_RENDERED}/certificates/tls.key"
+chmod 0644 "${EQUATE_RENDERED}/certificates/tls.crt"
+
+if [[ ! -f "${EQUATE_ETC}/application.yaml" ]]; then
+  # This is plaintext, non-secret Equate configuration. The unprivileged core
+  # service needs read access; credentials are rendered separately under /run.
+  install -m 0644 /usr/share/equate/application.yaml "${EQUATE_ETC}/application.yaml"
+fi
+touch "${EQUATE_DATA}/.initialized"

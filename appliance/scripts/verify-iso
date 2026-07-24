@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Full media inspection runs inside the pinned ISO builder because macOS does
+# not ship xorriso. This validates the signed build record emitted by that step.
+set -euo pipefail
+
+iso=${1:?ISO path is required}
+arch=${2:?architecture is required}
+version=${3:?version is required}
+validation="${iso}.validation"
+
+[[ -f "${iso}" ]] || { echo "missing ISO: ${iso}" >&2; exit 1; }
+[[ -f "${validation}" ]] || { echo "missing ISO validation record: ${validation}" >&2; exit 1; }
+grep -Fx "architecture=${arch}" "${validation}" >/dev/null
+grep -Fx "version=${version}" "${validation}" >/dev/null
+grep -Fx 'uefi=ok' "${validation}" >/dev/null
+grep -Fx 'offline_packages=ok' "${validation}" >/dev/null
+grep -Fx 'release_checksums=ok' "${validation}" >/dev/null
+grep -Fx 'secrets=absent' "${validation}" >/dev/null
+# The stock Debian DVD may carry a cloud-init package, but the appliance
+# installer neither selects it nor permits it through its offline package list.
+grep -Fx 'cloud_init=not_selected' "${validation}" >/dev/null
+grep -Fx 'boot_confirmation=ok' "${validation}" >/dev/null

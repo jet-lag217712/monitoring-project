@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize Equate appliance mutable state
+After=local-fs.target
+Before=equate-stack.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/equate/equate-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

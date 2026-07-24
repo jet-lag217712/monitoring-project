@@ -1,0 +1,19 @@
+[Unit]
+Description=Equate restricted appliance console on %I
+After=equate-stack.service
+Wants=equate-stack.service
+
+[Service]
+Type=idle
+# The physical VMware console is the privileged management surface. Restricted
+# SSH still logs in as the non-shell equate user and cannot open a Linux shell.
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+Restart=always
+RestartSec=1
+TTYPath=/dev/%I
+TTYReset=yes
+TTYVHangup=yes
+KillMode=process
+
+[Install]
+WantedBy=getty.target

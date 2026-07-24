@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Runs inside the Debian Installer target after the remastered Debian DVD has
+# installed the local package set. It deliberately never accesses a network or starts Docker.
+set -euo pipefail
+umask 077
+
+installer=/opt/equate/installer
+assets="${installer}/assets"
+release="${installer}/release"
+
+[[ -d "${assets}" ]] || { echo "missing appliance assets" >&2; exit 1; }
+[[ -f "${release}/VERSION" ]] || { echo "missing initial release" >&2; exit 1; }
+
+# A minimal Debian installation does not include cloud-init, but purge it if a
+# future installer package set gains it. This uses only the local package DB.
+apt-get purge -y cloud-init cloud-initramfs-copymods cloud-initramfs-dyn-netconf || true
+apt-get autoremove -y
+
+install -d -m 0755 /usr/lib/equate /usr/share/equate /opt/equate/releases /var/lib/equate
+install -m 0755 "${assets}/equate-init" /usr/lib/equate/equate-init
+install -m 0755 "${assets}/equate-stack" /usr/lib/equate/equate-stack
+install -m 0755 "${assets}/equate-release-load" /usr/lib/equate/equate-release-load
+install -m 0755 "${assets}/equate-login" /usr/local/bin/equate-login
+install -m 0755 "${assets}/equate" /usr/local/bin/equate
+install -m 0755 "${assets}/collector" /usr/local/bin/collector
+install -d -m 0755 /usr/local/lib/docker/cli-plugins
+install -m 0755 "${assets}/docker-compose" /usr/local/lib/docker/cli-plugins/docker-compose
+install -m 0644 "${assets}/application.yaml" /usr/share/equate/application.yaml
+install -m 0644 "${assets}/equate-init.service" /etc/systemd/system/equate-init.service
+install -m 0644 "${assets}/equate-release-load.service" /etc/systemd/system/equate-release-load.service
+install -m 0644 "${assets}/equate-stack.service" /etc/systemd/system/equate-stack.service
+install -m 0644 "${assets}/equate-manager.service" /etc/systemd/system/equate-manager.service
+install -m 0644 "${assets}/equate-console@.service" /etc/systemd/system/equate-console@.service
+install -d -m 0755 /etc/ssh/sshd_config.d
+install -m 0644 "${assets}/50-equate-ssh.conf" /etc/ssh/sshd_config.d/50-equate-ssh.conf
+install -d -m 0755 /etc/systemd/network
+install -m 0644 "${assets}/20-equate-dhcp.network" /etc/systemd/network/20-equate-dhcp.network
+
+if ! id -u equate >/dev/null 2>&1; then
+  useradd --create-home --shell /usr/local/bin/equate-login equate
+fi
+passwd --lock equate
+usermod --shell /usr/local/bin/equate-login root
+
+version="$(tr -d '\n' <"${release}/VERSION")"
+[[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][A-Za-z0-9.-]+)?$ ]] || {
+  echo "invalid initial release version" >&2
+  exit 1
+}
+destination="/opt/equate/releases/${version}"
+[[ ! -e "${destination}" ]] || { echo "initial release already exists" >&2; exit 1; }
+install -d -m 0755 "${destination}"
+cp -a "${release}/." "${destination}/"
+chown -R root:root "${destination}"
+
+# Services must only start on the installed system. `enable` updates symlinks
+# in the target root; it does not start processes while the installer is active.
+systemctl disable ssh.service || true
+systemctl disable getty@tty1.service || true
+systemctl enable systemd-networkd.service systemd-networkd-wait-online.service docker.service equate-init.service equate-release-load.service equate-manager.service equate-stack.service equate-console@tty1.service
+systemctl daemon-reload
+
+# The release loader owns checksum verification, OCI image loading, immutable
+# permissions, and first activation after the installed system has booted.
+rm -rf "${installer}"
+apt-get clean
+rm -rf /var/lib/apt/lists/*

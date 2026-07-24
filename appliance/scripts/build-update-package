@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+release_dir=${1:?release directory is required}
+output=${2:?output .eqa path is required}
+private_key=${3:?Ed25519 private key path is required}
+
+version=$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "${release_dir}/manifest.json" | head -n 1)
+[[ ${version} =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][A-Za-z0-9.-]+)?$ ]] || { echo "invalid release manifest version" >&2; exit 2; }
+
+work=$(mktemp -d)
+trap 'rm -rf "${work}"' EXIT
+install -d "${work}/release"
+cp -a "${release_dir}/." "${work}/release/"
+
+manifest="${work}/manifest.json"
+{
+  printf '{"version":"%s","files":{' "${version}"
+  first=true
+  while IFS= read -r -d '' file; do
+    rel=${file#"${work}/release/"}
+    digest=$(shasum -a 256 "${file}" | awk '{print $1}')
+    if [[ ${first} == true ]]; then first=false; else printf ','; fi
+    printf '"%s":"%s"' "${rel}" "${digest}"
+  done < <(find "${work}/release" -type f -print0 | sort -z)
+  printf '}}\n'
+} >"${manifest}"
+
+openssl pkeyutl -sign -rawin -inkey "${private_key}" -in "${manifest}" -out "${work}/manifest.sig.raw"
+base64 <"${work}/manifest.sig.raw" | tr -d '\n' >"${work}/manifest.sig"
+tar -C "${work}" -cf "${output}" manifest.json manifest.sig release
+chmod 0600 "${output}"
