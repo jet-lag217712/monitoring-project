@@ -48,3 +48,5 @@ deployments/**/.env
 **/override.tf.json
 **/*_override.tf
 **/*_override.tf.json
+.cursor/debug-36805e.log
+.cursor/debug-36805e.log
