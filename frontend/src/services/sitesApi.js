@@ -2,7 +2,7 @@ import { apiUrl } from '../config/api.js'
 
 let authTokenProvider = () => null
 
-/** Register a function that returns a legacy bearer token (or null). */
+/** Register a function that returns the current Google ID token (or null). */
 export function setAuthTokenProvider(provider) {
   authTokenProvider = typeof provider === 'function' ? provider : () => null
 }
@@ -22,7 +22,7 @@ async function fetchJson(path, errorMessage) {
     headers.Authorization = `Bearer ${token}`
   }
 
-  const res = await fetch(apiUrl(path), { headers, credentials: 'include' })
+  const res = await fetch(apiUrl(path), { headers })
 
   if (res.status === 401) {
     throw new ApiError('Unauthorized', 401)

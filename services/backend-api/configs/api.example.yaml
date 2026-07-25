@@ -7,13 +7,9 @@ admin:
   listen: ":9092"
 
 auth:
-  # The appliance uses local browser sessions; development may choose disabled.
+  # Set true in shared/dev/prod. Local integration tests may leave this false.
   enabled: true
-  mode: "local"
-  cookie_name: "__Host-equate_session"
-  session_ttl: 12h
-  cookie_secure: true
-  # Legacy bearer-token development mode uses GOOGLE_CLIENT_ID when selected.
+  # Prefer GOOGLE_CLIENT_ID env; yaml value is a fallback for local-only use.
   google_client_id_env: "GOOGLE_CLIENT_ID"
   google_client_id: ""
 

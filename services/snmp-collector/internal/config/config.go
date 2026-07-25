@@ -61,10 +61,6 @@ type Config struct {
 	Publisher PublisherConfig `yaml:"publisher"`
 	Buffer    BufferConfig    `yaml:"buffer"`
 	MQTT      MQTTConfig      `yaml:"mqtt"`
-	// Auth belongs to the API, but the appliance intentionally shares one
-	// application configuration file with the core. Keep it opaque here so the
-	// strict collector decoder accepts the API-owned block without using it.
-	Auth map[string]any `yaml:"auth"`
 
 	Devices []DeviceConfig `yaml:"devices"`
 
@@ -102,12 +98,12 @@ type DiscoveryConfig struct {
 
 // PublisherConfig selects the publish backend and poller publish timeout.
 type PublisherConfig struct {
-	Mode             string        `yaml:"mode"` // stdout | mqtt | inprocess
+	Mode             string        `yaml:"mode"` // stdout | mqtt
 	Timeout          time.Duration `yaml:"timeout"`
 	TelemetryVersion string        `yaml:"telemetry_version"` // v1 | v2 | both
 }
 
-// BufferConfig controls the durable local SQLite buffer (mqtt and inprocess modes).
+// BufferConfig controls the durable local SQLite buffer (mqtt mode).
 type BufferConfig struct {
 	Path          string        `yaml:"path"`
 	MaxEntries    int           `yaml:"max_entries"`
@@ -746,9 +742,9 @@ func (c *Config) validate(requireRuntimeSecrets bool) error {
 		return fmt.Errorf("publisher.timeout must be between 1ns and %s", maxSNMPTimeout)
 	}
 	switch c.Publisher.Mode {
-	case "stdout", "mqtt", "inprocess":
+	case "stdout", "mqtt":
 	default:
-		return fmt.Errorf("publisher.mode must be \"stdout\", \"mqtt\", or \"inprocess\"")
+		return fmt.Errorf("publisher.mode must be \"stdout\" or \"mqtt\"")
 	}
 	switch c.Publisher.TelemetryVersion {
 	case "v1", "v2", "both":
@@ -760,15 +756,10 @@ func (c *Config) validate(requireRuntimeSecrets bool) error {
 			return err
 		}
 	}
-	if c.Publisher.Mode == "inprocess" {
-		if err := c.validateBuffer(); err != nil {
-			return err
-		}
-	}
 	if err := validateDiscovery(c.Discovery); err != nil {
 		return err
 	}
-	if len(c.Devices) == 0 && len(c.Discovery.AllowedCIDRs) == 0 && c.Publisher.Mode != "inprocess" {
+	if len(c.Devices) == 0 && len(c.Discovery.AllowedCIDRs) == 0 {
 		return fmt.Errorf("at least one device is required")
 	}
 	if err := validateDeviceSource(c.Devices, "devices"); err != nil {
@@ -807,8 +798,17 @@ func (c *Config) validateMQTT() error {
 	if c.MQTT.QoS != 1 {
 		return fmt.Errorf("mqtt.qos must be 1")
 	}
-	if err := c.validateBuffer(); err != nil {
-		return err
+	if c.Buffer.MaxEntries < 0 {
+		return fmt.Errorf("buffer.max_entries must be >= 0")
+	}
+	if c.Buffer.BusyTimeoutMS <= 0 {
+		return fmt.Errorf("buffer.busy_timeout_ms must be positive")
+	}
+	if c.Buffer.BatchSize <= 0 {
+		return fmt.Errorf("buffer.batch_size must be positive")
+	}
+	if c.Buffer.IdleBackoff <= 0 {
+		return fmt.Errorf("buffer.idle_backoff must be positive")
 	}
 	if c.MQTT.Reconnect.Initial <= 0 || c.MQTT.Reconnect.Max <= 0 {
 		return fmt.Errorf("mqtt.reconnect.initial and max must be positive")
@@ -821,22 +821,6 @@ func (c *Config) validateMQTT() error {
 	}
 	if (c.MQTT.TLS.CertFile == "") != (c.MQTT.TLS.KeyFile == "") {
 		return fmt.Errorf("mqtt.tls.cert_file and key_file must be configured together")
-	}
-	return nil
-}
-
-func (c *Config) validateBuffer() error {
-	if c.Buffer.MaxEntries < 0 {
-		return fmt.Errorf("buffer.max_entries must be >= 0")
-	}
-	if c.Buffer.BusyTimeoutMS <= 0 {
-		return fmt.Errorf("buffer.busy_timeout_ms must be positive")
-	}
-	if c.Buffer.BatchSize <= 0 {
-		return fmt.Errorf("buffer.batch_size must be positive")
-	}
-	if c.Buffer.IdleBackoff <= 0 {
-		return fmt.Errorf("buffer.idle_backoff must be positive")
 	}
 	return nil
 }

@@ -115,30 +115,6 @@ devices:
 	}
 }
 
-func TestSharedApplianceConfigAcceptsAPISessionAuthBlock(t *testing.T) {
-	path := writeTempConfig(t, `
-site_id: appliance
-auth:
-  enabled: true
-  mode: google_session
-  google_client_id: equate.apps.googleusercontent.com
-  allowed_domains: [example.com]
-collector:
-  id: equate-appliance
-devices:
-  - id: dev-001
-    host: 127.0.0.1
-    community_env: SNMP_COMMUNITY
-`)
-	cfg, err := LoadForValidation(path)
-	if err != nil {
-		t.Fatalf("LoadForValidation: %v", err)
-	}
-	if cfg.Auth["mode"] != "google_session" || cfg.Auth["google_client_id"] != "equate.apps.googleusercontent.com" {
-		t.Fatalf("opaque auth block was not retained: %#v", cfg.Auth)
-	}
-}
-
 func TestMQTTModeRequiresPassword(t *testing.T) {
 	path := writeTempConfig(t, `
 site_id: "site-001"
