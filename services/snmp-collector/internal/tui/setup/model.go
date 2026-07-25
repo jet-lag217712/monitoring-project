@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -43,18 +44,11 @@ type model struct {
 	cidrInputs     []textinput.Model
 	siteFocus      int
 	thresholdInput textinput.Model
-	probeRateInput textinput.Model
-	probeBurstInput textinput.Model
 
-	sites          []SiteSpec
-	reviewResults  []string
-
-	workKind        workKind
-	workStep        int
-	workSites       []SiteSpec
-	progressCurrent int
-	progressTotal   int
-	progressLabel   string
+	sites         []SiteSpec
+	probeRate     string
+	probeBurst    string
+	reviewResults []string
 }
 
 func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
@@ -103,53 +97,25 @@ func newModel(deployDir string, theme tui.Theme, version string) model {
 	thresholdInput.Width = 8
 	thresholdInput.SetValue("65")
 
-	probeRateInput := styleTextInput(textinput.New(), theme)
-	probeRateInput.Placeholder = "probes per second"
-	probeRateInput.CharLimit = 6
-	probeRateInput.Width = 8
-	probeRateInput.SetValue("20")
-
-	probeBurstInput := styleTextInput(textinput.New(), theme)
-	probeBurstInput.Placeholder = "burst size"
-	probeBurstInput.CharLimit = 6
-	probeBurstInput.Width = 8
-	probeBurstInput.SetValue("10")
-
 	m := model{
-		deployDir:       deployDir,
-		theme:           theme,
-		version:         version,
-		splash:          true,
-		step:            stepEnv,
-		spinner:         sp,
-		envInputs:       envInputs,
-		siteCountInput:  siteCountInput,
-		thresholdInput:  thresholdInput,
-		probeRateInput:  probeRateInput,
-		probeBurstInput: probeBurstInput,
+		deployDir:      deployDir,
+		theme:          theme,
+		version:        version,
+		splash:         true,
+		step:           stepEnv,
+		spinner:        sp,
+		envInputs:      envInputs,
+		siteCountInput: siteCountInput,
+		thresholdInput: thresholdInput,
+		probeRate:      "5",
+		probeBurst:     "2",
 	}
 	m.resizeSiteInputs(defaultSiteCount)
 	return m
 }
 
 func (m *model) siteFieldCount() int {
-	return 1 + 2*len(m.cidrInputs) + 2
-}
-
-func (m model) parsedProbeRate() float64 {
-	rate, _ := strconv.ParseFloat(strings.TrimSpace(m.probeRateInput.Value()), 64)
-	if rate <= 0 {
-		return 20
-	}
-	return rate
-}
-
-func (m model) parsedProbeBurst() int {
-	burst, _ := strconv.Atoi(strings.TrimSpace(m.probeBurstInput.Value()))
-	if burst <= 0 {
-		return 10
-	}
-	return burst
+	return 1 + 2*len(m.cidrInputs)
 }
 
 func (m *model) resizeSiteInputs(count int) {
@@ -222,14 +188,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r", "R":
 				m.err = ""
 				m.loading = true
-				m.workKind = workReview
-				m.workStep = 0
-				m.workSites = nil
-				m.reviewResults = nil
-				m.progressCurrent = 0
-				m.progressTotal = 1
-				m.progressLabel = "Retrying discovery…"
-				return m, tea.Batch(m.runWorkStep(), m.spinner.Tick)
+				return m, m.runReview()
 			case "s", "S":
 				m.err = ""
 				m.body = "Skipped discovery; add devices later from the operator TUI."
@@ -251,38 +210,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.loading {
 			return m, cmd
 		}
-	case workProgressMsg:
-		if len(msg.sites) > 0 {
-			m.workSites = msg.sites
-		}
-		if len(msg.lines) > 0 {
-			m.reviewResults = msg.lines
-		}
-		m.progressCurrent = msg.current
-		m.progressTotal = msg.total
-		m.progressLabel = msg.label
-		if msg.next {
-			m.workStep++
-			return m, tea.Batch(m.runWorkStep(), m.spinner.Tick)
-		}
-		m.loading = false
-		m.workKind = workNone
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			if m.step == stepReview && isDiscoveryRetryable(msg.err) {
-				m.err = "discovery timed out or was interrupted"
-			}
-			return m, nil
-		}
-		m.err = ""
-		m.body = msg.body
-		switch m.step {
-		case stepStart:
-			m.step = stepReview
-		case stepReview:
-			m.step = stepThresholds
-		}
-		return m, nil
 	case asyncDoneMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -297,8 +224,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.step {
 		case stepSites:
 			m.step = stepStart
+			return m, nil
+		case stepStart:
+			m.step = stepReview
+			return m, nil
+		case stepReview:
+			m.step = stepThresholds
+			return m, nil
 		case stepThresholds:
 			m.step = stepDone
+			return m, nil
 		}
 		return m, nil
 	}
@@ -370,11 +305,7 @@ func (m model) updateSites(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
-		if m.siteFocus == m.siteFieldCount()-2 {
-			m.probeRateInput, cmd = m.probeRateInput.Update(msg)
-		} else if m.siteFocus == m.siteFieldCount()-1 {
-			m.probeBurstInput, cmd = m.probeBurstInput.Update(msg)
-		} else if m.siteFocus%2 == 1 {
+		if m.siteFocus%2 == 1 {
 			idx := (m.siteFocus - 1) / 2
 			m.siteIDInputs[idx], cmd = m.siteIDInputs[idx].Update(msg)
 		} else {
@@ -383,7 +314,7 @@ func (m model) updateSites(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-	lastFocus := m.siteFieldCount() - 1
+	lastFocus := 2 * len(m.cidrInputs)
 	switch key.String() {
 	case "tab", "down":
 		m.siteFocus = (m.siteFocus + 1) % m.siteFieldCount()
@@ -407,10 +338,6 @@ func (m model) updateSites(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if count, err := parseSiteCount(m.siteCountInput.Value()); err == nil && m.siteCountInput.Value() != prev {
 			m.resizeSiteInputs(count)
 		}
-	} else if m.siteFocus == m.siteFieldCount()-2 {
-		m.probeRateInput, cmd = m.probeRateInput.Update(msg)
-	} else if m.siteFocus == m.siteFieldCount()-1 {
-		m.probeBurstInput, cmd = m.probeBurstInput.Update(msg)
 	} else if m.siteFocus%2 == 1 {
 		idx := (m.siteFocus - 1) / 2
 		m.siteIDInputs[idx], cmd = m.siteIDInputs[idx].Update(msg)
@@ -429,13 +356,7 @@ func (m model) updateStart(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key.String() == "enter" {
 		m.loading = true
 		m.err = ""
-		m.workKind = workStart
-		m.workStep = 0
-		m.workSites = nil
-		m.progressCurrent = 0
-		m.progressTotal = 1
-		m.progressLabel = "Starting…"
-		return m, tea.Batch(m.runWorkStep(), m.spinner.Tick)
+		return m, m.runStart()
 	}
 	return m, nil
 }
@@ -448,14 +369,7 @@ func (m model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key.String() == "enter" {
 		m.loading = true
 		m.err = ""
-		m.workKind = workReview
-		m.workStep = 0
-		m.workSites = nil
-		m.reviewResults = nil
-		m.progressCurrent = 0
-		m.progressTotal = 1
-		m.progressLabel = "Preparing discovery…"
-		return m, tea.Batch(m.runWorkStep(), m.spinner.Tick)
+		return m, m.runReview()
 	}
 	return m, nil
 }
@@ -489,22 +403,12 @@ func (m model) updateEnvFocus() model {
 
 func (m model) updateSiteFocus() model {
 	m.siteCountInput.Blur()
-	m.probeRateInput.Blur()
-	m.probeBurstInput.Blur()
 	for i := range m.siteIDInputs {
 		m.siteIDInputs[i].Blur()
 		m.cidrInputs[i].Blur()
 	}
 	if m.siteFocus == 0 {
 		m.siteCountInput.Focus()
-		return m
-	}
-	if m.siteFocus == m.siteFieldCount()-2 {
-		m.probeRateInput.Focus()
-		return m
-	}
-	if m.siteFocus == m.siteFieldCount()-1 {
-		m.probeBurstInput.Focus()
 		return m
 	}
 	if m.siteFocus%2 == 1 {
@@ -538,8 +442,14 @@ func (m model) persistEnvAndSites() tea.Cmd {
 	for i := range m.siteIDInputs {
 		siteIDs[i] = strings.TrimSpace(m.siteIDInputs[i].Value())
 	}
-	rate := m.parsedProbeRate()
-	burst := m.parsedProbeBurst()
+	rate, _ := strconv.ParseFloat(strings.TrimSpace(m.probeRate), 64)
+	if rate <= 0 {
+		rate = 5
+	}
+	burst, _ := strconv.Atoi(strings.TrimSpace(m.probeBurst))
+	if burst <= 0 {
+		burst = 2
+	}
 	return func() tea.Msg {
 		specs, err := BuildSiteSpecs(count, siteIDs, cidrs)
 		if err != nil {
@@ -557,22 +467,42 @@ func (m model) persistEnvAndSites() tea.Cmd {
 	}
 }
 
-func (m model) runWorkStep() tea.Cmd {
+func (m model) runStart() tea.Cmd {
 	deployDir := m.deployDir
-	step := m.workStep
-	kind := m.workKind
-	sites := m.workSites
-	lines := append([]string(nil), m.reviewResults...)
 	return func() tea.Msg {
-		switch kind {
-		case workStart:
-			return executeStartStep(deployDir, step, sites)
-		case workReview:
-			msg, _ := executeReviewStep(deployDir, step, sites, lines)
-			return msg
-		default:
-			return workProgressMsg{done: true, err: fmt.Errorf("unknown work kind")}
+		manifest, err := LoadManifest(deployDir)
+		if err != nil {
+			return asyncDoneMsg{err: err}
 		}
+		if err := startSiteCollectors(deployDir, manifest.Sites); err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		if err := waitForSites(deployDir, manifest.Sites, 3*time.Minute); err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		return asyncDoneMsg{body: fmt.Sprintf("Started %d collector container(s).", len(manifest.Sites))}
+	}
+}
+
+func (m model) runReview() tea.Cmd {
+	deployDir := m.deployDir
+	return func() tea.Msg {
+		if err := loadEnvFile(envPath(deployDir)); err != nil {
+			return asyncDoneMsg{err: fmt.Errorf("load .env: %w", err)}
+		}
+		manifest, err := LoadManifest(deployDir)
+		if err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		lines := make([]string, 0, len(manifest.Sites))
+		for _, spec := range manifest.Sites {
+			line, err := reviewSite(spec, deployDir)
+			if err != nil {
+				return asyncDoneMsg{err: err}
+			}
+			lines = append(lines, line)
+		}
+		return asyncDoneMsg{body: strings.Join(lines, "\n")}
 	}
 }
 
@@ -612,28 +542,18 @@ func (m model) View() string {
 		body.WriteString("\n\n")
 	}
 	if m.loading {
-		barWidth := 40
-		if m.width > 20 {
-			barWidth = min(50, m.width-10)
-		}
-		body.WriteString(renderProgressBar(th, m.progressCurrent, m.progressTotal, barWidth))
-		body.WriteString("\n")
 		body.WriteString(th.Spinner.Render(m.spinner.View()))
 		body.WriteString(" ")
-		label := m.progressLabel
-		if label == "" {
-			switch m.step {
-			case stepStart:
-				label = "Building image and waiting for all site collectors…"
-			case stepReview:
-				label = "Scanning each site CIDR and accepting devices…"
-			case stepThresholds:
-				label = "Applying threshold to all sites…"
-			default:
-				label = "working…"
-			}
+		switch m.step {
+		case stepStart:
+			body.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
+		case stepReview:
+			body.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
+		case stepThresholds:
+			body.WriteString(th.Muted.Render("Applying threshold to all sites…"))
+		default:
+			body.WriteString(th.Muted.Render("working…"))
 		}
-		body.WriteString(th.Muted.Render(label))
 		return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
 	}
 	switch m.step {
@@ -666,25 +586,13 @@ func (m model) View() string {
 			body.WriteString(m.cidrInputs[i].View())
 			body.WriteString("\n")
 		}
-		body.WriteString("\n")
-		body.WriteString(th.Title.Render("Discovery scan rate"))
-		body.WriteString("\n")
-		body.WriteString(th.Label.Render("probes/s"))
-		body.WriteString(" ")
-		body.WriteString(m.probeRateInput.View())
-		body.WriteString("  ")
-		body.WriteString(th.Label.Render("burst"))
-		body.WriteString(" ")
-		body.WriteString(m.probeBurstInput.View())
-		body.WriteString("\n")
-		body.WriteString(th.Muted.Render("higher values speed up lab scans (e.g. 50/s burst 20)"))
 		if m.body != "" {
-			body.WriteString("\n\n")
+			body.WriteString("\n")
 			body.WriteString(th.Value.Render(m.body))
 			body.WriteString("\n")
 		}
 		body.WriteString("\n")
-		body.WriteString(th.Muted.Render("tab next field · enter on burst to save artifacts"))
+		body.WriteString(th.Muted.Render("tab next field · enter on last CIDR to save artifacts"))
 	case stepStart, stepReview:
 		if m.step == stepStart {
 			body.WriteString(th.Title.Render("Step 3 - Starting collectors"))
@@ -697,14 +605,6 @@ func (m model) View() string {
 		} else {
 			body.WriteString(th.Title.Render("Step 4 - Review inventory"))
 			body.WriteString("\n")
-			if manifest, err := LoadManifest(m.deployDir); err == nil {
-				body.WriteString(th.Muted.Render(fmt.Sprintf(
-					"discovery %g/s burst %d",
-					manifest.ProbeRate,
-					manifest.ProbeBurst,
-				)))
-				body.WriteString("\n")
-			}
 			if m.body != "" {
 				body.WriteString(th.Value.Render(m.body))
 				body.WriteString("\n")
@@ -786,7 +686,7 @@ func (m model) viewSplash() string {
 	footerLine := footerMuted.Render("V."+ver+" · Made with ") + heart + footerMuted.Render(" in West Lafayette")
 	footer := lipgloss.Place(width, 1, lipgloss.Right, lipgloss.Center, footerLine)
 
-	bodyHeight := max(1, height-lipgloss.Height(footer)-tui.ViewTopPadding)
+	bodyHeight := max(1, height-lipgloss.Height(footer)-viewTopPadding)
 	body := lipgloss.Place(width, bodyHeight, lipgloss.Left, lipgloss.Top, headerBlock)
 	return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, body, footer))
 }
@@ -797,11 +697,4 @@ func formatVersion(version string) string {
 		return "1.5.0"
 	}
 	return version
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

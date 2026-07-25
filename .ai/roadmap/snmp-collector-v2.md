@@ -193,10 +193,12 @@ Add live CPU, memory, and temperature history to the existing device charts; liv
 
 Views and actions:
 
-- inventory: validation state, last poll, health, and dependency path;
+- inventory: source, validation state, last poll, profile, health, and dependency path;
+- device/interface detail: readings, selected/excluded interfaces, sensor components, and latest errors;
 - discovery: allowed-CIDR scan progress, candidate review, export, and managed-inventory acceptance;
-- transit: SQLite depth, MQTT connection, retry state, publish failures, and last successful flush;
-- settings: active revision, temperature thresholds, reload results, and validation diagnostics.
+- thresholds: edit global/default and per-device temperature thresholds with validation and explicit save/reload confirmation;
+- transport: SQLite depth, MQTT connection, retry state, publish failures, and last successful flush;
+- configuration: active revision, reload results, and validation diagnostics.
 
 Mutation commands require local OS access, use an explicit confirmation step, produce an audit entry without secrets, and cannot modify the static YAML source.
 

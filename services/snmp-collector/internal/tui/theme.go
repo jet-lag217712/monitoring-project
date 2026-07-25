@@ -208,7 +208,8 @@ func (t *Theme) buildStyles(salmonBg, okText, cautionText, alertText, unknownTex
 		Padding(0, 1)
 	t.TabActive = lipgloss.NewStyle().
 		Foreground(t.Salmon).
-		Bold(true)
+		Bold(true).
+		Underline(true)
 	t.TabIdle = lipgloss.NewStyle().Foreground(t.InkMuted)
 	t.Label = lipgloss.NewStyle().Foreground(t.InkMuted).Bold(true)
 	t.Value = lipgloss.NewStyle().Foreground(t.Ink)

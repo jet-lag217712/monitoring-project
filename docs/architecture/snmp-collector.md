@@ -45,7 +45,7 @@ transitions as MQTT v2 health envelopes when `publisher.telemetry_version` is
 
 `collector discover` scans configured CIDR allowlists only and resolves its SNMP community from `discovery.community_env` at probe time. Discovery uses SNMPv2c to read `sysObjectID`, `sysName`, and `sysDescr`, does not use ICMP or device writes, and applies target, timeout, retry, concurrency, and token-bucket rate/burst bounds before every probe. Candidates are persisted for review and may be exported as YAML or explicitly accepted into managed inventory through the atomic inventory workflow; discovery never silently activates a device or an LLDP-derived edge. The TUI/control plane orchestrates the same isolated workflow (`Scanner → Review → AcceptReviewed → WriteManagedInventory → Explicit Reload`).
 
-The TUI provides inventory, discovery, transit, and settings views over the versioned Unix NDJSON control protocol. Thresholds and configuration are edited from Settings. Mutations require local OS access, explicit prepare/commit confirmation bound to the active configuration revision, durable audit entries without secrets, and a save/reload step. It cannot modify static YAML.
+The TUI provides inventory, device/interface, discovery, thresholds, transport, and configuration views over the versioned Unix NDJSON control protocol. Mutations require local OS access, explicit prepare/commit confirmation bound to the active configuration revision, durable audit entries without secrets, and a save/reload step. It cannot modify static YAML.
 
 ## Delivery and observability
 

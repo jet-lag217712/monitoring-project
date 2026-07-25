@@ -207,17 +207,18 @@ collector setup -dir deployments/development/vxrail -theme auto   # first-boot w
 
 | Key | Action |
 |-----|--------|
-| `1`–`4` | Inventory, Discovery, Transit, Settings |
+| `1`–`6` | Inventory, Device, Discovery, Thresholds, Transport, Config |
 | `tab` / `←` `→` | Switch views |
 | `r` | Refresh |
 | `R` | `config.reload` |
 | `t` | Edit temperature threshold (text input → prepare → `y`/`n` commit) |
-| `S` / `A` / `E` | Discovery: scan / accept successful candidates / edit CIDR policy |
-| `d` | Edit upstream dependencies for the first inventory device |
+| `S` / `A` / `e` | Discovery: scan / accept successful / edit CIDR policy |
+| `d` | Edit device upstream dependencies (device/inventory views) |
+| `n` / `p` | Next/previous device (device view) |
 | `↑` `↓` | Scroll |
 | `q` | Quit |
 
-Branding: block-art `//EQUATE` banner, salmon accents, dashboard status colors
+Branding: salmon `//` mark + **Equate** wordmark, dashboard status colors
 (ok / caution / alert / unknown), adaptive light/dark from terminal background.
 Decision: [`.ai/decisions/collector-8.md`](../../.ai/decisions/collector-8.md).
 
@@ -325,7 +326,7 @@ writable volume.
 | `/readyz` fails in mqtt mode | MQTT disconnected, bad CA/password/broker, or buffer unavailable |
 | Reload rejected | Validation failed — prior snapshot stays active; fix managed/static YAML and retry |
 | Managed write fails | Path missing or not `0600` / not writable by collector UID (`65532` in compose) |
-| No devices in cloud UI | Check polls in TUI inventory view, MQTT connected in transit view, cloud ingestion |
+| No devices in cloud UI | Check polls in TUI device view, MQTT connected in transport view, cloud ingestion |
 
 ---
 

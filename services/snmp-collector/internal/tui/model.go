@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/equate/ogsd/services/snmp-collector/internal/control"
 )
 
@@ -19,9 +18,11 @@ type view int
 
 const (
 	viewInventory view = iota
+	viewDevice
 	viewDiscovery
-	viewTransit
-	viewSettings
+	viewThresholds
+	viewTransport
+	viewConfig
 )
 
 const autoRefreshInterval = 5 * time.Second
@@ -39,6 +40,7 @@ type model struct {
 	collectorID string
 	revision    string
 	deviceIDs   []string
+	deviceIdx   int
 
 	loading     bool
 	lastUpdated time.Time
@@ -109,10 +111,11 @@ func (m model) refresh() tea.Cmd {
 	view := m.view
 	client := m.client
 	theme := m.theme
+	deviceID := m.selectedDeviceID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		body, meta, err := fetchView(ctx, client, theme, view)
+		body, meta, err := fetchView(ctx, client, theme, view, deviceID)
 		if err != nil {
 			return refreshMsg{err: err.Error()}
 		}
@@ -133,7 +136,7 @@ type viewMeta struct {
 	deviceIDs   []string
 }
 
-func fetchView(ctx context.Context, client *control.Client, th Theme, v view) (string, viewMeta, error) {
+func fetchView(ctx context.Context, client *control.Client, th Theme, v view, deviceID string) (string, viewMeta, error) {
 	var meta viewMeta
 	switch v {
 	case viewInventory:
@@ -146,8 +149,32 @@ func fetchView(ctx context.Context, client *control.Client, th Theme, v view) (s
 		}
 		meta.revision = fmt.Sprint(resp.Result["config_revision"])
 		meta.deviceIDs = extractDeviceIDs(resp.Result)
-		populateMeta(ctx, client, &meta)
 		return formatInventory(th, resp.Result), meta, nil
+	case viewDevice:
+		list, err := client.Call(ctx, "1", "inventory.list", nil)
+		if err != nil {
+			return "", meta, err
+		}
+		if !list.OK {
+			return "", meta, fmt.Errorf("%s: %s", list.Error.Code, list.Error.Message)
+		}
+		meta.deviceIDs = extractDeviceIDs(list.Result)
+		meta.revision = fmt.Sprint(list.Result["config_revision"])
+		if len(meta.deviceIDs) == 0 {
+			return renderEmpty(th, "Device", "No devices configured."), meta, nil
+		}
+		id := deviceID
+		if id == "" {
+			id = meta.deviceIDs[0]
+		}
+		resp, err := client.Call(ctx, "2", "device.get", map[string]any{"device_id": id})
+		if err != nil {
+			return "", meta, err
+		}
+		if !resp.OK {
+			return "", meta, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+		}
+		return formatDevice(th, resp.Result), meta, nil
 	case viewDiscovery:
 		status, err := client.Call(ctx, "1", "discovery.status", nil)
 		if err != nil {
@@ -163,9 +190,20 @@ func fetchView(ctx context.Context, client *control.Client, th Theme, v view) (s
 		if !candidates.OK {
 			return "", meta, fmt.Errorf("%s: %s", candidates.Error.Code, candidates.Error.Message)
 		}
-		populateMeta(ctx, client, &meta)
 		return formatDiscoveryView(th, status.Result, candidates.Result), meta, nil
-	case viewTransit:
+	case viewThresholds:
+		resp, err := client.Call(ctx, "1", "config.get", nil)
+		if err != nil {
+			return "", meta, err
+		}
+		if !resp.OK {
+			return "", meta, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+		}
+		meta.siteID = fmt.Sprint(resp.Result["site_id"])
+		meta.collectorID = fmt.Sprint(resp.Result["collector_id"])
+		meta.revision = fmt.Sprint(resp.Result["config_revision"])
+		return formatThresholds(th, resp.Result), meta, nil
+	case viewTransport:
 		resp, err := client.Call(ctx, "1", "transport.get", nil)
 		if err != nil {
 			return "", meta, err
@@ -174,9 +212,8 @@ func fetchView(ctx context.Context, client *control.Client, th Theme, v view) (s
 			return "", meta, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
 		}
 		meta.revision = fmt.Sprint(resp.Result["config_revision"])
-		populateMeta(ctx, client, &meta)
-		return formatTransit(th, resp.Result), meta, nil
-	case viewSettings:
+		return formatTransport(th, resp.Result), meta, nil
+	case viewConfig:
 		resp, err := client.Call(ctx, "1", "config.get", nil)
 		if err != nil {
 			return "", meta, err
@@ -190,19 +227,6 @@ func fetchView(ctx context.Context, client *control.Client, th Theme, v view) (s
 		return formatConfig(th, resp.Result), meta, nil
 	default:
 		return "", meta, fmt.Errorf("unknown view")
-	}
-}
-
-func populateMeta(ctx context.Context, client *control.Client, meta *viewMeta) {
-	resp, err := client.Call(ctx, "meta", "config.get", nil)
-	if err != nil || !resp.OK {
-		return
-	}
-	if meta.siteID == "" {
-		meta.siteID = fmt.Sprint(resp.Result["site_id"])
-	}
-	if meta.collectorID == "" {
-		meta.collectorID = fmt.Sprint(resp.Result["collector_id"])
 	}
 }
 
@@ -221,11 +245,14 @@ func extractDeviceIDs(result map[string]any) []string {
 	return ids
 }
 
-func (m model) firstDeviceID() string {
+func (m model) selectedDeviceID() string {
 	if len(m.deviceIDs) == 0 {
 		return ""
 	}
-	return m.deviceIDs[0]
+	if m.deviceIdx < 0 || m.deviceIdx >= len(m.deviceIDs) {
+		return m.deviceIDs[0]
+	}
+	return m.deviceIDs[m.deviceIdx]
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -235,15 +262,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		chromeHeight := m.chromeHeight()
-		footerHeight := 3
+		headerHeight := 6
+		footerHeight := 2
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, max(1, msg.Height-chromeHeight-footerHeight))
-			m.viewport.YPosition = 0
+			m.viewport = viewport.New(msg.Width, max(1, msg.Height-headerHeight-footerHeight))
+			m.viewport.YPosition = headerHeight
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = max(1, msg.Height-chromeHeight-footerHeight)
+			m.viewport.Height = max(1, msg.Height-headerHeight-footerHeight)
 		}
 		m.viewport.SetContent(m.body)
 		return m, nil
@@ -282,6 +309,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(msg.deviceIDs) > 0 {
 			m.deviceIDs = msg.deviceIDs
+			if m.deviceIdx >= len(m.deviceIDs) {
+				m.deviceIdx = 0
+			}
 		}
 		return m, nil
 
@@ -310,23 +340,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.refresh()
 		case "2":
-			m.view = viewDiscovery
+			m.view = viewDevice
 			m.loading = true
 			return m, m.refresh()
 		case "3":
-			m.view = viewTransit
+			m.view = viewDiscovery
 			m.loading = true
 			return m, m.refresh()
 		case "4":
-			m.view = viewSettings
+			m.view = viewThresholds
+			m.loading = true
+			return m, m.refresh()
+		case "5":
+			m.view = viewTransport
+			m.loading = true
+			return m, m.refresh()
+		case "6":
+			m.view = viewConfig
 			m.loading = true
 			return m, m.refresh()
 		case "tab", "right", "l":
-			m.view = (m.view + 1) % 4
+			m.view = (m.view + 1) % 6
 			m.loading = true
 			return m, m.refresh()
 		case "shift+tab", "left", "h":
-			m.view = (m.view + 3) % 4
+			m.view = (m.view + 5) % 6
 			m.loading = true
 			return m, m.refresh()
 		case "r":
@@ -347,13 +385,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, m.discoveryAccept()
 			}
-		case "e", "E":
+		case "e":
 			if m.view == viewDiscovery {
 				return m.beginDiscoveryPolicyInput()
 			}
 		case "d":
-			if m.view == viewInventory {
+			if m.view == viewDevice || m.view == viewInventory {
 				return m.beginDepsInput()
+			}
+		case "n":
+			if m.view == viewDevice && len(m.deviceIDs) > 0 {
+				m.deviceIdx = (m.deviceIdx + 1) % len(m.deviceIDs)
+				m.loading = true
+				return m, m.refresh()
+			}
+		case "p":
+			if m.view == viewDevice && len(m.deviceIDs) > 0 {
+				m.deviceIdx = (m.deviceIdx - 1 + len(m.deviceIDs)) % len(m.deviceIDs)
+				m.loading = true
+				return m, m.refresh()
 			}
 		case "up", "k":
 			m.viewport.LineUp(1)
@@ -397,6 +447,9 @@ func (m model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) beginThresholdInput() (tea.Model, tea.Cmd) {
 	m.inputMode = "threshold"
 	m.inputDevice = ""
+	if m.view == viewDevice {
+		m.inputDevice = m.selectedDeviceID()
+	}
 	m.textInput.SetValue("")
 	m.textInput.Placeholder = "temperature °C (e.g. 65)"
 	m.textInput.Focus()
@@ -405,7 +458,7 @@ func (m model) beginThresholdInput() (tea.Model, tea.Cmd) {
 }
 
 func (m model) beginDepsInput() (tea.Model, tea.Cmd) {
-	id := m.firstDeviceID()
+	id := m.selectedDeviceID()
 	if id == "" {
 		m.err = "no device selected"
 		return m, nil
@@ -511,13 +564,14 @@ func (m model) discoveryScan() tea.Cmd {
 	client := m.client
 	view := m.view
 	theme := m.theme
+	deviceID := m.selectedDeviceID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		if _, err := client.Call(ctx, "ds1", "discovery.scan.start", nil); err != nil {
 			return refreshMsg{err: err.Error()}
 		}
-		body, _, err := fetchView(ctx, client, theme, view)
+		body, _, err := fetchView(ctx, client, theme, view, deviceID)
 		if err != nil {
 			return refreshMsg{err: err.Error()}
 		}
@@ -527,6 +581,9 @@ func (m model) discoveryScan() tea.Cmd {
 
 func (m model) discoveryAccept() tea.Cmd {
 	client := m.client
+	view := m.view
+	theme := m.theme
+	deviceID := m.selectedDeviceID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -575,11 +632,28 @@ func (m model) discoveryAccept() tea.Cmd {
 		if !prepare.OK {
 			return refreshMsg{err: prepare.Error.Code + ": " + prepare.Error.Message}
 		}
-		return pendingPreparedMsg{
-			token:    fmt.Sprint(prepare.Result["confirm_token"]),
-			revision: fmt.Sprint(prepare.Result["revision"]),
-			action:   "discovery.accept",
+		commit, err := client.Call(ctx, "da3", "discovery.accept.commit", map[string]any{
+			"confirm_token": prepare.Result["confirm_token"],
+			"revision":      prepare.Result["revision"],
+		})
+		if err != nil {
+			return refreshMsg{err: err.Error()}
 		}
+		if !commit.OK {
+			return refreshMsg{err: commit.Error.Code + ": " + commit.Error.Message}
+		}
+		reload, err := client.Call(ctx, "da4", "config.reload", nil)
+		if err != nil {
+			return refreshMsg{err: err.Error()}
+		}
+		if !reload.OK {
+			return refreshMsg{err: reload.Error.Code + ": " + reload.Error.Message}
+		}
+		body, _, err := fetchView(ctx, client, theme, view, deviceID)
+		if err != nil {
+			return refreshMsg{body: "Accepted candidates and reloaded.\n\n" + formatReloadResult(theme, reload.Result)}
+		}
+		return refreshMsg{body: "Accepted candidates and reloaded.\n\n" + body}
 	}
 }
 
@@ -697,9 +771,10 @@ func (m model) reload() tea.Cmd {
 	}
 }
 
-func (m model) renderChrome() string {
+func (m model) View() string {
 	th := m.theme
 	var b strings.Builder
+
 	b.WriteString(renderHeader(th, m.siteID, m.collectorID, m.revision, m.lastUpdated, m.loading))
 	if m.loading {
 		b.WriteString(th.Spinner.Render(m.spinner.View()))
@@ -709,15 +784,6 @@ func (m model) renderChrome() string {
 	b.WriteString("\n")
 	b.WriteString(th.Muted.Render(strings.Repeat("─", max(8, min(m.width, 100)))))
 	b.WriteString("\n")
-	return b.String()
-}
-
-func (m model) View() string {
-	th := m.theme
-	var b strings.Builder
-
-	chrome := m.renderChrome()
-	b.WriteString(chrome)
 
 	if m.confirmPrompt != "" {
 		b.WriteString(renderConfirm(th, m.pendingAction, m.pendingRevision))
@@ -754,16 +820,8 @@ func (m model) View() string {
 		b.WriteString(m.body)
 	}
 	b.WriteString("\n")
-	if actions := renderActions(th, m.view); actions != "" {
-		b.WriteString(actions)
-		b.WriteString("\n")
-	}
 	b.WriteString(renderHelp(th))
 	return b.String()
-}
-
-func (m model) chromeHeight() int {
-	return lipgloss.Height(m.renderChrome())
 }
 
 func max(a, b int) int {
