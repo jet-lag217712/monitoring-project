@@ -14,6 +14,7 @@ func runSetup(args []string) int {
 	fs.SetOutput(os.Stderr)
 	deployDir := fs.String("dir", ".", "deployment directory (e.g. deployments/development/vxrail)")
 	themeName := fs.String("theme", "auto", "color theme: auto, light, or dark")
+	profileName := fs.String("profile", "dev-vxrail", "setup profile: dev-vxrail or appliance")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -21,7 +22,12 @@ func runSetup(args []string) int {
 		fmt.Fprintln(os.Stderr, "setup accepts no positional arguments")
 		return 2
 	}
-	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName), buildVersion); err != nil {
+	profile, err := setup.ParseProfile(*profileName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "setup: %v\n", err)
+		return 2
+	}
+	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName), buildVersion, profile); err != nil {
 		fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 		return 1
 	}

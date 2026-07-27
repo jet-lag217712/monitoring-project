@@ -10,7 +10,7 @@ import (
 )
 
 // Run starts the first-boot setup wizard for a deployment directory.
-func Run(deployDir string, theme tui.ThemeName, version string) error {
+func Run(deployDir string, theme tui.ThemeName, version string, profile Profile) error {
 	deployDir, err := filepath.Abs(deployDir)
 	if err != nil {
 		return err
@@ -18,7 +18,7 @@ func Run(deployDir string, theme tui.ThemeName, version string) error {
 	if _, err := os.Stat(deployDir); err != nil {
 		return fmt.Errorf("deploy dir: %w", err)
 	}
-	m := newModel(deployDir, tui.NewTheme(theme), version)
+	m := newModel(deployDir, tui.NewTheme(theme), version, profile)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
 	return err

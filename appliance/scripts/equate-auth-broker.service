@@ -1,0 +1,19 @@
+[Unit]
+Description=Equate appliance PAM authentication broker
+Documentation=file:/opt/equate/current/scripts/auth-broker.sh
+After=local-fs.target
+RequiresMountsFor=/run/equate
+
+[Service]
+Type=simple
+ExecStart=/opt/equate/current/scripts/auth-broker.sh
+Restart=on-failure
+RestartSec=2
+User=root
+Group=root
+Environment=EQUATE_AUTH_SOCKET=/run/equate/auth.sock
+Environment=EQUATE_APPLIANCE_GROUP=equate-appliance
+Environment=EQUATE_API_GID=65532
+
+[Install]
+WantedBy=multi-user.target

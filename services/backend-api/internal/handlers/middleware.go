@@ -9,6 +9,11 @@ import (
 
 // CORS wraps a handler with simple CORS headers for allowed origins.
 func CORS(allowed []string, next http.Handler) http.Handler {
+	return CORSWithCredentials(allowed, false, next)
+}
+
+// CORSWithCredentials wraps a handler with CORS headers, optionally allowing cookies.
+func CORSWithCredentials(allowed []string, allowCredentials bool, next http.Handler) http.Handler {
 	allowAll := false
 	set := make(map[string]struct{}, len(allowed))
 	for _, o := range allowed {
@@ -21,14 +26,17 @@ func CORS(allowed []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" && (allowAll || originAllowed(origin, set)) {
-			if allowAll {
+			if allowAll && !allowCredentials {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 			} else {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Add("Vary", "Origin")
+				if allowCredentials {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 		}
 
 		if r.Method == http.MethodOptions {

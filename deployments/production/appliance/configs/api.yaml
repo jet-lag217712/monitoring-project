@@ -1,0 +1,23 @@
+api:
+  listen: ":8000"
+  cors_origins: ""
+
+admin:
+  listen: ":9092"
+
+auth:
+  mode: appliance_local
+  broker_socket: "/run/equate/auth.sock"
+  broker_timeout: 3s
+  session_ttl: 12h
+  login_rate_limit: 5
+  login_rate_window: 5m
+  login_rate_entries: 2048
+
+database:
+  url_env: "DATABASE_URL"
+  max_conns: 10
+  min_conns: 1
+  max_lifetime: 1h
+
+online_threshold: 5m

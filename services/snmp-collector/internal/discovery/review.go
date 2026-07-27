@@ -172,6 +172,10 @@ func AcceptReviewed(
 	if err := rejectActiveDuplicates(activeInventory, devices); err != nil {
 		return err
 	}
+	devices = filterNewManagedAppends(currentManaged, devices)
+	if len(devices) == 0 {
+		return nil
+	}
 
 	next := make([]config.DeviceConfig, 0, len(currentManaged)+len(devices))
 	next = append(next, currentManaged...)
@@ -180,6 +184,33 @@ func AcceptReviewed(
 		return fmt.Errorf("accept reviewed candidates: %w", err)
 	}
 	return nil
+}
+
+func filterNewManagedAppends(currentManaged, proposed []config.DeviceConfig) []config.DeviceConfig {
+	if len(proposed) == 0 {
+		return nil
+	}
+	ids := make(map[string]struct{}, len(currentManaged))
+	hosts := make(map[string]struct{}, len(currentManaged))
+	for _, device := range currentManaged {
+		if strings.TrimSpace(device.ID) != "" {
+			ids[device.ID] = struct{}{}
+		}
+		if strings.TrimSpace(device.Host) != "" {
+			hosts[canonicalHost(device.Host)] = struct{}{}
+		}
+	}
+	filtered := make([]config.DeviceConfig, 0, len(proposed))
+	for _, device := range proposed {
+		if _, exists := ids[device.ID]; exists {
+			continue
+		}
+		if _, exists := hosts[canonicalHost(device.Host)]; exists {
+			continue
+		}
+		filtered = append(filtered, device)
+	}
+	return filtered
 }
 
 func approvedDevices(reviews []ReviewedCandidate) ([]config.DeviceConfig, error) {

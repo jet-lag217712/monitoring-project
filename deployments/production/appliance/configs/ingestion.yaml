@@ -1,0 +1,23 @@
+admin:
+  listen: ":9091"
+
+mqtt:
+  broker: "tls://mosquitto:8883"
+  client_id: "ingestion"
+  username: "ingestion"
+  password_env: "MQTT_PASSWORD"
+  qos: 1
+  topics:
+    - "site/+/device/+/telemetry/v2/#"
+    - "site/+/collector/+/telemetry/v2/heartbeat"
+  tls:
+    ca_file: "/certs/ca.crt"
+  reconnect:
+    initial: 1s
+    max: 60s
+
+database:
+  url_env: "DATABASE_URL"
+  max_conns: 10
+  min_conns: 1
+  max_lifetime: 1h

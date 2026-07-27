@@ -40,25 +40,59 @@ func main() {
 	defer db.Close()
 
 	api := handlers.New(db, log, cfg.OnlineThreshold)
-	mux := http.NewServeMux()
-	api.Register(mux)
 
-	var apiHandler http.Handler = mux
-	if cfg.AuthEnabled() {
+	rootMux := http.NewServeMux()
+	apiMux := http.NewServeMux()
+	api.Register(apiMux)
+
+	var apiHandler http.Handler = rootMux
+	corsCredentials := false
+	switch cfg.AuthMode() {
+	case config.AuthModeApplianceLocal:
+		broker, err := auth.NewBrokerClient(cfg.Auth.BrokerSocket, cfg.Auth.BrokerTimeout)
+		if err != nil {
+			log.Error("init authentication broker client", "err", err)
+			os.Exit(1)
+		}
+		sessionStore := auth.NewPostgresSessionStore(db.Pool())
+		sessions, err := auth.NewSessionManager(sessionStore, broker, cfg.Auth.SessionTTL)
+		if err != nil {
+			log.Error("init session manager", "err", err)
+			os.Exit(1)
+		}
+		rateLimit := auth.NewLoginRateLimiter(
+			cfg.Auth.LoginRateLimit,
+			cfg.Auth.LoginRateWindow,
+			cfg.Auth.LoginRateEntries,
+		)
+		authHandlers := auth.NewApplianceHandlers(sessions, rateLimit, log, auth.ApplianceHandlersConfig{
+			Secure:     true,
+			CookiePath: "/",
+		})
+		authHandlers.Register(rootMux)
+		protectedAPI := auth.RequireApplianceSession(sessions, log, auth.RequireApplianceCSRF(apiMux))
+		rootMux.Handle("/api/", protectedAPI)
+		apiHandler = rootMux
+		corsCredentials = true
+		log.Info("appliance local auth enabled")
+	case config.AuthModeGoogle:
 		verifier, err := auth.NewGoogleVerifier(ctx, cfg.GoogleClientID())
 		if err != nil {
 			log.Error("init google oidc verifier", "err", err)
 			os.Exit(1)
 		}
-		apiHandler = auth.RequireGoogleOIDC(verifier, log, apiHandler)
+		rootMux.Handle("/api/", auth.RequireGoogleOIDC(verifier, log, apiMux))
+		apiHandler = rootMux
 		log.Info("google oidc auth enabled")
-	} else {
-		log.Warn("google oidc auth disabled; /api/* is unauthenticated")
+	case config.AuthModeDisabled:
+		rootMux.Handle("/api/", apiMux)
+		apiHandler = rootMux
+		log.Warn("auth disabled; /api/* is unauthenticated")
 	}
 	apiHandler = handlers.NormalizePath(apiHandler)
 	apiHandler = handlers.RequestLog(log, apiHandler)
 	if origins := cfg.CORSOriginList(); len(origins) > 0 {
-		apiHandler = handlers.CORS(origins, apiHandler)
+		apiHandler = handlers.CORSWithCredentials(origins, corsCredentials, apiHandler)
 	}
 
 	apiSrv := &http.Server{

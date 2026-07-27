@@ -53,7 +53,7 @@ func TestWriteEnvFile(t *testing.T) {
 }
 
 func TestNewModelInitialStep(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test")
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileDevVxrail)
 	if !m.splash {
 		t.Fatal("expected splash screen on launch")
 	}
@@ -74,7 +74,7 @@ func TestNewModelInitialStep(t *testing.T) {
 func TestBuildSiteSpecsFourSites(t *testing.T) {
 	siteIDs := []string{"site-001", "site-002", "site-003", "site-004"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24", "10.255.3.0/24"}
-	specs, err := BuildSiteSpecs(4, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileDevVxrail,4, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,28 +106,28 @@ func TestBuildSiteSpecsFourSites(t *testing.T) {
 }
 
 func TestBuildSiteSpecsRejectsInvalidInput(t *testing.T) {
-	if _, err := BuildSiteSpecs(0, nil, nil); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,0, nil, nil); err == nil {
 		t.Fatal("expected error for zero count")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"site-a"}, []string{"10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a"}, []string{"10.0.0.0/24"}); err == nil {
 		t.Fatal("expected site id count mismatch error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24"}); err == nil {
 		t.Fatal("expected cidr count mismatch error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"site-a", "site-b"}, []string{"bad", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"bad", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid cidr error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24", "10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24", "10.0.0.0/24"}); err == nil {
 		t.Fatal("expected duplicate cidr error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"Site A", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"Site A", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid site id error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"-bad", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"-bad", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid site id error")
 	}
-	if _, err := BuildSiteSpecs(2, []string{"site-a", "site-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected duplicate site id error")
 	}
 }
@@ -135,7 +135,7 @@ func TestBuildSiteSpecsRejectsInvalidInput(t *testing.T) {
 func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 	siteIDs := []string{"do-core", "site-a-mdf", "School-B"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24"}
-	specs, err := BuildSiteSpecs(3, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileDevVxrail,3, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 }
 
 func TestBuildSiteSpecsRejectsCaseInsensitiveDuplicate(t *testing.T) {
-	if _, err := BuildSiteSpecs(2, []string{"School-A", "school-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"School-A", "school-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected case-insensitive duplicate site id error")
 	}
 }
@@ -176,11 +176,11 @@ func TestGenerateComposeFourSites(t *testing.T) {
 	}
 	siteIDs := []string{"site-001", "site-002", "site-003", "site-004"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24", "10.255.3.0/24"}
-	specs, err := BuildSiteSpecs(4, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileDevVxrail,4, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := persistMultiSiteArtifacts(deployDir, specs, 5, 2); err != nil {
+	if err := persistMultiSiteArtifacts(deployDir, ProfileDevVxrail, specs, 5, 2); err != nil {
 		t.Fatal(err)
 	}
 	composeData, err := os.ReadFile(generatedComposePath(deployDir))

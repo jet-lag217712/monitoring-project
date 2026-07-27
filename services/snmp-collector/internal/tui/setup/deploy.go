@@ -17,6 +17,14 @@ import (
 )
 
 const setupMarker = ".setup-complete"
+var applianceComposeEnv = "/run/equate/rendered/compose.env"
+
+func composeEnvArgs(deployDir string) []string {
+	if _, err := os.Stat(applianceComposeEnv); err == nil {
+		return []string{"--env-file", applianceComposeEnv}
+	}
+	return nil
+}
 
 func writeEnvFile(path string, values map[string]string) error {
 	var b strings.Builder
@@ -97,33 +105,26 @@ func writeSeedManaged(path string, cidrs []string, rate float64, burst int, comm
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return fixCollectorManagedPath(path)
 }
 
-func startCompose(deployDir string, services []string) error {
-	args := []string{"compose", "-f", "docker-compose.yml", "-f", generatedComposeFile, "up", "-d", "--build", "--remove-orphans"}
+func startCompose(deployDir string, profile Profile, services []string) error {
+	args := []string{"compose"}
+	args = append(args, composeEnvArgs(deployDir)...)
+	args = append(args, "-f", "docker-compose.yml", "-f", generatedComposeFile, "up", "-d", "--remove-orphans")
+	if profile != ProfileAppliance {
+		args = append(args, "--build")
+	}
 	args = append(args, services...)
-	// #region agent log
-	agentLog("A", "deploy.go:startCompose", "starting docker compose", "pre-fix", map[string]any{
-		"deployDir": deployDir,
-		"services":  services,
-		"args":      args,
-	})
-	// #endregion
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = deployDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	// #region agent log
-	agentLog("C", "deploy.go:startCompose", "docker compose finished", "pre-fix", map[string]any{
-		"exitErr":  errString(err),
-		"stderr":   strings.TrimSpace(stderr.String()),
-		"stdout":   strings.TrimSpace(stdout.String()),
-		"services": services,
-	})
-	// #endregion
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
@@ -138,7 +139,9 @@ func startCompose(deployDir string, services []string) error {
 }
 
 func stopCompose(deployDir string, services []string) error {
-	args := []string{"compose", "-f", "docker-compose.yml", "-f", generatedComposeFile, "stop"}
+	args := []string{"compose"}
+	args = append(args, composeEnvArgs(deployDir)...)
+	args = append(args, "-f", "docker-compose.yml", "-f", generatedComposeFile, "stop")
 	args = append(args, services...)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = deployDir
@@ -155,7 +158,9 @@ func stopCompose(deployDir string, services []string) error {
 }
 
 func restartCompose(deployDir string, services []string) error {
-	args := []string{"compose", "-f", "docker-compose.yml", "-f", generatedComposeFile, "up", "-d", "--remove-orphans"}
+	args := []string{"compose"}
+	args = append(args, composeEnvArgs(deployDir)...)
+	args = append(args, "-f", "docker-compose.yml", "-f", generatedComposeFile, "up", "-d", "--remove-orphans")
 	args = append(args, services...)
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = deployDir
@@ -171,31 +176,43 @@ func restartCompose(deployDir string, services []string) error {
 	return nil
 }
 
-const composeProjectName = "ogsd-development-vxrail"
+func composeProjectName(deployDir string, profile Profile) string {
+	if profile == ProfileAppliance {
+		if name, err := envFileValue(applianceComposeEnv, "COMPOSE_PROJECT_NAME"); err == nil && strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+	}
+	return ProfileConfigFor(profile).ComposeProjectName
+}
 
-func ensureSiteOwnership(deployDir string, specs []SiteSpec) error {
+func envFileValue(path, key string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	prefix := key + "="
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix)), nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in %s", key, path)
+}
+
+func ensureSiteOwnership(deployDir string, profile Profile, specs []SiteSpec) error {
+	if profile == ProfileAppliance {
+		return ensureSiteOwnershipAppliance(deployDir, profile, specs)
+	}
+	project := composeProjectName(deployDir, profile)
 	for _, spec := range specs {
-		volume := composeProjectName + "_" + spec.VolumeName()
-		// #region agent log
-		agentLog("F", "deploy.go:ensureSiteOwnership", "chown site paths", "post-fix", map[string]any{
-			"siteID": spec.SiteID,
-			"volume": volume,
-		})
-		// #endregion
+		volume := project + "_" + spec.VolumeName()
 		if err := chownRunDir(spec.RunDir(deployDir)); err != nil {
-			// #region agent log
-			agentLog("H", "deploy.go:ensureSiteOwnership", "run dir chown failed", "post-fix", map[string]any{
-				"siteID": spec.SiteID,
-				"error":  err.Error(),
-			})
-			// #endregion
 			return fmt.Errorf("%s run dir: %w", spec.SiteID, err)
 		}
-		// #region agent log
-		agentLog("H", "deploy.go:ensureSiteOwnership", "run dir chown ok", "post-fix", map[string]any{
-			"siteID": spec.SiteID,
-		})
-		// #endregion
 		if err := chownContainerPath(volume+":/var/lib/snmp-collector", "/var/lib/snmp-collector", true); err != nil {
 			return fmt.Errorf("%s state volume: %w", spec.SiteID, err)
 		}
@@ -251,25 +268,18 @@ func runBusybox(mount string, args ...string) error {
 	return nil
 }
 
-func startSiteCollectors(deployDir string, specs []SiteSpec) error {
+func startSiteCollectors(deployDir string, profile Profile, specs []SiteSpec) error {
 	services := serviceNames(specs)
-	if err := startCompose(deployDir, services); err != nil {
+	if err := startCompose(deployDir, profile, services); err != nil {
 		return err
 	}
 	if err := stopCompose(deployDir, services); err != nil {
 		return err
 	}
-	if err := ensureSiteOwnership(deployDir, specs); err != nil {
+	if err := ensureSiteOwnership(deployDir, profile, specs); err != nil {
 		return err
 	}
 	return restartCompose(deployDir, services)
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func waitForCollector(adminURL string, client controlCaller, timeout time.Duration) error {
@@ -313,10 +323,11 @@ func envPath(deployDir string) string {
 	return filepath.Join(deployDir, ".env")
 }
 
-func persistMultiSiteArtifacts(deployDir string, specs []SiteSpec, rate float64, burst int) error {
+func persistMultiSiteArtifacts(deployDir string, profile Profile, specs []SiteSpec, rate float64, burst int) error {
+	cfg := ProfileConfigFor(profile)
 	manifest := Manifest{
 		SiteCount:     len(specs),
-		BaseAdminPort: baseAdminPort,
+		BaseAdminPort: cfg.BaseAdminPort,
 		ProbeRate:     rate,
 		ProbeBurst:    burst,
 		Sites:         specs,
@@ -327,11 +338,14 @@ func persistMultiSiteArtifacts(deployDir string, specs []SiteSpec, rate float64,
 	if err := WriteSiteArtifacts(deployDir, specs, rate, burst, "SNMP_DISCOVERY_COMMUNITY"); err != nil {
 		return err
 	}
+	if err := finalizeSiteArtifactsPermissions(profile, deployDir, specs); err != nil {
+		return err
+	}
 	buildContext := "../../../services/snmp-collector"
 	if _, err := os.Stat(filepath.Join(deployDir, "src", "services", "snmp-collector", "go.mod")); err == nil {
 		buildContext = "./src/services/snmp-collector"
 	}
-	return GenerateCompose(deployDir, specs, buildContext)
+	return GenerateCompose(deployDir, profile, specs, buildContext)
 }
 
 func acceptAllSuccessful(managedInventoryPath, communityEnv string, client controlCaller, candidates []map[string]any) error {
@@ -364,36 +378,7 @@ func acceptAllSuccessful(managedInventoryPath, communityEnv string, client contr
 	if len(reviews) == 0 {
 		return fmt.Errorf("no successful candidates to accept")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	prepare, err := client.Call(ctx, "ap1", "discovery.accept.prepare", map[string]any{"reviews": reviews})
-	if err != nil {
-		return err
-	}
-	if !prepare.OK {
-		return fmt.Errorf("%s: %s", prepare.Error.Code, prepare.Error.Message)
-	}
-	commit, err := client.Call(ctx, "ap2", "discovery.accept.commit", map[string]any{
-		"confirm_token": prepare.Result["confirm_token"],
-		"revision":      prepare.Result["revision"],
-	})
-	if err != nil {
-		return err
-	}
-	if !commit.OK {
-		return fmt.Errorf("%s: %s", commit.Error.Code, commit.Error.Message)
-	}
-	if err := enrichManagedTopology(managedInventoryPath, communityEnv); err != nil {
-		return err
-	}
-	reload, err := client.Call(ctx, "ap3", "config.reload", nil)
-	if err != nil {
-		return err
-	}
-	if !reload.OK {
-		return fmt.Errorf("%s: %s", reload.Error.Code, reload.Error.Message)
-	}
-	return nil
+	return acceptReviews(managedInventoryPath, communityEnv, client, reviews)
 }
 
 func enrichManagedTopology(managedInventoryPath, communityEnv string) error {
@@ -405,17 +390,14 @@ func enrichManagedTopology(managedInventoryPath, communityEnv string) error {
 		return nil
 	}
 	community := os.Getenv(communityEnv)
-	// #region agent log
-	agentLog("I", "deploy.go:enrichManagedTopology", "community env lookup", "post-fix", map[string]any{
-		"communityEnv": communityEnv,
-		"isSet":        strings.TrimSpace(community) != "",
-	})
-	// #endregion
 	if strings.TrimSpace(community) == "" {
 		return fmt.Errorf("environment variable %q is not set", communityEnv)
 	}
 	doc.Devices = topology.Enrich(doc.Devices, community, nil)
-	return config.WriteManagedDocument(managedInventoryPath, doc)
+	if err := config.WriteManagedDocument(managedInventoryPath, doc); err != nil {
+		return err
+	}
+	return fixCollectorManagedPath(managedInventoryPath)
 }
 
 func setThreshold(client controlCaller, temp float64) error {
@@ -473,7 +455,7 @@ func runDiscoveryScan(client controlCaller) ([]map[string]any, error) {
 	return out, nil
 }
 
-func reviewSite(spec SiteSpec, deployDir string) (string, error) {
+func reviewSiteAuto(spec SiteSpec, deployDir string) (string, error) {
 	client := newDeployControl(deployDir, spec)
 	candidates, err := runDiscoveryScan(client)
 	if err != nil {
@@ -507,20 +489,8 @@ func applyThresholdToSite(spec SiteSpec, deployDir string, temp float64) error {
 
 func waitForSites(deployDir string, specs []SiteSpec, timeout time.Duration) error {
 	for _, spec := range specs {
-		// #region agent log
-		agentLog("G", "deploy.go:waitForSites", "waiting for site collector", "post-fix", map[string]any{
-			"siteID":   spec.SiteID,
-			"adminURL": spec.AdminURL(),
-		})
-		// #endregion
 		client := newDeployControl(deployDir, spec)
 		if err := waitForCollector(spec.AdminURL(), client, timeout); err != nil {
-			// #region agent log
-			agentLog("G", "deploy.go:waitForSites", "site collector not ready", "post-fix", map[string]any{
-				"siteID": spec.SiteID,
-				"error":  err.Error(),
-			})
-			// #endregion
 			return fmt.Errorf("%s: %w", spec.SiteID, err)
 		}
 	}

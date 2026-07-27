@@ -88,9 +88,16 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, 
 	}
 
 	success := 0
+	failed := 0
+	var sampleError string
 	for _, c := range candidates {
 		if c.Result == discovery.ProbeSucceeded {
 			success++
+			continue
+		}
+		failed++
+		if sampleError == "" && strings.TrimSpace(c.Error) != "" {
+			sampleError = c.Error
 		}
 	}
 	result := map[string]any{
@@ -101,6 +108,16 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, 
 	}
 	if state.Error != "" {
 		result["error"] = state.Error
+	}
+	if s.log != nil {
+		s.log.Info("discovery scan finished",
+			"candidate_count", len(candidates),
+			"success_count", success,
+			"failed_count", failed,
+			"cidr_count", len(cfg.Discovery.AllowedCIDRs),
+			"sample_error", sampleError,
+			"scan_error", state.Error,
+		)
 	}
 	_ = s.audit.Record(AuditEntry{Action: "discovery.scan.start", Success: scanErr == nil, Revision: s.activeRevision(), Details: map[string]any{
 		"candidate_count": len(candidates),

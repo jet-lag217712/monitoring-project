@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { GOOGLE_CLIENT_ID } from '../config/api.js'
-import { setAuthTokenProvider } from '../services/sitesApi.js'
+import { apiUrl, GOOGLE_CLIENT_ID, isApplianceAuth } from '../config/api.js'
+import { setAuthTokenProvider, setCsrfTokenProvider } from '../services/sitesApi.js'
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 const TOKEN_STORAGE_KEY = 'ogsd_google_id_token'
+const APPLIANCE_AUTH = isApplianceAuth()
 
 function loadGisScript() {
   if (typeof window === 'undefined') {
@@ -46,7 +47,6 @@ function decodeJwtPayload(token) {
 function tokenStillValid(token) {
   const claims = decodeJwtPayload(token)
   if (!claims?.exp) return false
-  // Refresh a minute early.
   return claims.exp * 1000 > Date.now() + 60_000
 }
 
@@ -61,23 +61,90 @@ function profileFromToken(token) {
   }
 }
 
+function profileFromApplianceUser(username) {
+  return {
+    email: '',
+    name: username,
+    picture: null,
+    sub: username,
+  }
+}
+
+async function fetchApplianceSession() {
+  let sessionUrl
+  try {
+    sessionUrl = apiUrl('/auth/me')
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'apiUrl threw',data:{error:err?.message},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    throw err
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'fetching session',data:{sessionUrl},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  const res = await fetch(sessionUrl, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  })
+  if (res.status === 401) {
+    // #region agent log
+    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'session not authenticated',data:{status:res.status},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    return null
+  }
+  if (!res.ok) {
+    // #region agent log
+    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'session fetch failed',data:{status:res.status},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    throw new Error('Failed to load session')
+  }
+  const data = await res.json()
+  return {
+    user: profileFromApplianceUser(data.username),
+    csrfToken: data.csrf_token,
+  }
+}
+
 /**
- * Google Identity Services (GIS) sign-in. ID token is kept in memory and
- * sessionStorage so a refresh does not force an immediate re-login during MVP.
+ * Authentication hook for Google OIDC or appliance-local cookie sessions.
  */
 export function useAuth() {
-  const [status, setStatus] = useState(() => (GOOGLE_CLIENT_ID ? 'loading' : 'unconfigured'))
+  const [status, setStatus] = useState(() => {
+    if (APPLIANCE_AUTH) return 'loading'
+    return GOOGLE_CLIENT_ID ? 'loading' : 'unconfigured'
+  })
   const [user, setUser] = useState(null)
   const [error, setError] = useState(null)
   const tokenRef = useRef(null)
+  const csrfRef = useRef(null)
   const buttonHostRef = useRef(null)
 
   const clearSession = useCallback(() => {
     tokenRef.current = null
+    csrfRef.current = null
     sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+    setCsrfTokenProvider(() => null)
     setUser(null)
+    if (APPLIANCE_AUTH) {
+      setStatus('signed_out')
+      return
+    }
     setStatus(GOOGLE_CLIENT_ID ? 'signed_out' : 'unconfigured')
   }, [])
+
+  const applyApplianceSession = useCallback(session => {
+    if (!session?.user) {
+      clearSession()
+      return false
+    }
+    csrfRef.current = session.csrfToken
+    setCsrfTokenProvider(() => csrfRef.current)
+    setUser(session.user)
+    setStatus('signed_in')
+    setError(null)
+    return true
+  }, [clearSession])
 
   const applyToken = useCallback(credential => {
     if (!credential || !tokenStillValid(credential)) {
@@ -93,23 +160,53 @@ export function useAuth() {
   }, [clearSession])
 
   useEffect(() => {
+    if (APPLIANCE_AUTH) {
+      setAuthTokenProvider(() => null)
+      let cancelled = false
+
+      async function initAppliance() {
+        try {
+          const session = await fetchApplianceSession()
+          if (cancelled) return
+          if (session) {
+            applyApplianceSession(session)
+          } else {
+            setStatus('signed_out')
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setError(err.message ?? 'Failed to initialize sign-in')
+            setStatus('error')
+          }
+        }
+      }
+
+      initAppliance()
+      return () => {
+        cancelled = true
+        setCsrfTokenProvider(() => null)
+      }
+    }
+
     setAuthTokenProvider(() => {
       const token = tokenRef.current
       if (token && tokenStillValid(token)) return token
       return null
     })
     return () => setAuthTokenProvider(() => null)
-  }, [])
+  }, [applyApplianceSession])
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) {
-      setStatus('unconfigured')
+    if (APPLIANCE_AUTH || !GOOGLE_CLIENT_ID) {
+      if (!APPLIANCE_AUTH && !GOOGLE_CLIENT_ID) {
+        setStatus('unconfigured')
+      }
       return undefined
     }
 
     let cancelled = false
 
-    async function init() {
+    async function initGoogle() {
       const cached = sessionStorage.getItem(TOKEN_STORAGE_KEY)
       if (cached && applyToken(cached)) {
         // Still initialize GIS for One Tap / button re-render after sign-out.
@@ -143,13 +240,14 @@ export function useAuth() {
       }
     }
 
-    init()
+    initGoogle()
     return () => {
       cancelled = true
     }
   }, [applyToken])
 
   const renderButton = useCallback(element => {
+    if (APPLIANCE_AUTH) return
     buttonHostRef.current = element
     if (!element || !window.google?.accounts?.id || !GOOGLE_CLIENT_ID) return
     element.innerHTML = ''
@@ -163,7 +261,56 @@ export function useAuth() {
     })
   }, [])
 
-  const signOut = useCallback(() => {
+  const signIn = useCallback(async (username, password) => {
+    if (!APPLIANCE_AUTH) return false
+    setError(null)
+    const res = await fetch(apiUrl('/auth/login'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    })
+    if (res.status === 401 || res.status === 429) {
+      const payload = await res.json().catch(() => null)
+      const message = payload?.error?.message ?? 'Invalid username or password'
+      setError(message)
+      setStatus('signed_out')
+      return false
+    }
+    if (!res.ok) {
+      setError('Sign-in is temporarily unavailable')
+      setStatus('error')
+      return false
+    }
+    const data = await res.json()
+    return applyApplianceSession({
+      user: profileFromApplianceUser(data.username),
+      csrfToken: data.csrf_token,
+    })
+  }, [applyApplianceSession])
+
+  const signOut = useCallback(async () => {
+    if (APPLIANCE_AUTH) {
+      const csrf = csrfRef.current
+      try {
+        await fetch(apiUrl('/auth/logout'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+            ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+          },
+        })
+      } catch {
+        // Best-effort logout; clear local state regardless.
+      }
+      clearSession()
+      return
+    }
+
     clearSession()
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect()
@@ -173,10 +320,12 @@ export function useAuth() {
   return {
     error,
     renderButton,
+    signIn,
     signOut,
     status,
     user,
     isAuthenticated: status === 'signed_in',
-    isConfigured: Boolean(GOOGLE_CLIENT_ID),
+    isConfigured: APPLIANCE_AUTH ? true : Boolean(GOOGLE_CLIENT_ID),
+    isAppliance: APPLIANCE_AUTH,
   }
 }

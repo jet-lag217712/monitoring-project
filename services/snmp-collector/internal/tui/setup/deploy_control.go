@@ -74,12 +74,13 @@ func (d *deployControl) callViaComposeExec(ctx context.Context, id, method strin
 	line = append(line, '\n')
 
 	timeout := requestTimeout(ctx, method)
-	cmd := exec.CommandContext(
-		ctx,
-		"docker", "compose", "-f", "docker-compose.yml", "-f", generatedComposeFile,
+	args := []string{"compose"}
+	args = append(args, composeEnvArgs(d.deployDir)...)
+	args = append(args, "-f", "docker-compose.yml", "-f", generatedComposeFile,
 		"exec", "-T", d.service,
 		"/collector", "rpc", "-socket", d.innerSocket, "-timeout", timeout.String(),
 	)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = d.deployDir
 	cmd.Stdin = bytes.NewReader(line)
 	var stdout, stderr bytes.Buffer

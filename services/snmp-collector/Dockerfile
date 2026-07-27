@@ -5,6 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/collector ./cmd/collector
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/equate ./cmd/equate
 RUN printf 'root:x:0:0:root:/root:/sbin/nologin\nnonroot:x:65532:65532:nonroot:/:/sbin/nologin\n' > /out/passwd \
     && printf 'root:x:0:\nnonroot:x:65532:\n' > /out/group
 

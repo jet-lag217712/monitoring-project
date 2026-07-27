@@ -22,12 +22,16 @@ const (
 	stepReview
 	stepThresholds
 	stepDone
+	stepAdminUser
+	stepUsers
 )
 
 type model struct {
 	deployDir string
 	theme     tui.Theme
 	version   string
+	profile   Profile
+	profileCfg ProfileConfig
 	splash    bool
 	width     int
 	height    int
@@ -49,6 +53,30 @@ type model struct {
 	probeRate     string
 	probeBurst    string
 	reviewResults []string
+
+	adminUsernameInput textinput.Model
+	adminPasswordInput textinput.Model
+	adminConfirmInput  textinput.Model
+	adminFocus         int
+
+	usersBody      string
+	usersMode      string
+	usersUsername  textinput.Model
+	usersPassword  textinput.Model
+	usersConfirm   textinput.Model
+	usersFocus     int
+
+	reviewSiteIdx    int
+	reviewCandidates []map[string]any
+	reviewApproved   []bool
+	reviewCursor     int
+	reviewScrollTop  int
+	reviewPhase      string
+	reviewSiteLines  []string
+
+	confirmQuit bool
+
+	adminPhase string
 }
 
 func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
@@ -59,31 +87,14 @@ func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
 	return ti
 }
 
-func newModel(deployDir string, theme tui.Theme, version string) model {
+func newModel(deployDir string, theme tui.Theme, version string, profile Profile) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = theme.Spinner
 
-	fields := []struct {
-		placeholder string
-		mask        bool
-	}{
-		{"MQTT broker (tls://host:8883)", false},
-		{"MQTT password", true},
-		{"SNMP community", true},
-		{"Discovery community (often same)", true},
-	}
-	envInputs := make([]textinput.Model, len(fields))
-	for i, f := range fields {
-		envInputs[i] = styleTextInput(textinput.New(), theme)
-		envInputs[i].Placeholder = f.placeholder
-		envInputs[i].CharLimit = 256
-		envInputs[i].Width = 50
-		if f.mask {
-			envInputs[i].EchoMode = textinput.EchoPassword
-		}
-	}
-	envInputs[0].Focus()
+	cfg := ProfileConfigFor(profile)
+
+	envInputs := newEnvInputs(theme, profile)
 
 	siteCountInput := styleTextInput(textinput.New(), theme)
 	siteCountInput.Placeholder = "number of site containers"
@@ -97,18 +108,61 @@ func newModel(deployDir string, theme tui.Theme, version string) model {
 	thresholdInput.Width = 8
 	thresholdInput.SetValue("65")
 
+	adminUsernameInput := styleTextInput(textinput.New(), theme)
+	adminUsernameInput.Placeholder = "admin username"
+	adminUsernameInput.CharLimit = 32
+	adminUsernameInput.Width = 24
+
+	adminPasswordInput := styleTextInput(textinput.New(), theme)
+	adminPasswordInput.Placeholder = "password (required)"
+	adminPasswordInput.CharLimit = 128
+	adminPasswordInput.Width = 32
+	adminPasswordInput.EchoMode = textinput.EchoPassword
+
+	adminConfirmInput := styleTextInput(textinput.New(), theme)
+	adminConfirmInput.Placeholder = "confirm password"
+	adminConfirmInput.CharLimit = 128
+	adminConfirmInput.Width = 32
+	adminConfirmInput.EchoMode = textinput.EchoPassword
+
+	usersUsername := styleTextInput(textinput.New(), theme)
+	usersUsername.Placeholder = "username"
+	usersUsername.CharLimit = 32
+	usersUsername.Width = 24
+
+	usersPassword := styleTextInput(textinput.New(), theme)
+	usersPassword.Placeholder = "password"
+	usersPassword.CharLimit = 128
+	usersPassword.Width = 32
+	usersPassword.EchoMode = textinput.EchoPassword
+
+	usersConfirm := styleTextInput(textinput.New(), theme)
+	usersConfirm.Placeholder = "confirm password"
+	usersConfirm.CharLimit = 128
+	usersConfirm.Width = 32
+	usersConfirm.EchoMode = textinput.EchoPassword
+
 	m := model{
-		deployDir:      deployDir,
-		theme:          theme,
-		version:        version,
-		splash:         true,
-		step:           stepEnv,
-		spinner:        sp,
-		envInputs:      envInputs,
-		siteCountInput: siteCountInput,
-		thresholdInput: thresholdInput,
-		probeRate:      "5",
-		probeBurst:     "2",
+		deployDir:          deployDir,
+		theme:              theme,
+		version:            version,
+		profile:            profile,
+		profileCfg:         cfg,
+		splash:             true,
+		step:               stepEnv,
+		spinner:            sp,
+		envInputs:          envInputs,
+		siteCountInput:     siteCountInput,
+		thresholdInput:     thresholdInput,
+		probeRate:          "5",
+		probeBurst:         "2",
+		adminUsernameInput: adminUsernameInput,
+		adminPasswordInput: adminPasswordInput,
+		adminConfirmInput:  adminConfirmInput,
+		usersUsername:      usersUsername,
+		usersPassword:      usersPassword,
+		usersConfirm:       usersConfirm,
+		usersMode:          "menu",
 	}
 	m.resizeSiteInputs(defaultSiteCount)
 	return m
@@ -162,6 +216,13 @@ func (m model) Init() tea.Cmd {
 type asyncDoneMsg struct {
 	err  error
 	body string
+	sites []SiteSpec
+}
+
+type existingAdminsMsg struct {
+	err         error
+	body        string
+	hasExisting bool
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -171,14 +232,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if next, cmd, handled := m.handleQuitKey(msg); handled {
+			return next, cmd
+		}
 		if m.splash {
-			if msg.String() == "ctrl+c" {
-				return m, tea.Quit
-			}
 			if msg.String() == "enter" {
 				m.splash = false
-				m.envFocus = 0
-				m = m.updateEnvFocus()
+				m.step = m.firstStepAfterSplash()
+				if m.step == stepAdminUser {
+					m.adminFocus = 0
+					m = m.updateAdminFocus()
+					if m.profile == ProfileAppliance {
+						m.adminPhase = "loading"
+						m.loading = true
+						return m, m.loadExistingAdmins()
+					}
+					m.adminPhase = "create"
+				} else if m.step == stepEnv {
+					m.envFocus = 0
+					m = m.updateEnvFocus()
+				}
 				return m, textinput.Blink
 			}
 			return m, nil
@@ -196,20 +269,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if m.step == stepDone && (msg.String() == "q" || msg.String() == "enter") {
-			return m, tea.Quit
-		}
-		if msg.String() == "ctrl+c" || msg.String() == "q" {
-			if m.step == stepDone {
-				return m, tea.Quit
-			}
-		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		if m.loading {
 			return m, cmd
 		}
+	case reviewScanMsg:
+		m.loading = false
+		m.err = ""
+		m.body = msg.body
+		m.reviewCandidates = msg.candidates
+		m.reviewApproved = msg.approved
+		m.reviewCursor = 0
+		m.reviewScrollTop = 0
+		m.reviewPhase = "pick"
+		return m, nil
+	case reviewAcceptMsg:
+		m.loading = false
+		m.err = ""
+		m.reviewSiteLines = append(m.reviewSiteLines, msg.line)
+		if m.reviewSiteIdx+1 >= len(m.sites) {
+			m.step = stepThresholds
+			m.body = strings.Join(m.reviewSiteLines, "\n")
+		} else {
+			m.reviewSiteIdx++
+			m.reviewPhase = ""
+			m.reviewCandidates = nil
+			m.reviewApproved = nil
+			m.reviewCursor = 0
+			m.reviewScrollTop = 0
+			m.body = ""
+		}
+		return m, nil
+	case existingAdminsMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.adminPhase = "create"
+			return m, nil
+		}
+		m.err = ""
+		if msg.hasExisting {
+			m.adminPhase = "choose"
+			m.body = msg.body
+			return m, nil
+		}
+		m.adminPhase = "create"
+		m.body = ""
+		return m, textinput.Blink
 	case asyncDoneMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -222,14 +330,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.body = msg.body
 		switch m.step {
+		case stepAdminUser:
+			if m.profileCfg.UserManagement {
+				m.step = stepUsers
+				m.usersMode = "menu"
+				return m, m.refreshUsersList()
+			}
+			m.step = stepEnv
+			m.envFocus = 0
+			m = m.updateEnvFocus()
+			return m, textinput.Blink
+		case stepUsers:
+			if m.usersMode != "menu" {
+				m.usersMode = "menu"
+				m.usersUsername.SetValue("")
+				m.usersPassword.SetValue("")
+				m.usersConfirm.SetValue("")
+			}
+			if strings.TrimSpace(msg.body) != "" {
+				m.usersBody = msg.body
+			}
+			return m, nil
 		case stepSites:
+			if len(msg.sites) > 0 {
+				m.sites = msg.sites
+			}
 			m.step = stepStart
 			return m, nil
 		case stepStart:
 			m.step = stepReview
+			if !m.profileCfg.AutoAcceptDiscovery {
+				m.reviewSiteIdx = 0
+				m.reviewSiteLines = nil
+				m.reviewPhase = ""
+				m.body = ""
+			}
 			return m, nil
 		case stepReview:
-			m.step = stepThresholds
+			if m.profileCfg.AutoAcceptDiscovery {
+				m.step = stepThresholds
+			}
 			return m, nil
 		case stepThresholds:
 			m.step = stepDone
@@ -243,6 +383,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.step {
+	case stepAdminUser:
+		return m.updateAdminUser(msg)
+	case stepUsers:
+		return m.updateUsers(msg)
 	case stepEnv:
 		return m.updateEnv(msg)
 	case stepSites:
@@ -250,10 +394,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepStart:
 		return m.updateStart(msg)
 	case stepReview:
-		if m.err == "" {
-			return m.updateReview(msg)
+		if m.profileCfg.AutoAcceptDiscovery {
+			if m.err == "" {
+				return m.updateReview(msg)
+			}
+			return m, nil
 		}
-		return m, nil
+		return m.updateReviewManual(msg)
 	case stepThresholds:
 		return m.updateThresholds(msg)
 	}
@@ -421,14 +568,10 @@ func (m model) updateSiteFocus() model {
 
 func (m model) persistEnvAndSites() tea.Cmd {
 	deployDir := m.deployDir
-	values := map[string]string{
-		"MQTT_BROKER":              strings.TrimSpace(m.envInputs[0].Value()),
-		"MQTT_PASSWORD":            strings.TrimSpace(m.envInputs[1].Value()),
-		"SNMP_COMMUNITY":           strings.TrimSpace(m.envInputs[2].Value()),
-		"SNMP_DISCOVERY_COMMUNITY": strings.TrimSpace(m.envInputs[3].Value()),
-	}
-	if values["SNMP_DISCOVERY_COMMUNITY"] == "" {
-		values["SNMP_DISCOVERY_COMMUNITY"] = values["SNMP_COMMUNITY"]
+	profile := m.profile
+	values, err := m.sharedEnvValues()
+	if err != nil {
+		return func() tea.Msg { return asyncDoneMsg{err: err} }
 	}
 	count, err := parseSiteCount(m.siteCountInput.Value())
 	if err != nil {
@@ -451,7 +594,7 @@ func (m model) persistEnvAndSites() tea.Cmd {
 		burst = 2
 	}
 	return func() tea.Msg {
-		specs, err := BuildSiteSpecs(count, siteIDs, cidrs)
+		specs, err := BuildSiteSpecs(profile, count, siteIDs, cidrs)
 		if err != nil {
 			return asyncDoneMsg{err: err}
 		}
@@ -459,22 +602,23 @@ func (m model) persistEnvAndSites() tea.Cmd {
 			return asyncDoneMsg{err: err}
 		}
 		applyEnvToProcess(values)
-		if err := persistMultiSiteArtifacts(deployDir, specs, rate, burst); err != nil {
+		if err := persistMultiSiteArtifacts(deployDir, profile, specs, rate, burst); err != nil {
 			return asyncDoneMsg{err: err}
 		}
 		body := fmt.Sprintf("Saved shared .env, manifest, and %d site artifact(s).", len(specs))
-		return asyncDoneMsg{body: body, err: nil}
+		return asyncDoneMsg{body: body, sites: specs}
 	}
 }
 
 func (m model) runStart() tea.Cmd {
 	deployDir := m.deployDir
+	profile := m.profile
 	return func() tea.Msg {
 		manifest, err := LoadManifest(deployDir)
 		if err != nil {
 			return asyncDoneMsg{err: err}
 		}
-		if err := startSiteCollectors(deployDir, manifest.Sites); err != nil {
+		if err := startSiteCollectors(deployDir, profile, manifest.Sites); err != nil {
 			return asyncDoneMsg{err: err}
 		}
 		if err := waitForSites(deployDir, manifest.Sites, 3*time.Minute); err != nil {
@@ -496,7 +640,7 @@ func (m model) runReview() tea.Cmd {
 		}
 		lines := make([]string, 0, len(manifest.Sites))
 		for _, spec := range manifest.Sites {
-			line, err := reviewSite(spec, deployDir)
+			line, err := reviewSiteAuto(spec, deployDir)
 			if err != nil {
 				return asyncDoneMsg{err: err}
 			}
@@ -535,7 +679,11 @@ func (m model) View() string {
 	}
 	th := m.theme
 	var body strings.Builder
-	body.WriteString(m.progressRail())
+	if rail := m.applianceProgressRail(); rail != "" {
+		body.WriteString(rail)
+	} else {
+		body.WriteString(m.progressRail())
+	}
 	body.WriteString("\n\n")
 	if m.err != "" {
 		body.WriteString(th.Error.Render("error: " + m.err))
@@ -545,30 +693,49 @@ func (m model) View() string {
 		body.WriteString(th.Spinner.Render(m.spinner.View()))
 		body.WriteString(" ")
 		switch m.step {
+		case stepAdminUser:
+			body.WriteString(th.Muted.Render("Checking administrator accounts…"))
 		case stepStart:
-			body.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
+			if m.profile == ProfileAppliance {
+				body.WriteString(th.Muted.Render("Starting all site collectors…"))
+			} else {
+				body.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
+			}
 		case stepReview:
-			body.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
+			if m.profileCfg.AutoAcceptDiscovery {
+				body.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
+			} else {
+				body.WriteString(th.Muted.Render("Scanning site for discovery candidates…"))
+			}
 		case stepThresholds:
 			body.WriteString(th.Muted.Render("Applying threshold to all sites…"))
 		default:
 			body.WriteString(th.Muted.Render("working…"))
 		}
+		m.appendQuitFooter(th, &body)
 		return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
 	}
 	switch m.step {
+	case stepAdminUser:
+		body.WriteString(m.viewAdminUser(th))
+	case stepUsers:
+		body.WriteString(m.viewUsers(th))
 	case stepEnv:
-		body.WriteString(th.Title.Render("Step 1 - Shared environment"))
-		body.WriteString("\n\n")
-		for i, input := range m.envInputs {
-			body.WriteString(th.Soft.Render(fmt.Sprintf("%d", i+1)))
-			body.WriteString(" ")
-			body.WriteString(th.Confirm.Render(">"))
-			body.WriteString(" ")
-			body.WriteString(input.View())
-			body.WriteString("\n")
+		if m.profile == ProfileAppliance {
+			body.WriteString(m.viewApplianceEnv(th))
+		} else {
+			body.WriteString(th.Title.Render("Step 1 - Shared environment"))
+			body.WriteString("\n\n")
+			for i, input := range m.envInputs {
+				body.WriteString(th.Soft.Render(fmt.Sprintf("%d", i+1)))
+				body.WriteString(" ")
+				body.WriteString(th.Confirm.Render(">"))
+				body.WriteString(" ")
+				body.WriteString(input.View())
+				body.WriteString("\n")
+			}
+			body.WriteString(th.Muted.Render("tab next field · enter continue"))
 		}
-		body.WriteString(th.Muted.Render("tab next field · enter continue"))
 	case stepSites:
 		body.WriteString(th.Title.Render("Step 2 - Site containers"))
 		body.WriteString("\n\n")
@@ -594,27 +761,37 @@ func (m model) View() string {
 		body.WriteString("\n")
 		body.WriteString(th.Muted.Render("tab next field · enter on last CIDR to save artifacts"))
 	case stepStart, stepReview:
-		if m.step == stepStart {
+		if m.step == stepAdminUser && m.loading {
+			body.WriteString(th.Muted.Render("Checking administrator accounts…"))
+		} else if m.step == stepStart {
 			body.WriteString(th.Title.Render("Step 3 - Starting collectors"))
 			body.WriteString("\n\n")
 			if m.body != "" {
 				body.WriteString(th.Value.Render(m.body))
 				body.WriteString("\n\n")
 			}
-			body.WriteString(th.Muted.Render("enter to build and start all site containers"))
-		} else {
-			body.WriteString(th.Title.Render("Step 4 - Review inventory"))
-			body.WriteString("\n")
-			if m.body != "" {
-				body.WriteString(th.Value.Render(m.body))
-				body.WriteString("\n")
+			if m.profile == ProfileAppliance {
+				body.WriteString(th.Muted.Render("enter to start all site containers"))
+			} else {
+				body.WriteString(th.Muted.Render("enter to build and start all site containers"))
 			}
-			if m.err != "" {
+		} else {
+			if m.profileCfg.AutoAcceptDiscovery {
+				body.WriteString(th.Title.Render("Step 4 - Review inventory"))
 				body.WriteString("\n")
-				body.WriteString(th.Muted.Render("r retry discovery · s skip and continue"))
-			} else if !m.loading {
-				body.WriteString("\n")
-				body.WriteString(th.Muted.Render("enter to run discovery for each site"))
+				if m.body != "" {
+					body.WriteString(th.Value.Render(m.body))
+					body.WriteString("\n")
+				}
+				if m.err != "" {
+					body.WriteString("\n")
+					body.WriteString(th.Muted.Render("r retry discovery · s skip and continue"))
+				} else if !m.loading {
+					body.WriteString("\n")
+					body.WriteString(th.Muted.Render("enter to run discovery for each site"))
+				}
+			} else {
+				body.WriteString(m.viewReviewManual(th))
 			}
 		}
 	case stepThresholds:
@@ -641,8 +818,9 @@ func (m model) View() string {
 				body.WriteString("\n")
 			}
 		}
-		body.WriteString(th.Muted.Render("press q to quit"))
+		body.WriteString(th.Muted.Render("press q or enter to quit"))
 	}
+	m.appendQuitFooter(th, &body)
 	return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
 }
 
@@ -674,7 +852,7 @@ func (m model) viewSplash() string {
 	belowLogo.WriteString(th.Title.Render("Equate SNMP Collector Configuration"))
 	belowLogo.WriteString("\n\n")
 	belowLogo.WriteString(th.Confirm.Render("→"))
-	belowLogo.WriteString(th.Muted.Render(" enter to continue"))
+	belowLogo.WriteString(th.Muted.Render(" enter to continue · ctrl+c to quit"))
 
 	headerBlock := lipgloss.NewStyle().Padding(1, 0, 0, 0).Render(
 		lipgloss.JoinVertical(lipgloss.Left, splashLogo(th), withSectionGap(belowLogo.String())),
