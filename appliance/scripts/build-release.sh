@@ -69,7 +69,32 @@ require_cmd() {
   done
 }
 
-require_cmd docker git
+require_cmd docker git go
+
+ensure_docker_credential_path() {
+  local dir cred resolved
+  resolved="$(command -v docker-credential-osxkeychain 2>/dev/null || true)"
+  if [[ -n "${resolved}" ]] && [[ -x "${resolved}" ]]; then
+    return 0
+  fi
+  local candidates=(
+    "/Applications/Docker.app/Contents/Resources/bin"
+    "${HOME}/.orbstack/bin"
+    "/Applications/OrbStack.app/Contents/MacOS/xbin"
+  )
+  for dir in "${candidates[@]}"; do
+    cred="${dir}/docker-credential-osxkeychain"
+    if [[ -x "${cred}" ]]; then
+      export PATH="${dir}:${PATH}"
+      return 0
+    fi
+  done
+  echo "docker-credential-osxkeychain not found in PATH (broken OrbStack symlink or missing Docker Desktop)" >&2
+  echo "fix: reinstall Docker Desktop, restore OrbStack, or remove credsStore from ~/.docker/config.json" >&2
+  exit 1
+}
+
+ensure_docker_credential_path
 
 if ! docker buildx version >/dev/null 2>&1; then
   echo "docker buildx is required" >&2
@@ -92,12 +117,15 @@ build_local_image() {
   shift 2
   local tag="equate-${name}:${TAG_SUFFIX}"
   echo "building ${tag} (${PLATFORM})..." >&2
-  docker buildx build \
+  if ! docker buildx build \
     --platform "${PLATFORM}" \
     --tag "${tag}" \
     --load \
     "$@" \
-    "${context}"
+    "${context}"; then
+    echo "docker build failed for ${tag}" >&2
+    return 1
+  fi
   printf '%s\n' "${tag}"
 }
 
@@ -119,10 +147,16 @@ BUILT_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 LDFLAGS="-s -w -X main.buildVersion=${VERSION} -X main.buildGitCommit=${GIT_SHORT} -X main.buildTime=${BUILT_AT}"
 (
   cd "${ROOT}/services/snmp-collector"
-  CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" \
-    go build -ldflags "${LDFLAGS}" -o "${BUNDLE_DIR}/bin/collector" ./cmd/collector
-  CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" \
-    go build -ldflags "${LDFLAGS}" -o "${BUNDLE_DIR}/bin/equate" ./cmd/equate
+  if ! CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" \
+    go build -ldflags "${LDFLAGS}" -o "${BUNDLE_DIR}/bin/collector" ./cmd/collector; then
+    echo "failed to build collector CLI for linux/${ARCH}" >&2
+    exit 1
+  fi
+  if ! CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" \
+    go build -ldflags "${LDFLAGS}" -o "${BUNDLE_DIR}/bin/equate" ./cmd/equate; then
+    echo "failed to build equate CLI for linux/${ARCH}" >&2
+    exit 1
+  fi
 )
 
 echo "pulling pinned third-party images (${PLATFORM})..."
@@ -192,6 +226,7 @@ cp -R "${ROOT}/database/migrations" "${BUNDLE_DIR}/migrations"
 mkdir -p "${BUNDLE_DIR}/scripts"
 cp "${SCRIPTS_SRC}/auth-broker.sh" "${BUNDLE_DIR}/scripts/auth-broker.sh"
 cp "${SCRIPTS_SRC}/configure-vm.sh" "${BUNDLE_DIR}/scripts/configure-vm.sh"
+cp "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" "${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh"
 cp "${SCRIPTS_SRC}/prepare-ova.sh" "${BUNDLE_DIR}/scripts/prepare-ova.sh"
 cp "${SCRIPTS_SRC}/equate-auth-broker.service" "${BUNDLE_DIR}/scripts/equate-auth-broker.service"
 if [[ -f "${DEPLOY_SRC}/scripts/manage-users.sh" ]]; then
@@ -270,10 +305,18 @@ else
 EOF
 fi
 
+checksum_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  else
+    shasum -a 256 "$@"
+  fi
+}
+
 (
   cd "${BUNDLE_DIR}"
   find . -type f ! -name checksums.txt | sort | while read -r path; do
-    sha256sum "${path#./}"
+    checksum_file "${path#./}"
   done
 ) >"${BUNDLE_DIR}/checksums.txt"
 

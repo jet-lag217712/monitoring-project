@@ -32,7 +32,9 @@ func (s *Server) handle(ctx context.Context, req Request) (map[string]any, error
 	case "discovery.candidates.list":
 		return s.handleDiscoveryCandidatesList()
 	case "discovery.scan.start":
-		return s.handleDiscoveryScanStart(ctx)
+		return s.handleDiscoveryScanStart(ctx, req.Params)
+	case "discovery.scan.progress":
+		return s.handleDiscoveryScanProgress()
 	case "discovery.policy.prepare":
 		return s.handleDiscoveryPolicyPrepare(req.Params)
 	case "discovery.policy.commit":

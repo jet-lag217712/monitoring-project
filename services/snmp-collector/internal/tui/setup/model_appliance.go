@@ -318,6 +318,7 @@ func (m model) updateReviewManual(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.String() == "enter" && !m.loading {
 			m.loading = true
 			m.err = ""
+			m.resetLoadProgress()
 			return m, m.runReviewScanSite()
 		}
 		if key.String() == "s" || key.String() == "S" {
@@ -358,26 +359,6 @@ func (m model) updateReviewManual(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func scanSiteCandidatesForSite(deployDir string, spec SiteSpec) (reviewScanMsg, error) {
-	if err := loadEnvFile(envPath(deployDir)); err != nil {
-		return reviewScanMsg{}, fmt.Errorf("load .env: %w", err)
-	}
-	client := newDeployControl(deployDir, spec)
-	candidates, err := runDiscoveryScan(client)
-	if err != nil {
-		return reviewScanMsg{}, err
-	}
-	approved := make([]bool, len(candidates))
-	for i, c := range candidates {
-		approved[i] = fmt.Sprint(c["result"]) == "success"
-	}
-	body := fmt.Sprintf("%s: %d candidate(s) — toggle with space, enter to accept reviewed", spec.SiteID, len(candidates))
-	if len(candidates) == 0 {
-		body = fmt.Sprintf("%s: no candidates found", spec.SiteID)
-	}
-	return reviewScanMsg{candidates: candidates, approved: approved, body: body}, nil
-}
-
 func (m model) runReviewScanSite() tea.Cmd {
 	deployDir := m.deployDir
 	siteIdx := m.reviewSiteIdx
@@ -393,11 +374,15 @@ func (m model) runReviewScanSite() tea.Cmd {
 		if siteIdx >= len(sites) {
 			return asyncDoneMsg{err: fmt.Errorf("no site at index %d", siteIdx)}
 		}
-		msg, err := scanSiteCandidatesForSite(deployDir, sites[siteIdx])
-		if err != nil {
+		if err := loadEnvFile(envPath(deployDir)); err != nil {
+			return asyncDoneMsg{err: fmt.Errorf("load .env: %w", err)}
+		}
+		spec := sites[siteIdx]
+		client := newDeployControl(deployDir, spec)
+		if err := startAsyncDiscoveryScan(client); err != nil {
 			return asyncDoneMsg{err: err}
 		}
-		return msg
+		return discoveryScanStartedMsg{spec: spec, manual: true}
 	}
 }
 

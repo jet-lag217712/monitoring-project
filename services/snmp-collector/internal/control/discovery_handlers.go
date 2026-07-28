@@ -48,28 +48,41 @@ func (s *Server) handleDiscoveryCandidatesList() (map[string]any, error) {
 	return result, nil
 }
 
-func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, error) {
-	cfg := s.manager.Current()
-	if len(cfg.Discovery.AllowedCIDRs) == 0 {
-		return nil, newProtoError(CodeValidationFailed, "discovery allowed_cidrs is not configured")
-	}
-	community := strings.TrimSpace(cfg.DiscoveryCommunity())
-	if community == "" {
-		return nil, newProtoError(CodeValidationFailed, "discovery community environment variable is not set")
+func (s *Server) handleDiscoveryScanStart(ctx context.Context, params map[string]any) (map[string]any, error) {
+	async := false
+	if raw, ok := params["async"]; ok {
+		if b, ok := raw.(bool); ok {
+			async = b
+		}
 	}
 
-	started := time.Now().UTC()
-	registry := vendors.NewRegistry()
-	scanner, err := discovery.New(cfg.Discovery, community, discovery.NewSNMPProber(), discovery.WithProfileDetector(func(identity discovery.Identity) string {
-		matched, _ := registry.Match(identity.SysObjectID)
-		if matched == nil {
-			return "core"
-		}
-		return matched.Name()
-	}))
+	scanner, cfg, err := s.newDiscoveryScanner()
+	if err != nil {
+		return nil, err
+	}
+
+	targetCount, err := discovery.TargetCount(ctx, cfg.Discovery)
 	if err != nil {
 		return nil, newProtoError(CodeValidationFailed, err.Error())
 	}
+
+	if async {
+		if err := s.tryBeginScan(targetCount); err != nil {
+			return nil, err
+		}
+		started := s.scanProgressSnapshot().startedAt
+		go s.runDiscoveryScan(scanner)
+		return map[string]any{
+			"running":       true,
+			"target_count":  targetCount,
+			"started_at":    started.Format(time.RFC3339Nano),
+		}, nil
+	}
+
+	if err := s.tryBeginScan(targetCount); err != nil {
+		return nil, err
+	}
+	started := s.scanProgressSnapshot().startedAt
 
 	scanCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -83,10 +96,89 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, 
 	if scanErr != nil {
 		state.Error = scanErr.Error()
 	}
+	s.finishScan(state.Error)
 	if s.discovery != nil {
 		_ = s.discovery.save(state)
 	}
 
+	return s.discoveryScanResult(state, cfg, scanErr)
+}
+
+func (s *Server) handleDiscoveryScanProgress() (map[string]any, error) {
+	snap := s.scanProgressSnapshot()
+	agentDebugLog("D", "discovery_handlers.go:handleDiscoveryScanProgress", "progress polled", map[string]any{
+		"running": snap.running,
+		"probed":  snap.probed,
+		"total":   snap.total,
+	})
+	result := map[string]any{
+		"running": snap.running,
+		"probed":  snap.probed,
+		"total":   snap.total,
+	}
+	if !snap.startedAt.IsZero() {
+		result["started_at"] = snap.startedAt.Format(time.RFC3339Nano)
+	}
+	if !snap.finishedAt.IsZero() {
+		result["finished_at"] = snap.finishedAt.Format(time.RFC3339Nano)
+	}
+	if snap.err != "" {
+		result["error"] = snap.err
+	}
+	return result, nil
+}
+
+func (s *Server) newDiscoveryScanner() (*discovery.Scanner, *config.Config, error) {
+	cfg := s.manager.Current()
+	if len(cfg.Discovery.AllowedCIDRs) == 0 {
+		return nil, nil, newProtoError(CodeValidationFailed, "discovery allowed_cidrs is not configured")
+	}
+	community := strings.TrimSpace(cfg.DiscoveryCommunity())
+	if community == "" {
+		return nil, nil, newProtoError(CodeValidationFailed, "discovery community environment variable is not set")
+	}
+
+	registry := vendors.NewRegistry()
+	scanner, err := discovery.New(cfg.Discovery, community, discovery.NewSNMPProber(), discovery.WithProfileDetector(func(identity discovery.Identity) string {
+		matched, _ := registry.Match(identity.SysObjectID)
+		if matched == nil {
+			return "core"
+		}
+		return matched.Name()
+	}), discovery.WithProbeProgress(func(probed, total int) {
+		s.updateScanProgress(probed, total)
+	}))
+	if err != nil {
+		return nil, nil, newProtoError(CodeValidationFailed, err.Error())
+	}
+	return scanner, cfg, nil
+}
+
+func (s *Server) runDiscoveryScan(scanner *discovery.Scanner) {
+	agentDebugLog("C", "discovery_handlers.go:runDiscoveryScan", "async scan goroutine started", nil)
+	scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	started := s.scanProgressSnapshot().startedAt
+	candidates, scanErr := scanner.Scan(scanCtx)
+	agentDebugLog("C", "discovery_handlers.go:runDiscoveryScan", "async scan goroutine finished", map[string]any{
+		"candidateCount": len(candidates),
+		"scanErr":        scanErr != nil,
+	})
+	state := discoveryScanState{
+		StartedAt:  started,
+		FinishedAt: time.Now().UTC(),
+		Candidates: candidates,
+	}
+	if scanErr != nil {
+		state.Error = scanErr.Error()
+	}
+	s.finishScan(state.Error)
+	if s.discovery != nil {
+		_ = s.discovery.save(state)
+	}
+
+	cfg := s.manager.Current()
 	success := 0
 	failed := 0
 	var sampleError string
@@ -100,15 +192,6 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, 
 			sampleError = c.Error
 		}
 	}
-	result := map[string]any{
-		"candidate_count": len(candidates),
-		"success_count":   success,
-		"started_at":      state.StartedAt.Format(time.RFC3339Nano),
-		"finished_at":     state.FinishedAt.Format(time.RFC3339Nano),
-	}
-	if state.Error != "" {
-		result["error"] = state.Error
-	}
 	if s.log != nil {
 		s.log.Info("discovery scan finished",
 			"candidate_count", len(candidates),
@@ -121,6 +204,46 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context) (map[string]any, 
 	}
 	_ = s.audit.Record(AuditEntry{Action: "discovery.scan.start", Success: scanErr == nil, Revision: s.activeRevision(), Details: map[string]any{
 		"candidate_count": len(candidates),
+		"success_count":   success,
+		"async":           true,
+	}})
+}
+
+func (s *Server) discoveryScanResult(state discoveryScanState, cfg *config.Config, scanErr error) (map[string]any, error) {
+	success := 0
+	failed := 0
+	var sampleError string
+	for _, c := range state.Candidates {
+		if c.Result == discovery.ProbeSucceeded {
+			success++
+			continue
+		}
+		failed++
+		if sampleError == "" && strings.TrimSpace(c.Error) != "" {
+			sampleError = c.Error
+		}
+	}
+	result := map[string]any{
+		"candidate_count": len(state.Candidates),
+		"success_count":   success,
+		"started_at":      state.StartedAt.Format(time.RFC3339Nano),
+		"finished_at":     state.FinishedAt.Format(time.RFC3339Nano),
+	}
+	if state.Error != "" {
+		result["error"] = state.Error
+	}
+	if s.log != nil {
+		s.log.Info("discovery scan finished",
+			"candidate_count", len(state.Candidates),
+			"success_count", success,
+			"failed_count", failed,
+			"cidr_count", len(cfg.Discovery.AllowedCIDRs),
+			"sample_error", sampleError,
+			"scan_error", state.Error,
+		)
+	}
+	_ = s.audit.Record(AuditEntry{Action: "discovery.scan.start", Success: scanErr == nil, Revision: s.activeRevision(), Details: map[string]any{
+		"candidate_count": len(state.Candidates),
 		"success_count":   success,
 	}})
 	return result, nil

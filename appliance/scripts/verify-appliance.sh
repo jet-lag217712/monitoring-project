@@ -3,7 +3,7 @@
 # Run after configure-vm completes or after reconfiguration.
 set -euo pipefail
 
-EQUATE_CURRENT=/opt/equate/releases/current
+EQUATE_CURRENT=/opt/equate/current
 EQUATE_RUN=/run/equate
 EQUATE_RENDERED=${EQUATE_RUN}/rendered
 AUTH_SOCK=${EQUATE_RUN}/auth.sock

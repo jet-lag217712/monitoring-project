@@ -24,7 +24,22 @@ if [[ "${1:-}" == "--reconfigure" ]]; then
   shift
 fi
 
+ensure_appliance_rendered_secrets() {
+  local compose_env="/run/equate/rendered/compose.env"
+  if [[ -f "${compose_env}" ]]; then
+    return 0
+  fi
+  local configure_script="${SCRIPT_DIR}/scripts/configure-vm.sh"
+  if [[ ! -f "${configure_script}" ]]; then
+    echo "missing ${compose_env} and ${configure_script}" >&2
+    exit 1
+  fi
+  echo "First boot: generating per-installation secrets under /run/equate/rendered…" >&2
+  bash "${configure_script}" --bootstrap-only
+}
+
 if [[ ! -f .setup-complete ]]; then
+  ensure_appliance_rendered_secrets
   echo "First boot: launching Equate appliance setup wizard…" >&2
   SETUP_CMD=()
   if command -v collector >/dev/null 2>&1; then

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/config"
@@ -83,6 +84,16 @@ func WithProfileDetector(detector ProfileDetector) Option {
 	}
 }
 
+// ProbeProgressFunc reports probe completion counts during Scan.
+type ProbeProgressFunc func(probed, total int)
+
+// WithProbeProgress configures a callback invoked after each target is probed.
+func WithProbeProgress(fn ProbeProgressFunc) Option {
+	return func(scanner *Scanner) {
+		scanner.onProbeComplete = fn
+	}
+}
+
 type probeWaiter interface {
 	Wait(context.Context) (delayed bool, err error)
 }
@@ -96,6 +107,7 @@ type Scanner struct {
 	limiter         probeWaiter
 	now             func() time.Time
 	onRateLimitWait func()
+	onProbeComplete ProbeProgressFunc
 }
 
 // WithRateLimitWaitObserver records probes delayed by the shared token bucket.
@@ -143,6 +155,10 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 	if err != nil {
 		return nil, err
 	}
+	agentDebugLog("A", "discovery.go:Scan", "scan started", map[string]any{
+		"targetCount": len(targets),
+		"maxWorkers":  s.policy.MaxWorkers,
+	})
 
 	workers := s.policy.MaxWorkers
 	if workers > len(targets) {
@@ -150,6 +166,7 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 	}
 	jobs := make(chan netip.Addr)
 	results := make(chan Candidate, len(targets))
+	var workerProbed atomic.Int64
 
 	var workersWG sync.WaitGroup
 	workersWG.Add(workers)
@@ -165,6 +182,13 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 					s.onRateLimitWait()
 				}
 				results <- s.probe(ctx, target)
+				n := workerProbed.Add(1)
+				if n == 1 || n%32 == 0 {
+					agentDebugLog("B", "discovery.go:worker", "probe completed in worker", map[string]any{
+						"workerProbed": n,
+						"target":       target.String(),
+					})
+				}
 			}
 		}()
 	}
@@ -179,11 +203,24 @@ sendTargets:
 	}
 	close(jobs)
 	workersWG.Wait()
+	agentDebugLog("A", "discovery.go:Scan", "all workers finished", map[string]any{
+		"workerProbed": workerProbed.Load(),
+		"targetCount":  len(targets),
+	})
 	close(results)
 
+	total := len(targets)
+	if s.onProbeComplete != nil {
+		s.onProbeComplete(0, total)
+	}
 	candidates := make([]Candidate, 0, len(results))
+	probed := 0
 	for candidate := range results {
 		candidates = append(candidates, candidate)
+		probed++
+		if s.onProbeComplete != nil {
+			s.onProbeComplete(probed, total)
+		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		left, _ := netip.ParseAddr(candidates[i].IP)
@@ -194,6 +231,15 @@ sendTargets:
 		return candidates, err
 	}
 	return candidates, nil
+}
+
+// TargetCount returns how many addresses would be probed for the given policy.
+func TargetCount(ctx context.Context, policy config.DiscoveryConfig) (int, error) {
+	targets, err := expandAllowedTargets(ctx, policy.AllowedCIDRs, policy.MaxTargets)
+	if err != nil {
+		return 0, err
+	}
+	return len(targets), nil
 }
 
 func (s *Scanner) probe(ctx context.Context, target netip.Addr) Candidate {

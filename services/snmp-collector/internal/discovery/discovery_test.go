@@ -240,3 +240,48 @@ func TestProbeErrorRedactsCommunity(t *testing.T) {
 		t.Fatalf("candidates=%#v", candidates)
 	}
 }
+
+func TestScanProbeProgressCallback(t *testing.T) {
+	prober := proberFunc(func(_ context.Context, request ProbeRequest) (Identity, error) {
+		return Identity{SysObjectID: "1.3.6.1.4.1.9.1"}, nil
+	})
+	var progress []struct{ probed, total int }
+	scanner, err := New(
+		testPolicy("192.0.2.0/30", 4, 2),
+		"community",
+		prober,
+		WithProbeProgress(func(probed, total int) {
+			progress = append(progress, struct{ probed, total int }{probed, total})
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	candidates, err := scanner.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(candidates) != 4 {
+		t.Fatalf("candidates=%d", len(candidates))
+	}
+	if len(progress) < 5 {
+		t.Fatalf("progress callbacks=%d, want at least 5", len(progress))
+	}
+	if progress[0].probed != 0 || progress[0].total != 4 {
+		t.Fatalf("initial progress=%v", progress[0])
+	}
+	last := progress[len(progress)-1]
+	if last.probed != 4 || last.total != 4 {
+		t.Fatalf("final progress=%v", last)
+	}
+}
+
+func TestTargetCount(t *testing.T) {
+	count, err := TargetCount(context.Background(), testPolicy("192.0.2.0/30", 4, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 4 {
+		t.Fatalf("count=%d", count)
+	}
+}

@@ -1,0 +1,85 @@
+name: Appliance OVA (AMD64)
+
+# Builds Equate-Appliance-<version>-amd64.ova on ubuntu-latest using QEMU.
+# ARM64 OVA export still requires VMware Fusion on Apple Silicon (see docs/releases/appliance-ova.md).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (semver, without v prefix)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: appliance-ova-amd64-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build-amd64-ova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/snmp-collector/go.mod
+          cache-dependency-path: services/snmp-collector/go.sum
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            v="${{ github.event.release.tag_name }}"
+            v="${v#v}"
+          else
+            v="${{ inputs.version }}"
+          fi
+          if [ -z "$v" ]; then
+            echo "version is empty" >&2
+            exit 1
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+          echo "Building Equate Appliance OVA for version $v (amd64)"
+
+      - name: Install QEMU and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage python3 curl
+
+      - name: Build AMD64 OVA
+        env:
+          EQUATE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          chmod +x appliance/scripts/*.sh appliance/ci/*.sh
+          ./appliance/scripts/build-ova-amd64-ci.sh --version "$EQUATE_VERSION"
+
+      - name: Upload OVA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: equate-appliance-${{ steps.version.outputs.value }}-amd64-ova
+          path: |
+            dist/Equate-Appliance-${{ steps.version.outputs.value }}-amd64.ova
+            dist/Equate-Appliance-${{ steps.version.outputs.value }}-amd64.ova.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach OVA to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Equate-Appliance-${{ steps.version.outputs.value }}-amd64.ova
+            dist/Equate-Appliance-${{ steps.version.outputs.value }}-amd64.ova.sha256

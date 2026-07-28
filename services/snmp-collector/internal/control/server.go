@@ -46,6 +46,9 @@ type Server struct {
 
 	discovery *discoveryStore
 
+	scanMu    sync.RWMutex
+	scanState activeScanState
+
 	mu         sync.Mutex
 	mutationMu sync.Mutex
 	listener   net.Listener

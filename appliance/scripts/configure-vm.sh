@@ -3,10 +3,14 @@
 #
 # Usage (on the VM as root):
 #   bash configure-vm.sh --bundle /tmp/equate-staging/bundle --version 1.0.0
+#   bash configure-vm.sh --bootstrap-only
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 BUNDLE_DIR=""
 VERSION=""
+BOOTSTRAP_ONLY=0
 EQUATE_ROOT="/opt/equate"
 ETC_DIR="/etc/equate"
 VAR_DIR="/var/lib/equate"
@@ -17,10 +21,13 @@ MOSQUITTO_UID=1883
 
 usage() {
   cat <<'EOF'
-usage: configure-vm.sh --bundle <path> --version <semver>
+usage:
+  configure-vm.sh --bundle <path> --version <semver>
+  configure-vm.sh --bootstrap-only [--version <semver>]
 
-Installs the immutable release under /opt/equate/releases/<version>, renders
-installation secrets under /run/equate, and starts the production Compose stack.
+Installs the immutable release under /opt/equate/releases/<version> (bundle mode),
+or regenerates ephemeral secrets for an already-installed release (bootstrap-only).
+Both modes render secrets under /run/equate and start the production Compose stack.
 EOF
 }
 
@@ -34,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       VERSION="${2:-}"
       shift 2
       ;;
+    --bootstrap-only)
+      BOOTSTRAP_ONLY=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -46,19 +57,56 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+source_bootstrap_script() {
+  local candidates=(
+    "${SCRIPT_DIR}/bootstrap-appliance-rendered.sh"
+    "${SCRIPT_DIR}/scripts/bootstrap-appliance-rendered.sh"
+  )
+  if [[ -n "${BUNDLE_DIR}" ]]; then
+    candidates+=("${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh")
+  fi
+  if [[ -f "${ETC_DIR}/deploy-dir" ]]; then
+    local release_dir
+    release_dir="$(tr -d '[:space:]' < "${ETC_DIR}/deploy-dir")"
+    candidates+=("${release_dir}/scripts/bootstrap-appliance-rendered.sh")
+  fi
+  local path
+  for path in "${candidates[@]}"; do
+    if [[ -f "${path}" ]]; then
+      # shellcheck source=bootstrap-appliance-rendered.sh
+      source "${path}"
+      return 0
+    fi
+  done
+  echo "bootstrap-appliance-rendered.sh not found. Copy it next to configure-vm.sh or into the bundle scripts/ directory." >&2
+  echo "searched:" >&2
+  for path in "${candidates[@]}"; do
+    echo "  ${path}" >&2
+  done
+  exit 1
+}
+
+source_bootstrap_script
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "configure-vm.sh must run as root" >&2
   exit 1
 fi
 
-if [[ -z "${BUNDLE_DIR}" || -z "${VERSION}" ]]; then
-  usage >&2
-  exit 1
-fi
-
-if [[ ! -f "${BUNDLE_DIR}/release.env" ]]; then
-  echo "bundle missing release.env: ${BUNDLE_DIR}" >&2
-  exit 1
+if [[ "${BOOTSTRAP_ONLY}" -eq 1 ]]; then
+  if [[ -n "${BUNDLE_DIR}" ]]; then
+    echo "--bootstrap-only cannot be combined with --bundle" >&2
+    exit 1
+  fi
+else
+  if [[ -z "${BUNDLE_DIR}" || -z "${VERSION}" ]]; then
+    usage >&2
+    exit 1
+  fi
+  if [[ ! -f "${BUNDLE_DIR}/release.env" ]]; then
+    echo "bundle missing release.env: ${BUNDLE_DIR}" >&2
+    exit 1
+  fi
 fi
 
 # Callers may delete the release directory while cd'd into it; use a stable cwd.
@@ -92,234 +140,51 @@ install_host_packages() {
   fi
 }
 
+resolve_release_dir() {
+  local deploy_file="${ETC_DIR}/deploy-dir"
+  local current_link="${EQUATE_ROOT}/current"
+  if [[ -f "${deploy_file}" ]]; then
+    RELEASE_DIR="$(tr -d '[:space:]' < "${deploy_file}")"
+  elif [[ -e "${current_link}" ]]; then
+    RELEASE_DIR="$(readlink -f "${current_link}")"
+  else
+    echo "cannot resolve installed release (missing ${deploy_file})" >&2
+    exit 1
+  fi
+  if [[ ! -f "${RELEASE_DIR}/release.env" ]]; then
+    echo "installed release missing release.env: ${RELEASE_DIR}" >&2
+    exit 1
+  fi
+  if [[ -z "${VERSION}" ]]; then
+    VERSION="$(grep -E '^EQUATE_VERSION=' "${RELEASE_DIR}/release.env" | cut -d= -f2- | tr -d '[:space:]')"
+  fi
+  if [[ -z "${VERSION}" ]]; then
+    echo "could not determine release version" >&2
+    exit 1
+  fi
+}
+
 install_host_packages
 
-rand_secret() {
-  openssl rand -base64 32 | tr -d '/+=' | head -c 32
-}
-
-RELEASE_DIR="${EQUATE_ROOT}/releases/${VERSION}"
 CURRENT_LINK="${EQUATE_ROOT}/current"
 
-echo "installing release ${VERSION} to ${RELEASE_DIR}"
-install -d -m 0755 "${EQUATE_ROOT}/releases"
-rm -rf "${RELEASE_DIR}"
-cp -a "${BUNDLE_DIR}" "${RELEASE_DIR}"
-ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
+if [[ "${BOOTSTRAP_ONLY}" -eq 1 ]]; then
+  resolve_release_dir
+  echo "bootstrapping rendered secrets for installed release ${VERSION} at ${RELEASE_DIR}"
+  LOAD_IMAGES=0
+  bootstrap_appliance_rendered_and_stack
+else
+  RELEASE_DIR="${EQUATE_ROOT}/releases/${VERSION}"
 
-# Regenerate ephemeral secrets each install; remove stale dirs (e.g. mqtt/passwords as a folder).
-rm -rf "${RUN_DIR}/rendered"
+  echo "installing release ${VERSION} to ${RELEASE_DIR}"
+  install -d -m 0755 "${EQUATE_ROOT}/releases"
+  rm -rf "${RELEASE_DIR}"
+  cp -a "${BUNDLE_DIR}" "${RELEASE_DIR}"
+  ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
 
-install -d -m 0750 "${ETC_DIR}/configs" "${ETC_DIR}/sites"
-install -d -m 0750 "${VAR_DIR}/postgres" "${VAR_DIR}/mosquitto"
-install -d -m 0755 "${RUN_DIR}/rendered/mqtt" "${RUN_DIR}/rendered/mqtt/certs" "${RUN_DIR}/rendered/certificates"
-
-if [[ ! -f "${ETC_DIR}/configs/api.yaml" ]]; then
-  cp "${RELEASE_DIR}/configs/api.yaml" "${ETC_DIR}/configs/api.yaml"
-  cp "${RELEASE_DIR}/configs/ingestion.yaml" "${ETC_DIR}/configs/ingestion.yaml"
-  cp "${RELEASE_DIR}/configs/collector.yaml" "${ETC_DIR}/configs/collector.yaml"
+  LOAD_IMAGES=1
+  bootstrap_appliance_rendered_and_stack
 fi
-
-POSTGRES_SUPERUSER="ogsd"
-POSTGRES_DB="ogsd"
-POSTGRES_PASSWORD="$(rand_secret)"
-INGESTION_DB_PASSWORD="$(rand_secret)"
-API_DB_PASSWORD="$(rand_secret)"
-MQTT_COLLECTOR_PASSWORD="$(rand_secret)"
-MQTT_INGESTION_PASSWORD="$(rand_secret)"
-
-cat >"${RUN_DIR}/rendered/postgres.env" <<EOF
-POSTGRES_USER=${POSTGRES_SUPERUSER}
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-POSTGRES_DB=${POSTGRES_DB}
-EOF
-chmod 0600 "${RUN_DIR}/rendered/postgres.env"
-
-ADMIN_DATABASE_URL="postgres://${POSTGRES_SUPERUSER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
-cat >"${RUN_DIR}/rendered/database-admin.env" <<EOF
-DATABASE_URL=${ADMIN_DATABASE_URL}
-EOF
-chmod 0600 "${RUN_DIR}/rendered/database-admin.env"
-
-cat >"${RUN_DIR}/rendered/ingestion.env" <<EOF
-MQTT_PASSWORD=${MQTT_INGESTION_PASSWORD}
-DATABASE_URL=postgres://ogsd_ingestion:${INGESTION_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-EOF
-chmod 0600 "${RUN_DIR}/rendered/ingestion.env"
-
-cat >"${RUN_DIR}/rendered/backend-api.env" <<EOF
-DATABASE_URL=postgres://ogsd_api:${API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-EOF
-chmod 0600 "${RUN_DIR}/rendered/backend-api.env"
-
-cat >"${RUN_DIR}/rendered/collector.env" <<EOF
-MQTT_COLLECTOR_PASSWORD=${MQTT_COLLECTOR_PASSWORD}
-SNMP_COMMUNITY=CHANGE_ME
-SNMP_DISCOVERY_COMMUNITY=CHANGE_ME
-EOF
-chmod 0600 "${RUN_DIR}/rendered/collector.env"
-
-render_mqtt_tls() {
-  local certs="${RUN_DIR}/rendered/mqtt/certs"
-  local cn="equate-appliance"
-  openssl genrsa -out "${certs}/ca.key" 4096
-  openssl req -x509 -new -nodes -key "${certs}/ca.key" -sha256 -days 825 \
-    -subj "/CN=Equate Appliance CA" -out "${certs}/ca.crt"
-  openssl genrsa -out "${certs}/server.key" 2048
-  openssl req -new -key "${certs}/server.key" -subj "/CN=${cn}" -out "${certs}/server.csr"
-  cat >"${certs}/server.ext" <<EXT
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${cn}
-DNS.2 = mosquitto
-DNS.3 = localhost
-IP.1 = 127.0.0.1
-EXT
-  openssl x509 -req -in "${certs}/server.csr" -CA "${certs}/ca.crt" -CAkey "${certs}/ca.key" \
-    -CAcreateserial -out "${certs}/server.crt" -days 825 -sha256 -extfile "${certs}/server.ext"
-  rm -f "${certs}/server.csr" "${certs}/server.ext" "${certs}/ca.srl"
-  chmod 600 "${certs}/ca.key"
-  chmod 644 "${certs}/ca.crt" "${certs}/server.crt"
-  chown "${MOSQUITTO_UID}:${MOSQUITTO_UID}" "${certs}/ca.crt" "${certs}/server.crt" "${certs}/server.key"
-  chmod 640 "${certs}/server.key"
-}
-
-fix_mqtt_runtime_permissions() {
-  local mqtt_dir="${RUN_DIR}/rendered/mqtt"
-  local certs="${mqtt_dir}/certs"
-  local passwords="${mqtt_dir}/passwords"
-  chmod 755 "${mqtt_dir}" "${certs}"
-  if [[ -f "${certs}/server.key" ]]; then
-    chown "${MOSQUITTO_UID}:${MOSQUITTO_UID}" "${certs}/ca.crt" "${certs}/server.crt" "${certs}/server.key"
-    chmod 644 "${certs}/ca.crt" "${certs}/server.crt"
-    chmod 640 "${certs}/server.key"
-    chmod 600 "${certs}/ca.key"
-    chown root:root "${certs}/ca.key"
-  fi
-  if [[ -f "${passwords}" ]]; then
-    chown "${MOSQUITTO_UID}:${MOSQUITTO_UID}" "${passwords}"
-    chmod 640 "${passwords}"
-  fi
-}
-
-render_ui_tls() {
-  local certs="${RUN_DIR}/rendered/certificates"
-  local cn="equate-appliance"
-  openssl genrsa -out "${certs}/tls.key" 2048
-  openssl req -x509 -new -nodes -key "${certs}/tls.key" -sha256 -days 825 \
-    -subj "/CN=${cn}" -out "${certs}/tls.crt"
-  chmod 600 "${certs}/tls.key"
-}
-
-render_mqtt_passwords() {
-  local out="${RUN_DIR}/rendered/mqtt/passwords"
-  install -d -m 0700 "$(dirname "${out}")"
-  if [[ -d "${out}" ]]; then
-    rm -rf "${out}"
-  fi
-  if command -v mosquitto_passwd >/dev/null 2>&1; then
-    mosquitto_passwd -b -c "${out}" collector "${MQTT_COLLECTOR_PASSWORD}"
-    mosquitto_passwd -b "${out}" ingestion "${MQTT_INGESTION_PASSWORD}"
-  else
-    docker run --rm -v "${RUN_DIR}/rendered/mqtt:/work" eclipse-mosquitto:2 \
-      sh -c "mosquitto_passwd -b -c /work/passwords collector '${MQTT_COLLECTOR_PASSWORD}' && mosquitto_passwd -b /work/passwords ingestion '${MQTT_INGESTION_PASSWORD}'"
-  fi
-  chmod 640 "${out}"
-  chown "${MOSQUITTO_UID}:${MOSQUITTO_UID}" "${out}"
-}
-
-render_mqtt_tls
-render_ui_tls
-render_mqtt_passwords
-fix_mqtt_runtime_permissions
-
-getent group "${APPLIANCE_GROUP}" >/dev/null 2>&1 || groupadd --system "${APPLIANCE_GROUP}"
-
-echo "loading container images..."
-for image_tar in "${RELEASE_DIR}/images/"*.tar; do
-  docker load -i "${image_tar}"
-done
-
-install -m 0644 "${RELEASE_DIR}/scripts/equate-auth-broker.service" /etc/systemd/system/equate-auth-broker.service
-chmod 0755 "${RELEASE_DIR}/scripts/auth-broker.sh"
-systemctl daemon-reload
-if ! systemctl enable --now equate-auth-broker.service; then
-  echo "equate-auth-broker failed to start; check: journalctl -xeu equate-auth-broker.service" >&2
-  exit 1
-fi
-
-COMPOSE_ENV="${RUN_DIR}/rendered/compose.env"
-cat "${RELEASE_DIR}/release.env" >"${COMPOSE_ENV}"
-# shellcheck disable=SC1091
-source "${RUN_DIR}/rendered/postgres.env"
-{
-  echo "POSTGRES_USER=${POSTGRES_USER}"
-  echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
-  echo "POSTGRES_DB=${POSTGRES_DB}"
-  echo "OGSD_INGESTION_USER=ogsd_ingestion"
-  echo "OGSD_INGESTION_PASSWORD=${INGESTION_DB_PASSWORD}"
-  echo "OGSD_API_USER=ogsd_api"
-  echo "OGSD_API_PASSWORD=${API_DB_PASSWORD}"
-  echo "MQTT_INGESTION_PASSWORD=${MQTT_INGESTION_PASSWORD}"
-  echo "MQTT_COLLECTOR_PASSWORD=${MQTT_COLLECTOR_PASSWORD}"
-  echo "MQTT_PASSWORD=${MQTT_COLLECTOR_PASSWORD}"
-  echo "MQTT_BROKER=tls://mosquitto:8883"
-  echo "SNMP_COMMUNITY=CHANGE_ME"
-  echo "SNMP_DISCOVERY_COMMUNITY=CHANGE_ME"
-} >>"${COMPOSE_ENV}"
-chmod 0600 "${COMPOSE_ENV}"
-
-compose() {
-  (
-    cd "${RELEASE_DIR}"
-    docker compose \
-      --env-file "${COMPOSE_ENV}" \
-      -f docker-compose.yml \
-      -f docker-compose.sites.generated.yml \
-      "$@"
-  )
-}
-
-echo "resetting postgres data for fresh install..."
-docker compose -p equate-appliance down 2>/dev/null || true
-rm -rf "${VAR_DIR}/postgres"
-install -d -m 0750 "${VAR_DIR}/postgres"
-
-echo "starting core stack..."
-compose up -d postgres mosquitto
-for _ in $(seq 1 60); do
-  if compose exec -T postgres pg_isready -U "${POSTGRES_SUPERUSER}" -d "${POSTGRES_DB}" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 2
-done
-
-echo "running database migrations..."
-compose run --rm migrate
-
-sql_escape() {
-  printf "%s" "${1//\'/\'\'}"
-}
-
-bootstrap_role_passwords() {
-  compose exec -T postgres psql -U "${POSTGRES_SUPERUSER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 \
-    -c "ALTER ROLE ogsd_ingestion WITH PASSWORD '$(sql_escape "${INGESTION_DB_PASSWORD}")';" \
-    -c "ALTER ROLE ogsd_api WITH PASSWORD '$(sql_escape "${API_DB_PASSWORD}")';"
-}
-
-bootstrap_role_passwords
-
-compose up -d --remove-orphans
-
-cat >"${RUN_DIR}/rendered/installation.json" <<EOF
-{"version":"${VERSION}","installed_at":"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"}
-EOF
-chmod 0600 "${RUN_DIR}/rendered/installation.json"
 
 if [[ -x "${RELEASE_DIR}/bin/equate" ]]; then
   install -m 0755 "${RELEASE_DIR}/bin/equate" /usr/local/bin/equate

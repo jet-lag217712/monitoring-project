@@ -26,6 +26,7 @@ const (
 	CodeValidationFailed   = "VALIDATION_FAILED"
 	CodeConfigReloadFailed = "CONFIG_RELOAD_FAILED"
 	CodeNotFound           = "NOT_FOUND"
+	CodeConflict           = "CONFLICT"
 	CodeInternal           = "INTERNAL"
 )
 

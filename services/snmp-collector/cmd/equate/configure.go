@@ -17,6 +17,10 @@ func runConfigure(args []string) int {
 		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
 		return 1
 	}
+	if err := ensureApplianceRenderedSecrets(deployDir); err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
 	bootstrapper, err := resolveBootstrapper(deployDir)
 	if err != nil {
 		return runCollectorSetup(deployDir, true)
@@ -36,7 +40,29 @@ func runConfigure(args []string) int {
 	return 0
 }
 
+func ensureApplianceRenderedSecrets(deployDir string) error {
+	const composeEnv = "/run/equate/rendered/compose.env"
+	if _, err := os.Stat(composeEnv); err == nil {
+		return nil
+	}
+	configureScript := filepath.Join(deployDir, "scripts", "configure-vm.sh")
+	if _, err := os.Stat(configureScript); err != nil {
+		return fmt.Errorf("missing %s and %s", composeEnv, configureScript)
+	}
+	cmd := exec.Command("bash", configureScript, "--bootstrap-only")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bootstrap rendered secrets: %w", err)
+	}
+	return nil
+}
+
 func runCollectorSetup(deployDir string, reconfigure bool) int {
+	if err := ensureApplianceRenderedSecrets(deployDir); err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
 	if reconfigure {
 		_ = os.Remove(filepath.Join(deployDir, ".setup-complete"))
 	}

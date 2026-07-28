@@ -19,7 +19,8 @@ usage() {
   cat <<'EOF'
 usage: stage-release.sh --host <hostname> [--user <ssh-user>] --arch <arm64|amd64> --version <semver> [--remote-dir <path>]
 
-Transfers dist/appliance-<arch>-<version>/ and configure-vm.sh to the target VM.
+Transfers dist/appliance-<arch>-<version>/ plus configure-vm.sh, bootstrap-appliance-rendered.sh,
+and prepare-ova.sh to the target VM.
 EOF
 }
 
@@ -70,11 +71,16 @@ if [[ ! -d "${BUNDLE_DIR}" ]]; then
 fi
 
 REMOTE="${USER_NAME}@${HOST}"
+SCRIPTS_SRC="${ROOT}/appliance/scripts"
 echo "staging ${BUNDLE_DIR} to ${REMOTE}:${REMOTE_DIR}/"
 
 ssh "${REMOTE}" "mkdir -p '${REMOTE_DIR}/bundle'"
 scp -r "${BUNDLE_DIR}/." "${REMOTE}:${REMOTE_DIR}/bundle/"
-scp "${ROOT}/appliance/scripts/configure-vm.sh" "${REMOTE}:${REMOTE_DIR}/configure-vm.sh"
+scp \
+  "${SCRIPTS_SRC}/configure-vm.sh" \
+  "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" \
+  "${SCRIPTS_SRC}/prepare-ova.sh" \
+  "${REMOTE}:${REMOTE_DIR}/"
 
 cat <<EOF
 

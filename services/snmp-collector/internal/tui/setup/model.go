@@ -41,6 +41,18 @@ type model struct {
 	loading   bool
 	spinner   spinner.Model
 
+	loadLabel   string
+	loadCurrent int
+	loadTotal   int
+
+	deploySites  []SiteSpec
+	deployPhase  int
+
+	reviewAutoIdx   int
+	reviewAutoSites []SiteSpec
+	discoverSpec    SiteSpec
+	discoverManual  bool
+
 	envInputs      []textinput.Model
 	envFocus       int
 	siteCountInput textinput.Model
@@ -261,7 +273,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r", "R":
 				m.err = ""
 				m.loading = true
-				return m, m.runReview()
+				m.resetLoadProgress()
+				return m, m.beginAutoReview()
 			case "s", "S":
 				m.err = ""
 				m.body = "Skipped discovery; add devices later from the operator TUI."
@@ -318,6 +331,112 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adminPhase = "create"
 		m.body = ""
 		return m, textinput.Blink
+	case deployBeginMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.deploySites = msg.sites
+		m.deployPhase = 0
+		m.setLoadProgress("Starting containers", 0, 3+len(msg.sites))
+		return m, m.runDeployPhaseCmd(0)
+	case deployPhaseMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.setLoadProgress(msg.label, msg.step, msg.total)
+		if msg.finished {
+			m.loading = false
+			return m, func() tea.Msg { return asyncDoneMsg{body: msg.body} }
+		}
+		return m, m.runDeployPhaseCmd(msg.next)
+	case discoveryScanStartedMsg:
+		m.discoverSpec = msg.spec
+		m.discoverManual = msg.manual
+		if msg.manual {
+			m.setLoadProgress(fmt.Sprintf("Scanning %s", msg.spec.SiteID), 0, 1)
+		} else {
+			m.setLoadProgress(fmt.Sprintf("Scanning %s (%d/%d)", msg.spec.SiteID, m.reviewAutoIdx+1, len(m.reviewAutoSites)), 0, 1)
+		}
+		return m, m.scheduleDiscoveryPoll()
+	case discoveryPollTickMsg:
+		if !m.loading {
+			return m, nil
+		}
+		return m, m.pollDiscoveryProgressCmd()
+	case discoveryProgressMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		if msg.running {
+			label := fmt.Sprintf("Probed %d/%d", msg.probed, msg.total)
+			if m.discoverManual {
+				m.setLoadProgress(label, msg.probed, msg.total)
+			} else {
+				siteLabel := m.discoverSpec.SiteID
+				if siteLabel == "" {
+					siteLabel = fmt.Sprintf("site-%d", m.reviewAutoIdx+1)
+				}
+				outer := fmt.Sprintf("Scanning %s (%d/%d)", siteLabel, m.reviewAutoIdx+1, len(m.reviewAutoSites))
+				m.loadLabel = outer + "\n" + label
+				m.loadCurrent = msg.probed
+				m.loadTotal = msg.total
+			}
+			return m, m.scheduleDiscoveryPoll()
+		}
+		if msg.scanErr != "" {
+			m.loading = false
+			m.err = msg.scanErr
+			return m, nil
+		}
+		return m, m.fetchDiscoveryCandidatesCmd()
+	case discoveryScanDoneMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			if m.step == stepReview && isDiscoveryRetryable(msg.err) {
+				m.err = "discovery timed out or was interrupted"
+			}
+			return m, nil
+		}
+		if m.discoverManual {
+			next, cmd := m.finishManualDiscovery(msg.candidates)
+			return next, cmd
+		}
+		m.setLoadProgress("Accepting devices…", m.reviewAutoIdx+1, len(m.reviewAutoSites))
+		return m, m.acceptAutoReviewSiteCmd(msg.candidates)
+	case reviewAutoBeginMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.reviewAutoSites = msg.sites
+		m.reviewAutoIdx = 0
+		m.reviewResults = nil
+		return m, m.startAutoReviewSiteScan()
+	case reviewAutoAcceptMsg:
+		if msg.err != nil {
+			m.loading = false
+			m.err = msg.err.Error()
+			if m.step == stepReview && isDiscoveryRetryable(msg.err) {
+				m.err = "discovery timed out or was interrupted"
+			}
+			return m, nil
+		}
+		m.reviewResults = append(m.reviewResults, msg.line)
+		m.reviewAutoIdx++
+		if m.reviewAutoIdx >= len(m.reviewAutoSites) {
+			body := strings.Join(m.reviewResults, "\n")
+			m.loading = false
+			return m, func() tea.Msg { return asyncDoneMsg{body: body} }
+		}
+		return m, m.startAutoReviewSiteScan()
 	case asyncDoneMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -503,7 +622,8 @@ func (m model) updateStart(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key.String() == "enter" {
 		m.loading = true
 		m.err = ""
-		return m, m.runStart()
+		m.resetLoadProgress()
+		return m, m.beginDeploy()
 	}
 	return m, nil
 }
@@ -516,7 +636,8 @@ func (m model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key.String() == "enter" {
 		m.loading = true
 		m.err = ""
-		return m, m.runReview()
+		m.resetLoadProgress()
+		return m, m.beginAutoReview()
 	}
 	return m, nil
 }
@@ -610,44 +731,121 @@ func (m model) persistEnvAndSites() tea.Cmd {
 	}
 }
 
-func (m model) runStart() tea.Cmd {
+func (m model) beginDeploy() tea.Cmd {
 	deployDir := m.deployDir
-	profile := m.profile
 	return func() tea.Msg {
 		manifest, err := LoadManifest(deployDir)
 		if err != nil {
-			return asyncDoneMsg{err: err}
+			return deployBeginMsg{err: err}
 		}
-		if err := startSiteCollectors(deployDir, profile, manifest.Sites); err != nil {
-			return asyncDoneMsg{err: err}
-		}
-		if err := waitForSites(deployDir, manifest.Sites, 3*time.Minute); err != nil {
-			return asyncDoneMsg{err: err}
-		}
-		return asyncDoneMsg{body: fmt.Sprintf("Started %d collector container(s).", len(manifest.Sites))}
+		return deployBeginMsg{sites: manifest.Sites}
 	}
 }
 
-func (m model) runReview() tea.Cmd {
+func (m model) runDeployPhaseCmd(phase int) tea.Cmd {
+	deployDir := m.deployDir
+	profile := m.profile
+	sites := m.deploySites
+	return func() tea.Msg {
+		return runDeployPhase(deployDir, profile, sites, phase)
+	}
+}
+
+func (m model) beginAutoReview() tea.Cmd {
 	deployDir := m.deployDir
 	return func() tea.Msg {
 		if err := loadEnvFile(envPath(deployDir)); err != nil {
-			return asyncDoneMsg{err: fmt.Errorf("load .env: %w", err)}
+			return reviewAutoBeginMsg{err: fmt.Errorf("load .env: %w", err)}
 		}
 		manifest, err := LoadManifest(deployDir)
 		if err != nil {
-			return asyncDoneMsg{err: err}
+			return reviewAutoBeginMsg{err: err}
 		}
-		lines := make([]string, 0, len(manifest.Sites))
-		for _, spec := range manifest.Sites {
-			line, err := reviewSiteAuto(spec, deployDir)
-			if err != nil {
-				return asyncDoneMsg{err: err}
-			}
-			lines = append(lines, line)
-		}
-		return asyncDoneMsg{body: strings.Join(lines, "\n")}
+		return reviewAutoBeginMsg{sites: manifest.Sites}
 	}
+}
+
+func (m model) startAutoReviewSiteScan() tea.Cmd {
+	deployDir := m.deployDir
+	spec := m.reviewAutoSites[m.reviewAutoIdx]
+	return func() tea.Msg {
+		client := newDeployControl(deployDir, spec)
+		if err := startAsyncDiscoveryScan(client); err != nil {
+			return reviewAutoAcceptMsg{err: err}
+		}
+		return discoveryScanStartedMsg{spec: spec, manual: false}
+	}
+}
+
+func (m model) acceptAutoReviewSiteCmd(candidates []map[string]any) tea.Cmd {
+	deployDir := m.deployDir
+	spec := m.reviewAutoSites[m.reviewAutoIdx]
+	return func() tea.Msg {
+		line, err := acceptSiteDiscovery(spec, deployDir, candidates)
+		if err != nil {
+			return reviewAutoAcceptMsg{err: err}
+		}
+		return reviewAutoAcceptMsg{line: line}
+	}
+}
+
+func (m model) pollDiscoveryProgressCmd() tea.Cmd {
+	deployDir := m.deployDir
+	spec := m.discoverSpec
+	return func() tea.Msg {
+		client := newDeployControl(deployDir, spec)
+		running, probed, total, scanErr, err := pollDiscoveryScanProgress(client)
+		return discoveryProgressMsg{
+			running: running,
+			probed:  probed,
+			total:   total,
+			scanErr: scanErr,
+			err:     err,
+		}
+	}
+}
+
+func (m model) scheduleDiscoveryPoll() tea.Cmd {
+	return tea.Tick(discoveryPollInterval, func(t time.Time) tea.Msg {
+		return discoveryPollTickMsg{}
+	})
+}
+
+func (m model) fetchDiscoveryCandidatesCmd() tea.Cmd {
+	deployDir := m.deployDir
+	spec := m.discoverSpec
+	return func() tea.Msg {
+		client := newDeployControl(deployDir, spec)
+		candidates, err := listDiscoveryCandidates(client)
+		return discoveryScanDoneMsg{candidates: candidates, err: err}
+	}
+}
+
+func (m model) finishManualDiscovery(candidates []map[string]any) (tea.Model, tea.Cmd) {
+	spec := m.discoverSpec
+	approved := make([]bool, len(candidates))
+	for i, c := range candidates {
+		approved[i] = fmt.Sprint(c["result"]) == "success"
+	}
+	body := fmt.Sprintf("%s: %d candidate(s) — toggle with space, enter to accept reviewed", spec.SiteID, len(candidates))
+	if len(candidates) == 0 {
+		body = fmt.Sprintf("%s: no candidates found", spec.SiteID)
+	}
+	return m, func() tea.Msg {
+		return reviewScanMsg{candidates: candidates, approved: approved, body: body}
+	}
+}
+
+func (m *model) resetLoadProgress() {
+	m.loadLabel = ""
+	m.loadCurrent = 0
+	m.loadTotal = 0
+}
+
+func (m *model) setLoadProgress(label string, current, total int) {
+	m.loadLabel = label
+	m.loadCurrent = current
+	m.loadTotal = total
 }
 
 func (m model) applyThreshold() tea.Cmd {
@@ -696,13 +894,17 @@ func (m model) View() string {
 		case stepAdminUser:
 			body.WriteString(th.Muted.Render("Checking administrator accounts…"))
 		case stepStart:
-			if m.profile == ProfileAppliance {
+			if m.loadLabel != "" {
+				body.WriteString(th.Muted.Render(m.loadLabel))
+			} else if m.profile == ProfileAppliance {
 				body.WriteString(th.Muted.Render("Starting all site collectors…"))
 			} else {
 				body.WriteString(th.Muted.Render("Building image and waiting for all site collectors…"))
 			}
 		case stepReview:
-			if m.profileCfg.AutoAcceptDiscovery {
+			if m.loadLabel != "" {
+				body.WriteString(th.Muted.Render(strings.Split(m.loadLabel, "\n")[0]))
+			} else if m.profileCfg.AutoAcceptDiscovery {
 				body.WriteString(th.Muted.Render("Scanning each site CIDR and accepting devices…"))
 			} else {
 				body.WriteString(th.Muted.Render("Scanning site for discovery candidates…"))
@@ -711,6 +913,19 @@ func (m model) View() string {
 			body.WriteString(th.Muted.Render("Applying threshold to all sites…"))
 		default:
 			body.WriteString(th.Muted.Render("working…"))
+		}
+		body.WriteString("\n")
+		if m.loadTotal > 0 {
+			barLabel := m.loadLabel
+			if parts := strings.SplitN(m.loadLabel, "\n", 2); len(parts) == 2 {
+				barLabel = parts[1]
+			}
+			barWidth := m.width - 4
+			if barWidth < defaultProgressBarWidth {
+				barWidth = defaultProgressBarWidth
+			}
+			body.WriteString(renderLoadProgress(th, barLabel, m.loadCurrent, m.loadTotal, barWidth))
+			body.WriteString("\n")
 		}
 		m.appendQuitFooter(th, &body)
 		return withTopPadding(lipgloss.JoinVertical(lipgloss.Left, configuratorLogo(th), withSectionGap(body.String())))
