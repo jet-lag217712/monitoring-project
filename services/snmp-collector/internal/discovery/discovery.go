@@ -164,9 +164,13 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 	if workers > len(targets) {
 		workers = len(targets)
 	}
+	total := len(targets)
+	if s.onProbeComplete != nil {
+		s.onProbeComplete(0, total)
+	}
 	jobs := make(chan netip.Addr)
 	results := make(chan Candidate, len(targets))
-	var workerProbed atomic.Int64
+	var probed atomic.Int64
 
 	var workersWG sync.WaitGroup
 	workersWG.Add(workers)
@@ -182,7 +186,10 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 					s.onRateLimitWait()
 				}
 				results <- s.probe(ctx, target)
-				n := workerProbed.Add(1)
+				n := probed.Add(1)
+				if s.onProbeComplete != nil {
+					s.onProbeComplete(int(n), total)
+				}
 				if n == 1 || n%32 == 0 {
 					agentDebugLog("B", "discovery.go:worker", "probe completed in worker", map[string]any{
 						"workerProbed": n,
@@ -204,23 +211,14 @@ sendTargets:
 	close(jobs)
 	workersWG.Wait()
 	agentDebugLog("A", "discovery.go:Scan", "all workers finished", map[string]any{
-		"workerProbed": workerProbed.Load(),
-		"targetCount":  len(targets),
+		"workerProbed": probed.Load(),
+		"targetCount":  total,
 	})
 	close(results)
 
-	total := len(targets)
-	if s.onProbeComplete != nil {
-		s.onProbeComplete(0, total)
-	}
 	candidates := make([]Candidate, 0, len(results))
-	probed := 0
 	for candidate := range results {
 		candidates = append(candidates, candidate)
-		probed++
-		if s.onProbeComplete != nil {
-			s.onProbeComplete(probed, total)
-		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		left, _ := netip.ParseAddr(candidates[i].IP)

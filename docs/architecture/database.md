@@ -2,7 +2,7 @@
 
 ## Purpose
 
-PostgreSQL is the UI/UX Cloud Plane system of record for inventory, telemetry, evaluated health evidence, collector operational state, and history. Only the Ingestion Service writes monitoring data; the Backend API exposes read-only contracts to frontend clients.
+PostgreSQL is the local appliance system of record for inventory, telemetry, evaluated health evidence, collector operational state, and history. Only the Ingestion Service writes monitoring data; the Backend API exposes read-only contracts to frontend clients.
 
 ## V2 data model
 

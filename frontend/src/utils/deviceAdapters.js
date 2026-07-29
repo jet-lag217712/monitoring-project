@@ -1,5 +1,18 @@
 /** Map API device + interfaces (+ optional metrics) into DeviceDetail UI shape. */
 
+function normalizeInterfaceStatus(value) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return normalized || null
+}
+
+function deriveInterfaceStatus(iface) {
+  return (
+    normalizeInterfaceStatus(iface.status) ??
+    normalizeInterfaceStatus(iface.oper_status) ??
+    'down'
+  )
+}
+
 function formatSpeedBps(speedBps) {
   if (speedBps == null || Number.isNaN(Number(speedBps))) return null
   const bps = Number(speedBps)
@@ -17,20 +30,83 @@ function mapHistorySeries(points) {
   }))
 }
 
+function octetDeltaToMbps(deltaOctets, dtSec) {
+  if (dtSec <= 0 || deltaOctets < 0) return null
+  return Math.round(((deltaOctets * 8) / (dtSec * 1_000_000)) * 100) / 100
+}
+
+function mapTrafficHistory(points) {
+  if (!Array.isArray(points) || points.length === 0) return []
+
+  if (points[0].in_mbps != null || points[0].out_mbps != null) {
+    return points.map(p => ({
+      ts: p.ts,
+      in_mbps: Number(p.in_mbps ?? 0),
+      out_mbps: Number(p.out_mbps ?? 0),
+    }))
+  }
+
+  const sorted = [...points].sort((a, b) => new Date(a.ts) - new Date(b.ts))
+  const result = []
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]
+    const curr = sorted[i]
+    const dtSec = (new Date(curr.ts) - new Date(prev.ts)) / 1000
+    if (dtSec <= 0) continue
+
+    const currIn = curr.in_octets ?? curr.value
+    const currOut = curr.out_octets
+    const prevIn = prev.in_octets ?? prev.value
+    const prevOut = prev.out_octets
+
+    if (currIn == null && currOut == null) continue
+
+    const inDelta = currIn != null && prevIn != null ? currIn - prevIn : null
+    const outDelta = currOut != null && prevOut != null ? currOut - prevOut : null
+
+    result.push({
+      ts: curr.ts,
+      in_mbps: inDelta != null ? octetDeltaToMbps(inDelta, dtSec) : null,
+      out_mbps: outDelta != null ? octetDeltaToMbps(outDelta, dtSec) : null,
+    })
+  }
+
+  return result
+}
+
+function deriveUtilizationPct(trafficHistory, speedBps) {
+  if (speedBps == null || !trafficHistory.length) return null
+  const latest = trafficHistory[trafficHistory.length - 1]
+  const inMbps = latest.in_mbps ?? 0
+  const outMbps = latest.out_mbps ?? 0
+  const speedMbps = speedBps / 1_000_000
+  if (speedMbps <= 0) return null
+  return Math.min(100, Math.round(((inMbps + outMbps) / speedMbps) * 10000) / 100)
+}
+
 export function adaptInterface(iface) {
-  const traffic = Array.isArray(iface.traffic_history)
-    ? mapHistorySeries(iface.traffic_history)
-    : []
+  const traffic = mapTrafficHistory(iface.traffic_history)
+  const utilizationPct =
+    iface.utilization_pct ?? deriveUtilizationPct(traffic, iface.speed_bps)
+
+  // #region agent log
+  if (iface?.name === 'Gi0/0' || iface?.if_index === 1) {
+    const raw = Array.isArray(iface.traffic_history) ? iface.traffic_history : []
+    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'269a95'},body:JSON.stringify({sessionId:'269a95',location:'deviceAdapters.js:adaptInterface',message:'traffic history mapping',data:{name:iface.name,rawCount:raw.length,rawFirst:raw[0]??null,mappedCount:traffic.length,mappedFirst:traffic[0]??null,utilizationPct},timestamp:Date.now(),runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
 
   return {
     ...iface,
     if_index: iface.if_index,
     name: iface.name || `if${iface.if_index}`,
+    status: deriveInterfaceStatus(iface),
     admin_status: iface.admin_status || '—',
     oper_status: iface.oper_status || '—',
     speed: formatSpeedBps(iface.speed_bps) ?? '—',
     duplex: iface.duplex ?? '—',
-    utilization_pct: iface.utilization_pct ?? null,
+    utilization_pct: utilizationPct,
     bytes_in: iface.in_octets ?? iface.bytes_in ?? null,
     bytes_out: iface.out_octets ?? iface.bytes_out ?? null,
     packets_in: iface.packets_in ?? null,

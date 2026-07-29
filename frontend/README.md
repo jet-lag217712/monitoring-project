@@ -1,38 +1,41 @@
 # Equate Monitoring Dashboard
 
-React 19 + Vite frontend for the OGSD monitoring MVP.
+React 19 + Vite frontend for the local Equate appliance. The browser talks to
+nginx, nginx proxies approved requests to the local Backend API, and the API
+reads PostgreSQL. The frontend never connects directly to collectors, MQTT, or
+PostgreSQL.
 
 ## Local development
 
 ```bash
 cp .env.example .env.local
-# Set VITE_GOOGLE_CLIENT_ID to your Google OAuth Web Client ID
-# Keep VITE_DEMO_ENABLED=true for mock fallback while iterating
-
+# Keep VITE_DEMO_ENABLED=true for mock fallback while iterating.
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` (or the Vite URL). Sign in with Google, then the dashboard polls the Backend API.
-
-In Google Cloud Console → Credentials → your OAuth Web client, add:
-
-- Authorized JavaScript origins: `http://localhost:5173`, `http://127.0.0.1:5173`
+Open the Vite URL. The appliance authentication mode is local and is backed by
+the host PAM broker in a production build. Development-only mock mode is
+explicitly indicated in the UI and must not be used for an appliance release.
 
 ## Environment
 
 | Variable | Purpose |
-|----------|---------|
-| `VITE_API_BASE_URL` | Backend API origin (default `http://127.0.0.1:8000`) |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Web Client ID (must match API `GOOGLE_CLIENT_ID`) |
-| `VITE_DEMO_ENABLED` | `true` allows mock fallback on API failure; use `false` in production |
+|---|---|
+| `VITE_API_BASE_URL` | API origin; appliance default is `/api` |
+| `VITE_AUTH_MODE` | Use `appliance_local` for the packaged appliance |
+| `VITE_DEMO_ENABLED` | `true` enables mock fallback for development only |
 
 ## Production image
 
 ```bash
 docker build \
-  --build-arg VITE_API_BASE_URL=https://api.example.com \
-  --build-arg VITE_GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+  --build-arg VITE_API_BASE_URL=/api \
+  --build-arg VITE_AUTH_MODE=appliance_local \
   --build-arg VITE_DEMO_ENABLED=false \
-  -t equate/frontend:dev .
+  -t equate/frontend:local .
 ```
+
+The production appliance serves the built frontend from nginx over its local
+HTTPS endpoint. No external identity provider or remote dashboard is part of
+the supported appliance configuration.

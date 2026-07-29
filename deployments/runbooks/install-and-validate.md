@@ -1,56 +1,57 @@
-# Install and validate
+# Install and validate the local appliance
 
-## Choose a profile
+The supported customer installation is the complete appliance in
+[`../production/appliance/`](../production/appliance/). It runs on a
+VMware-compatible VxRail-type VM and keeps collectors, MQTT, ingestion,
+PostgreSQL, API, and dashboard local.
 
-| Profile | Use when |
-|---------|----------|
-| [`../end-to-end/`](../end-to-end/) | Single-host smoke with all services |
-| [`../development/`](../development/) | Mac cloud + OrbStack VM collector |
-| [`../production/`](../production/) | Azure cloud + on-site VxRail |
+## Before first boot
 
-Do not create phase-named stacks.
+- Verify the OVA checksum and architecture.
+- Assign one virtual NIC and a route to every monitored SNMP network.
+- Confirm the guest has the target CPU, memory, and disk capacity.
+- Stage the release bundle offline; no runtime Internet access is required.
+- Do not pre-create users, passwords, SNMP communities, or service keys.
 
-## Migrations before collector
+## First boot
 
-Always apply database migrations (and role bootstrap) **before** enabling the
-collector or expecting API projections:
+The console launches the setup TUI. Complete these steps in order:
 
-- `end-to-end/up.sh` and `development/up.sh` do this automatically after Postgres is healthy.
-- Production cloud: start Postgres, run `infrastructure/script/migrate.sh` + role bootstrap, then bring up ingestion/API/frontend, then start [`../production/vxrail/`](../production/vxrail/).
+1. Create the initial administrator and any additional local appliance users.
+2. Set the appliance identity and local dashboard access.
+3. Create named sites and their collector services.
+4. Configure SNMP inventory and discovery allowlists.
+5. Review discovery candidates and explicitly accept approved devices.
+6. Set temperature thresholds, upstream dependencies, and interface filters.
+7. Save, validate, reload, and start the generated Compose stack.
 
-## Validate
+The TUI writes managed inventory and generated site artifacts. Static YAML is
+read-only. A failed validation or reload leaves the last active snapshot in
+place.
+
+## Validation
 
 ```bash
-./deployments/end-to-end/validate.sh
-./deployments/development/validate.sh
-./deployments/development/vxrail/validate.sh
-./deployments/production/cloud/validate.sh
-./deployments/production/vxrail/validate.sh
-# or
 ./deployments/test.sh --quick
+docker compose -f deployments/production/appliance/docker-compose.yml config
+curl -fsS http://127.0.0.1:9090/healthz
+curl -fsS http://127.0.0.1:9090/readyz
 ```
 
-## Non-root state volumes
+Run the collector checks from the appliance VM or its site container. Service
+administration ports remain private to the VM; the dashboard is verified on
+the published HTTPS endpoint.
 
-Collector images run as UID `65532` (distroless `nonroot`). On first create:
+## Acceptance
 
 ```bash
-docker run --rm -v <project>_collector-state:/var/lib/snmp-collector busybox:1.36 \
-  chown -R 65532:65532 /var/lib/snmp-collector
-chown -R 65532:65532 deployments/*/run deployments/*/vxrail/run 2>/dev/null || true
+/usr/local/lib/equate/verify-appliance.sh
+/usr/local/lib/equate/verify-ova-import.sh --configured
 ```
 
-`end-to-end/up.sh` and `development/vxrail/bootstrap.sh` attempt this automatically.
+Confirm dashboard login with two local PAM-backed users, configure at least two
+sites, review discovery before enrollment, view live device telemetry, reboot,
+and verify that state and TUI-managed configuration persist.
 
-## Smoke
-
-```bash
-./deployments/end-to-end/smoke.sh      # v2 MQTT → API
-./deployments/development/smoke.sh    # cloud plane only
-```
-
-Optional MQTT outage drill:
-
-```bash
-./deployments/lib/mqtt_outage_drill.sh deployments/end-to-end
-```
+For source-only testing use [`../end-to-end/`](../end-to-end/) and
+`./deployments/test.sh --quick`.

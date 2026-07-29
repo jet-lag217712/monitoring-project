@@ -4,9 +4,7 @@
 **Audience:** Release engineering, infrastructure engineers  
 **Authority:** [`.ai/project-context/appliance.md`](../../.ai/project-context/appliance.md), [`appliance-1`](../../.ai/decisions/appliance-1.md)
 
-This runbook supersedes the obsolete collector-only OVA PRD in
-[`snmp-collector-ova.md`](snmp-collector-ova.md). The supported artifact is a
-**full-stack on-premises appliance**: UI/nginx, Backend API, PostgreSQL,
+The supported artifact is a **full-stack on-premises appliance**: UI/nginx, Backend API, PostgreSQL,
 Mosquitto, Ingestion, and one generated collector container per configured site
 on a single Debian 12 VM.
 
@@ -28,7 +26,7 @@ Create a clean Debian 12 VM before every build attempt:
 - UEFI firmware, one virtual NIC, DHCP
 - Initial sizing: **4 vCPU, 8 GB RAM, 64 GB disk** (validate with
   representative site/device load before the AMD64 client release)
-- No snapshots, no guest customization templates, no cloud-init seed data
+- No snapshots, no guest customization templates, and no pre-seeded customer data
 - Fusion: use **ARM64** guests for phase 1; repeat the same process on an
   x86 VMware-capable host for AMD64
 
@@ -49,7 +47,7 @@ OCI image tars, migrations, image digests, source revision, checksums, and an
 SBOM:
 
 ```bash
-make appliance-release ARCH=arm64 VERSION=<version>
+make appliance-bundle ARCH=arm64 VERSION=<version>
 ```
 
 The bundle lands under `build/appliance/release/` and is packaged for transfer as
@@ -68,9 +66,9 @@ shasum -a 256 -c Equate-Appliance-<version>-arm64.tar.gz.sha256
 # Copy bundle and appliance scripts to the VM staging area
 scp Equate-Appliance-<version>-arm64.tar.gz \
     Equate-Appliance-<version>-arm64.tar.gz.sha256 \
-    appliance/scripts/configure-vm \
+    appliance/scripts/configure-vm.sh \
     appliance/scripts/verify-appliance.sh \
-    appliance/scripts/prepare-ova \
+    appliance/scripts/prepare-ova.sh \
     root@<vm-ip>:/root/equate-staging/
 ```
 
@@ -90,7 +88,7 @@ post-install validation.
 ssh root@<vm-ip>
 cd /root/equate-staging
 tar -xzf Equate-Appliance-<version>-arm64.tar.gz
-./configure-vm --bundle ./release --arch arm64
+./configure-vm.sh --bundle ./release --version <version>
 ```
 
 On success, `appliance/scripts/verify-appliance.sh` runs automatically. Re-run
@@ -135,7 +133,7 @@ identity, SSH host keys, DHCP leases, logs, and shell history, and powers off.
 Finalization **fails closed** if clone-specific or sensitive material remains.
 
 ```bash
-./prepare-ova --release
+./prepare-ova.sh
 ```
 
 Expected removals include `/root/equate-staging`, build SSH keys, populated
@@ -145,7 +143,7 @@ operator-created PAM accounts. Only immutable release content under
 
 ## 6. Manual OVA export in VMware Fusion
 
-After `prepare-ova` powers off the VM:
+After `prepare-ova.sh` completes, power off the VM:
 
 1. Confirm the VM has **no snapshots**.
 2. In Fusion: **File → Export to OVF/OVA**.
@@ -158,8 +156,8 @@ After `prepare-ova` powers off the VM:
 
 5. Archive the release manifest and image digests alongside the OVA.
 
-An EC2 VM is not assumed to export directly as a valid VMware OVA. Use Fusion
-or another VMware-capable exporter for phase 1.
+The build guest is not assumed to export directly as a valid VMware OVA. Use
+Fusion or another VMware-capable exporter for phase 1.
 
 ## 7. Re-import verification
 

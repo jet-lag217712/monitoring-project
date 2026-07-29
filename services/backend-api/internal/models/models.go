@@ -151,7 +151,14 @@ type InterfaceInfo struct {
 	OutErrors      *int64        `json:"out_errors,omitempty"`
 	InDiscards     *int64        `json:"in_discards,omitempty"`
 	OutDiscards    *int64        `json:"out_discards,omitempty"`
-	TrafficHistory []MetricPoint `json:"traffic_history,omitempty"`
+	TrafficHistory []TrafficHistoryPoint `json:"traffic_history,omitempty"`
+}
+
+// TrafficHistoryPoint is one interface traffic counter sample.
+type TrafficHistoryPoint struct {
+	TS        time.Time `json:"ts"`
+	InOctets  float64   `json:"in_octets"`
+	OutOctets float64   `json:"out_octets"`
 }
 
 // MetricPoint is one time-series sample.

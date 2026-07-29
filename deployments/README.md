@@ -1,88 +1,78 @@
-# Deployments
+# Deployment layouts
 
-Three deployment profiles. Pick one based on what you are doing:
-
-| Profile | When to use |
-|---------|-------------|
-| [`end-to-end/`](end-to-end/) | Single-host client-site smoke: **all** services in one Compose project (includes collector). No SNMP simulator. |
-| [`development/`](development/) | Day-to-day lab: Mac cloud plane + OrbStack Ubuntu VM collector (GNS3 **Cloud** node). |
-| [`production/`](production/) | Hybrid skeleton: Azure cloud plane + on-site VxRail collector. No Terraform yet. |
+Equate has one supported customer deployment: the local appliance under
+[`production/appliance/`](production/appliance/). It packages the dashboard,
+API, ingestion, PostgreSQL, Mosquitto, and one generated collector service per
+configured site on a single VMware-compatible VM.
 
 ```text
-SNMP devices → Collector → MQTT/TLS → Ingestion → PostgreSQL → Backend API → Frontend
+SNMP devices → collectors → local MQTT/TLS → ingestion → PostgreSQL
+                                                   ↓
+                                           API → nginx → dashboard
 ```
 
-## Decision guide
+## Which directory to use
 
-1. **Quick client demo / single machine with real SNMP?** → `end-to-end/`
-2. **Developing with GNS3 on OrbStack?** → `development/` (+ `development/vxrail/`)
-3. **Preparing a real customer hybrid deploy?** → `production/` (fill secrets; Terraform later)
+| Directory | Use |
+|---|---|
+| [`production/appliance/`](production/appliance/) | Customer appliance runtime and first-boot setup |
+| [`end-to-end/`](end-to-end/) | Single-host source validation before packaging |
+| [`development/`](development/) | Developer integration fixture only |
+| [`runbooks/`](runbooks/) | Operator procedures for the local appliance |
+| [`lib/`](lib/) | Smoke and failure-drill helpers |
+
+The old split deployment directories remain in the repository only where their
+source fixtures are needed by tests. They are not supported customer
+installation paths and must not be presented as product architecture.
 
 ## Commands
 
 ```bash
-# End-to-end (all services)
+# Source validation on one local host
 ./deployments/end-to-end/up.sh
-./deployments/end-to-end/smoke.sh          # v2 MQTT → API
-./deployments/end-to-end/acceptance.sh     # real SNMP required
+./deployments/end-to-end/validate.sh
+./deployments/end-to-end/smoke.sh
+./deployments/end-to-end/acceptance.sh
 ./deployments/end-to-end/down.sh
 
-# Development cloud plane (Mac)
-./deployments/development/up.sh
-./deployments/development/smoke.sh
-./deployments/development/vxrail/sync.sh
-./deployments/development/down.sh
-
-# Aggregate checks
+# Aggregate repository checks
 ./deployments/test.sh --quick
 ./deployments/test.sh --with-smoke
 ```
 
-## Runbooks
-
-See [`runbooks/`](runbooks/) for install, inventory, credential rotation, queue
-remediation, rollback/restore, V2 cutover, and GNS3 field acceptance.
-
-## Port map (defaults)
-
-| Port | Service |
-|------|---------|
-| 80 | Frontend |
-| 8000 | Backend API REST |
-| 9092 | Backend API admin |
-| 9091 | Ingestion admin |
-| 9090 | Collector admin |
-| 8883 | Mosquitto MQTT/TLS |
-| 5432 | PostgreSQL |
-
-## Configuration ownership
+## Appliance configuration ownership
 
 | Concern | Owner |
-|---------|--------|
-| Service source code | `services/*`, `frontend/` |
-| MQTT broker image / cert scripts | `infrastructure/docker/mqtt-broker/` |
-| DB migrations / roles | `database/migrations/`, `infrastructure/script/` |
-| Compose, env, per-profile YAML | `deployments/<profile>/` |
-| Collector inventory | `deployments/*/configs/collector.yaml` or `*/vxrail/configs/` |
+|---|---|
+| First boot, site creation, and generated services | Appliance setup TUI |
+| Device inventory, discovery review, thresholds, dependencies, filters | Collector TUI over the local Unix socket |
+| Static collector identity and protected deployment values | Appliance release configuration |
+| Durable telemetry and monitoring history | Local PostgreSQL on the appliance |
+| Dashboard access | Local PAM-backed appliance users |
 
-Never copy Go service trees into `deployments/`. The development VM sync places a **runtime** snapshot under `vxrail/src/` on the remote host only.
+The TUI never publishes a management socket over TCP. Static YAML is mounted
+read-only; managed inventory is written atomically with a secret-free audit
+entry and becomes active only after validation and reload.
 
-## Promotion checklist
+## Default service ports
 
-1. `end-to-end` smoke + on-site acceptance with real devices
-2. `development` cloud smoke + VM collector → GNS3
-3. Fill `production` secrets, TLS, inventory, image tags
-4. Deploy Azure cloud plane, then on-site collector
-5. Verify healthz + UI; document rollback image digests
+Only the frontend ports are customer-facing:
 
-## Testing
+| Port | Scope | Purpose |
+|---|---|---|
+| 80 | Appliance edge | HTTP redirect to HTTPS |
+| 443 | Appliance edge | Dashboard and approved API routes |
+| 8000 | Private | Backend API |
+| 9090–9092 | Private | Collector, ingestion, and API administration |
+| 8883 | Private | MQTT/TLS broker |
+| 5432 | Private | PostgreSQL |
 
-| Layer | How |
-|-------|-----|
-| Validate compose/config | `*/validate.sh` or `./deployments/test.sh --quick` |
-| Cloud pipeline smoke | Synthetic **v2** MQTT → API (`smoke.sh`) |
-| MQTT outage drill | `./deployments/lib/mqtt_outage_drill.sh deployments/end-to-end` |
-| Real SNMP acceptance | `end-to-end/acceptance.sh` + [`runbooks/field-acceptance-gns3.md`](runbooks/field-acceptance-gns3.md) |
-| CI | [`.github/workflows/deployments.yml`](../.github/workflows/deployments.yml) |
+## Acceptance order
 
-CI covers unit tests, compose validation, image builds, and cloud smoke. Real SNMP / GNS3 remain manual release gates.
+1. Validate the local Compose files and migrations.
+2. Build an architecture-matched offline release.
+3. Prepare a clean Debian 12 VM and import the release.
+4. Complete first boot in the setup TUI.
+5. Configure at least two sites, review discovery candidates, and confirm
+   telemetry in the local dashboard.
+6. Reboot, run the verifier, and test rollback/restore before handoff.

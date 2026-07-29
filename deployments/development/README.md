@@ -1,70 +1,40 @@
-# Development profile
+# Development integration fixture
 
-Day-to-day lab workflow:
+This directory supports developer testing of the local service graph before an
+offline appliance release. It is not a customer deployment profile. The
+production target remains the single-VM appliance in
+[`../production/appliance/`](../production/appliance/).
 
-1. **Mac (cloud plane)** — Frontend, PostgreSQL, Ingestion, Mosquitto, Backend API via one Compose project
-2. **OrbStack Ubuntu VM (collector plane)** — SNMP collector attached to GNS3 via a **Cloud** node (not a GNS3 Docker node)
+The fixture can run the application services in one local Compose project and
+the collector in a VxRail-like Linux VM connected to a GNS3 lab. Both sides are
+local test infrastructure; no remote service is part of the product path.
 
-```text
-GNS3 devices ──SNMP──▶ collector site containers (VM; default 4 sites)
-                              │ MQTT/TLS :8883 (shared broker + SNMP community)
-                              ▼
-                     Mac Mosquitto → ingestion → Postgres → API → UI
-```
-
-## Cloud plane (Mac)
+## Application side
 
 ```bash
 cp deployments/development/.env.example deployments/development/.env
-# Set MQTT_SERVER_IP to the Mac IP visible from the OrbStack VM BEFORE first cert gen
 ./deployments/development/up.sh
 ./deployments/development/validate.sh
 ./deployments/development/smoke.sh
-./deployments/development/down.sh              # wipes all volumes (clean test reset)
-./deployments/development/down.sh --keep-data  # stop only; preserve DB/MQTT state
 ```
 
-| Service | Host port (default) |
-|---------|---------------------|
-| Frontend | `:80` |
-| Backend API | `:8000` / admin `:9092` |
-| Ingestion | admin `:9091` |
-| Mosquitto | `:8883` |
-| PostgreSQL | `:5432` |
-
-## Collector plane (OrbStack VM)
+## Collector VM side
 
 ```bash
-# On Mac — push source + package + public CA
-./deployments/development/vxrail/sync.sh --dry-run
 ./deployments/development/vxrail/sync.sh
-
-# On VM
-cd /home/gns3/ogsd-vxrail   # or VXRAIL_REMOTE_DIR
-cp -n .env.example .env
-# Set MQTT_BROKER=tls://<mac-host-ip>:8883 and SNMP_COMMUNITY values
-sudo ./setup-gns3-bridge.sh
+# On the Linux VM:
 ./bootstrap.sh
-# Setup wizard: choose site count (default 4) and one CIDR per site
 ```
 
-Configure SSH target in [`vxrail/.env`](vxrail/.env.example): `VXRAIL_SSH_HOST`, `VXRAIL_SSH_USER`, `VXRAIL_REMOTE_DIR`.
-
-### GNS3 wiring
-
-1. `setup-gns3-bridge.sh` creates IP-less bridge `br-gns3-vxrail`
-2. GNS3 **Cloud** adapter binds to that bridge
-3. Cloud → lab uplink (e.g. DO-CORE GigabitEthernet6/0)
-4. Collector container sits on macvlan `10.254.254.2/30`
-
-Do **not** use a GNS3 Docker node for the collector.
-
-## Updating collector code
+The setup TUI creates the local site manifest and collector artifacts. Run the
+day-2 collector TUI inside the collector container when the VM bind mount does
+not allow the host terminal to open the Unix socket:
 
 ```bash
-# After editing services/snmp-collector/
-./deployments/development/vxrail/sync.sh
-ssh gns3@192.168.x.x 'cd /home/gns3/ogsd-vxrail && ./bootstrap.sh'
+docker compose -f docker-compose.yml -f docker-compose.sites.generated.yml \
+  exec -it snmp-collector-site-001 \
+  /collector tui -socket /run/snmp-collector/control.sock -theme auto
 ```
 
-`sync.sh` uses tar-over-SSH (works without `rsync` on the VM). Prefer an SSH key so you are not prompted for a password.
+Use [`../runbooks/field-acceptance-gns3.md`](../runbooks/field-acceptance-gns3.md)
+for the manual test checklist.

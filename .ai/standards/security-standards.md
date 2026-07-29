@@ -62,7 +62,7 @@ These standards are based on the OWASP Cheat Sheet Series and should be followed
 - Keep SNMP community strings as environment references; never place production values in static or managed inventory.
 - Bind collector status/control and TUI mutation operations to a Unix socket or localhost with OS access controls; do not add a public management HTTP endpoint.
 - Require an explicit local confirmation and secret-free audit record for inventory, discovery-acceptance, threshold, or dependency mutations.
-- Redact SNMP communities, MQTT credentials, TLS material, raw telemetry bodies, environment values, and secret-derived data from collector metrics, logs, diagnostics, and cloud messages.
+- Redact SNMP communities, MQTT credentials, TLS material, raw telemetry bodies, environment values, and secret-derived data from collector metrics, logs, diagnostics, and local messages.
 - Limit discovery to configured CIDR allowlists and bounded target/rate/burst/concurrency settings.
 
 ## Database And Injection Safety

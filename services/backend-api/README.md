@@ -1,87 +1,55 @@
-# Backend API
+# Equate Backend API
 
-## Plane Ownership
-
-UI/UX Cloud Plane.
-
-## Responsibilities
-
-- Expose REST contracts for frontend clients.
-- Read monitoring state and history from PostgreSQL.
-- Translate database records into API responses.
-- Enforce application access controls (Google OIDC).
-
-
-## Non-Responsibilities
-
-- Polling SNMP devices.
-- Processing telemetry transport messages.
-- Writing monitoring samples.
-- Rendering frontend views.
-- Configuring monitored devices.
-- Providing device console or management access.
-- Alert generation.
-
-## Deployment Boundary
-
-The API runs in the UI/UX Cloud Plane and is the only frontend-facing service for monitoring data.
-
-Approved flow:
+The Backend API is the read-only application boundary inside the local
+appliance. It reads monitoring state from PostgreSQL and serves stable REST
+contracts to nginx and the dashboard. It does not poll SNMP, consume MQTT,
+write telemetry, or control collectors.
 
 ```text
-PostgreSQL -> Backend API -> UI/UX Cloud Plane
+PostgreSQL → Backend API → nginx → local dashboard
 ```
+
+## Appliance authentication
+
+Production configuration uses `auth.mode: appliance_local`. The API talks to
+the host PAM broker through `/run/equate/auth.sock`; it does not mount
+`/etc/shadow` and never logs passwords. Sessions are opaque, revocable, rate
+limited, CSRF-protected, and tied to active local appliance users.
 
 ## Run locally
 
-Requires local Postgres from `./deployments/development/up.sh` (Mac cloud stack) with roles bootstrapped
-(`ogsd_api` SELECT-only).
+Start the local Compose validation stack first, then run the API with the
+appliance configuration:
 
 ```bash
-export DATABASE_URL='postgres://ogsd_api:api@127.0.0.1:5432/ogsd?sslmode=disable'
-export GOOGLE_CLIENT_ID='your-google-oauth-web-client-id.apps.googleusercontent.com'
+./deployments/end-to-end/up.sh
 cd services/backend-api
 go run ./cmd/api -config configs/api.example.yaml
 ```
 
-With `auth.enabled: true` (default in `configs/api.example.yaml`), every `/api/*` request requires:
+The REST listener defaults to `http://127.0.0.1:8000`; administration and
+metrics default to `http://127.0.0.1:9092`.
 
-```http
-Authorization: Bearer <Google ID token>
-```
+## API resources
 
-Set `auth.enabled: false` only for local unauthenticated debugging.
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/sites` | Appliance site overview |
+| GET | `/api/sites/{siteId}` | Site detail and latest devices |
+| GET | `/api/sites/{siteId}/devices` | Devices for a site |
+| GET | `/api/devices/{deviceId}` | Device detail |
+| GET | `/api/devices/{deviceId}/interfaces` | Interface inventory |
+| GET | `/api/devices/{deviceId}/metrics` | Metric history |
+| GET | `/api/alerts` | Active alerts |
 
-- REST API: `http://127.0.0.1:8000`
-- Admin (`/healthz`, `/metrics`): `http://127.0.0.1:9092` (unauthenticated)
+Status values remain compatible with the frontend: `0` Unknown, `1` Healthy,
+`2` Warning, and `3` Critical. The API preserves the collector's reason and
+dependency evidence; it does not infer health from missing metrics.
 
+## Boundary rules
 
-### MVP endpoints
-
-| Method | Path | Notes |
-|--------|------|-------|
-| GET | `/api/sites` | Overview object keyed by collector site ID (`sites.name`) |
-| GET | `/api/sites/{siteId}` | Site detail + `latest.devices` |
-| GET | `/api/sites/{siteId}/devices` | Device list for site |
-| GET | `/api/devices/{deviceId}` | Resolve by UUID, or collector ID with optional `?siteId=` |
-| GET | `/api/devices/{deviceId}/interfaces` | IF-MIB inventory; optional `?siteId=` |
-| GET | `/api/devices/{deviceId}/metrics` | Query: `start`, `end`, `metric` (default `uptime_seconds`); optional `?siteId=` |
-| GET | `/api/alerts` | Active alerts (`cleared_at IS NULL`) |
-| GET | `/api/test-config` | `{ "mode": "live", "polling_enabled": true }` |
-
-REST prefix is `/api/...` (not `/api/v1/...`). Frontend and the MVP roadmap are canonical.
-
-### Identifier conventions
-
-- `{siteId}` = collector string ID stored in `sites.name`
-- Site detail device map keys prefer real `ip_address`; fall back to `hostname` when IP is `0.0.0.0`
-- `{deviceId}` = collector string ID (`devices.hostname`) with optional `?siteId=` (sites.name), or device UUID
-
-## Honest defaults (MVP + v2)
-
-- Absent telemetry (`cpu_pct`, `memory_pct`, `temperature_c`, `latency_ms`) is JSON `null`, never fabricated zeros.
-- Device `status` uses numeric compatibility: `0` unknown, `1` healthy, `2` warning, `3` critical.
-- When `device_health_current` exists, status/reason/dependency fields come from that projection. Without a health row, MVP online→`1` / offline→`3` fallback remains.
-- Site summaries expose `healthy_count`, `warning_count`, `critical_count`, `unknown_count`, and `dependency_impacted_count`. Unknown dependents are never counted as Critical.
-- Device detail embeds `history.{cpu,memory,temperature,uptime}` (24h window) plus temperature/power components and SNMP identity when persisted.
-- Fields without inventory backing (`role`, `type`, `idf_count`) return `0` or `""`.
+- The frontend reaches the API through nginx only.
+- The API uses a read-only database account.
+- SNMP communities, MQTT credentials, TLS material, filesystem paths, and
+  TUI mutation operations are never returned in API responses.
+- The API is private to the appliance and is not a remote management service.

@@ -1,110 +1,61 @@
-# Ingestion Service
+# Equate Ingestion Service
 
-## Plane Ownership
+The Ingestion Service is the local appliance consumer between MQTT and
+PostgreSQL. It validates versioned collector events, deduplicates them,
+persists monitoring state transactionally, and acknowledges a message only
+after the database decision is durable.
 
-UI/UX Cloud Plane.
+```text
+local MQTT/TLS → validate → deduplicate → PostgreSQL transaction → ACK
+```
 
 ## Responsibilities
 
-- Consume telemetry from Secure Outbound Telemetry Transport (MQTT/TLS).
-- Validate v1 flat metric payloads and v2 enveloped telemetry/health/heartbeat events.
-- Normalize collector string IDs to deterministic UUID v5 keys.
-- Write monitoring state and history to PostgreSQL (idempotent).
-- Deduplicate v2 events by `event_id` (natural keys remain defense in depth).
-- ACK MQTT messages only after commit (or safe reject/dedup).
-- Reject malformed or unauthorized messages.
+- Validate v2 device, interface, health, and heartbeat events.
+- Cross-check topic identifiers against envelope identifiers.
+- Persist inventory, samples, components, health evidence, and collector
+  status/history.
+- Deduplicate by `event_id` with natural keys as defense in depth.
+- Reject malformed or unauthorized messages without writing partial state.
 
-## Subscribed topics
+It does not poll SNMP, serve the dashboard, or modify collector inventory.
 
-Default `mqtt.topics` covers the migration window:
+## Local configuration
+
+The appliance subscribes to:
 
 ```text
-site/+/device/+/metric/#
 site/+/device/+/telemetry/v2/#
 site/+/collector/+/telemetry/v2/heartbeat
 ```
 
-## Non-Responsibilities
+The broker, CA, and database are local containers in the appliance Compose
+project. Production credentials are generated per installation and loaded from
+runtime environment files.
 
-- Polling SNMP devices.
-- Hosting telemetry transport.
-- Serving frontend requests.
-- Rendering dashboard views.
-- Configuring monitored devices.
-- Providing device console or management access.
-
-## Build and run
+## Build and test
 
 ```bash
 cd services/ingestion-service
 go test ./...
-export MQTT_PASSWORD=ingestion
-export DATABASE_URL=postgres://ogsd_ingestion:ingestion@127.0.0.1:5432/ogsd?sslmode=disable
 go run ./cmd/ingestion -config configs/ingestion.example.yaml
 ```
 
-Admin endpoints (default `:9091`):
-
-- `GET /metrics` — Prometheus scrape
-- `GET /healthz` — liveness
-
-## Local stack (`deployments/development`)
+For integration validation:
 
 ```bash
-# From repo root — Mac cloud-plane Compose
-./deployments/development/up.sh
+./deployments/end-to-end/up.sh
+./deployments/end-to-end/smoke.sh
 ```
 
-Mac + OrbStack VM testing: [`deployments/development/README.md`](../../deployments/development/README.md).  
-Single-host client smoke: [`deployments/end-to-end/`](../../deployments/end-to-end/).  
-Production skeleton: [`deployments/production/`](../../deployments/production/).
+The default administration listener is `:9091` and exposes only liveness and
+metrics. It is not published by the production appliance.
 
-## Testing
-
-### Layer A — Unit (no Docker)
-
-```bash
-cd services/ingestion-service
-go test ./... -count=1
-```
-
-### Layer B — Integration
-
-Requires Mosquitto + Postgres from the development cloud stack:
-
-```bash
-./deployments/development/up.sh
-export MQTT_PASSWORD=ingestion
-export MQTT_BROKER=tls://127.0.0.1:8883
-export MQTT_CA_FILE="$PWD/infrastructure/docker/mqtt-broker/certs/ca.crt"
-export DATABASE_URL=postgres://ogsd_ingestion:ingestion@127.0.0.1:5432/ogsd?sslmode=disable
-cd services/ingestion-service
-go test -tags=integration ./tests/ -count=1 -v
-```
-
-## Metrics
-
-| Metric | Meaning |
-|--------|---------|
-| `ingestion_messages_received_total` | MQTT messages received |
-| `ingestion_messages_accepted_total` | Validated + persisted |
-| `ingestion_messages_rejected_total` | Validation / unknown metric |
-| `ingestion_messages_deduplicated_total` | Duplicates skipped |
-| `ingestion_db_write_failure_total` | Transaction failures |
-| `ingestion_processing_duration_seconds` | Receive → ACK decision |
-| `ingestion_mqtt_connected` | 1 when connected |
-
-## Container
-
-```bash
-cd services/ingestion-service
-docker build -t equate/ingestion-service:dev .
-```
-
-## Deployment Boundary
-
-Approved flow:
+## Acknowledgement rule
 
 ```text
-Secure Outbound Telemetry Transport -> Cloud Ingestion -> PostgreSQL
+MQTT receive → validate → deduplicate → database transaction → ACK
 ```
+
+Non-retryable invalid messages are acknowledged as rejected. Database failures
+remain unacknowledged so MQTT QoS 1 redelivery can retry the event.

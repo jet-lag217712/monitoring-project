@@ -1,28 +1,38 @@
 # Credential and certificate rotation
 
-Never commit community strings, MQTT passwords, private keys, or TLS material.
+Never commit SNMP communities, MQTT passwords, private keys, session secrets,
+or appliance TLS material.
 
 ## SNMP communities
 
-1. Update the secret store / `.env` value for the device `community_env` name.
-2. Restart or recreate the collector container/unit so the new environment is loaded.
-3. Confirm polls succeed (`/readyz`, TUI device view, API device status).
-4. Do not print communities in logs, audit files, MQTT payloads, or runbooks.
+1. Open the local collector TUI for the affected site.
+2. Update the local secret referenced by `community_env`; the inventory keeps
+   only the environment-variable name.
+3. Restart or recreate the affected collector so it loads the new value.
+4. Confirm `/readyz`, the TUI device view, and a successful poll.
 
-Static inventory keeps `community_env` references only.
+Do not print communities in logs, audit files, telemetry, or diagnostics.
 
-## MQTT passwords
+## MQTT credentials
 
-1. Update Mosquitto password file / secret injection for `collector` and `ingestion`.
-2. Update matching `MQTT_PASSWORD` / profile `.env` values on cloud and collector hosts.
-3. Rolling restart: Mosquitto → ingestion → collector.
-4. Run v2 smoke: `./deployments/lib/smoke_mqtt_v2_to_api.sh` (with required env).
+1. Generate new local broker credentials for `collector` and/or `ingestion`.
+2. Update the appliance runtime secret files.
+3. Restart Mosquitto, ingestion, and collectors in that order.
+4. Confirm the TUI transport view, `/readyz`, and a v2 smoke or live poll.
 
-Local broker notes: [`infrastructure/docker/mqtt-broker/README.md`](../../infrastructure/docker/mqtt-broker/README.md).
+See [`infrastructure/docker/mqtt-broker/README.md`](../../infrastructure/docker/mqtt-broker/README.md).
 
-## TLS CA / server certificates
+## TLS certificates
 
-1. Issue a new server certificate with SANs matching collector `MQTT_BROKER` hostnames.
-2. Distribute the **public CA** (`ca.crt`) to collector and ingestion mounts.
-3. Restart Mosquitto, then clients.
-4. Never place private keys under tracked `certs/` directories intended for CA-only mounts.
+1. Generate a new local broker or dashboard certificate with the appliance
+   hostname/IP SANs.
+2. Install only the public CA where clients need to trust the broker.
+3. Keep private keys owner-only under the appliance runtime directory.
+4. Restart the affected local services and validate the dashboard and MQTT
+   readiness.
+
+## Dashboard users
+
+Use the appliance user-management TUI/helper to disable, reset, or create local
+PAM-backed users. Never edit `/etc/shadow` from a container or place passwords
+in Compose files.

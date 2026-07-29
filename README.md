@@ -1,301 +1,104 @@
-# Equate OGSD Monitoring Platform
+# Equate local monitoring appliance
 
-Equate OGSD (Out-of-Band Service Gateway) is a cloud-native network monitoring platform designed for environments where reliable visibility and recovery access are required even during primary network failures.
+Equate is a local, on-premises network monitoring appliance for VxRail- or
+VMware-type installations. The complete monitoring stack runs on the appliance
+VM; it has no remote-service dependency at runtime and is intended to operate
+inside the customer network.
 
-The platform uses a two-plane architecture:
+The supported production artifact is an offline OVA. An operator deploys the
+OVA, completes first boot in the appliance setup TUI, configures sites and SNMP
+inventory, and uses the local dashboard for monitoring.
 
-* Customer OOB Monitoring Plane
-* UI/UX Cloud Plane
+## Runtime architecture
 
-The customer environment is responsible only for collecting and securely forwarding telemetry. The cloud environment owns ingestion, persistence, APIs, and visualization.
-
----
-
-# Architecture Overview
-
-```
-Customer OOB Monitoring Plane
-
-Network Devices
-      |
-      v
-SNMP Collector
-      |
-      v
-Local Buffer
-      |
-      v
-Outbound TLS Telemetry
-      |
-      v
-
-Azure Cloud Plane
-
-MQTT Broker
-      |
-      v
-Cloud Ingestion Service
-      |
-      v
-Backend API
-      |
-      v
-Azure PostgreSQL
-
-Frontend Dashboard
-      |
-      v
-Backend API
+```text
+SNMP devices
+    │
+    ▼
+Per-site SNMP collectors ── local Unix TUI/control socket
+    │
+    ▼
+SQLite outbox → local MQTT/TLS → ingestion → PostgreSQL
+                                            │
+                                            ▼
+                                   Backend API → nginx → browser
 ```
 
----
+All services are separate containers on the same appliance VM. PostgreSQL is
+the persistent system of record. MQTT is a local delivery boundary, and the
+collector's SQLite database is a durable transport outbox rather than a second
+monitoring database.
 
-# Customer OOB Monitoring Plane
+The appliance exposes only the dashboard on TCP 80/443. PostgreSQL, MQTT,
+service administration endpoints, metrics, and collector control sockets are
+private to the VM or its container networks. Collectors reach only the
+configured SNMP networks and the local broker.
 
-The customer-side deployment runs inside the district or organization environment.
+## Configuration model
 
-Its responsibilities are:
+Configuration is an operator workflow, not a remote control plane:
 
-* Poll network devices using SNMP.
-* Normalize device telemetry.
-* Maintain temporary local buffering.
-* Deliver telemetry outbound securely to the cloud.
+1. First boot launches `collector setup` in the appliance TUI.
+2. The setup workflow creates the local administrator, appliance users, site
+   definitions, generated collector services, and per-installation secrets.
+3. Day-2 changes use `collector tui` through a local Unix socket.
+4. Static deployment YAML remains read-only. The TUI writes validated managed
+   inventory, thresholds, upstream dependencies, interface filters, and
+   discovery policy, then performs an explicit reload.
 
-The customer deployment is intentionally lightweight and isolated.
+Discovery is operator-invoked, limited to configured CIDRs and rate bounds, and
+never enrolls a device without review and confirmation.
 
-It does not host:
+## Repository guide
 
-* Backend APIs.
-* PostgreSQL databases.
-* Frontend applications.
-* Cloud ingestion services.
+| Area | Purpose |
+|---|---|
+| [`deployments/production/appliance/`](deployments/production/appliance/) | Supported local appliance Compose runtime and setup inputs |
+| [`appliance/scripts/`](appliance/scripts/) | Offline release, VM preparation, OVA packaging, and verification |
+| [`docs/releases/appliance-ova.md`](docs/releases/appliance-ova.md) | OVA build, first boot, acceptance, and handoff runbook |
+| [`docs/architecture/`](docs/architecture/) | Service boundaries, data flow, contracts, and storage |
+| [`deployments/runbooks/`](deployments/runbooks/) | Installation, TUI operations, rotation, recovery, and rollback |
+| [`.ai/`](.ai/) | Canonical project context, decisions, standards, and roadmap |
 
-The customer environment acts as a telemetry collection point, not an application platform.
+`deployments/end-to-end/` and the development directories are validation
+fixtures for engineers. They are not alternative customer deployment models.
 
----
+## Local source validation
 
-# UI/UX Cloud Plane
+For a source checkout with Docker Compose and reachable SNMP test devices:
 
-The cloud deployment runs in Microsoft Azure.
-
-Responsibilities include:
-
-* Receiving telemetry.
-* Validating incoming data.
-* Processing monitoring events.
-* Persisting monitoring state.
-* Providing APIs.
-* Serving dashboard workflows.
-
-The cloud plane contains:
-
-* MQTT Broker.
-* Cloud Ingestion Service.
-* Backend API.
-* PostgreSQL Database.
-* Frontend Dashboard.
-
----
-
-# Data Architecture
-
-PostgreSQL is the system of record.
-
-Stored information includes:
-
-* Device inventory.
-* Site configuration.
-* User configuration.
-* Telemetry history.
-* Monitoring state.
-* Alerts.
-
-Local storage at customer sites is temporary only.
-
-The data flow is:
-
-```
-SNMP Collector
-      |
-      v
-Temporary Local Buffer
-      |
-      v
-Cloud Ingestion
-      |
-      v
-PostgreSQL
+```bash
+./deployments/end-to-end/up.sh
+./deployments/end-to-end/validate.sh
+./deployments/end-to-end/smoke.sh
+./deployments/end-to-end/acceptance.sh
+./deployments/end-to-end/down.sh
 ```
 
-Removing the cloud database would reduce the platform to a live telemetry viewer and prevent historical monitoring, alerting, and configuration management.
+For the supported offline release workflow, use the OVA runbook and the release
+scripts rather than copying service containers or hand-editing a customer VM.
 
----
+## Appliance release
 
-# Initial Production Deployment
-
-The first production deployment prioritizes operational simplicity and reliability.
-
-Target architecture:
-
-```
-Azure Compute Host
-
-├── MQTT Broker
-├── Cloud Ingestion Service
-├── Backend API
-└── Reverse Proxy (Caddy/NGINX)
-
-
-Separate Service:
-
-└── Azure PostgreSQL
+```bash
+make appliance-bundle ARCH=arm64 VERSION=<version>
+make appliance-bundle ARCH=amd64 VERSION=<version>
 ```
 
-Stateless application services share compute initially.
+The release contains pinned images, migrations, configuration templates,
+checksums, image digests, and an SBOM. The release is staged offline and
+verified by re-importing the resulting OVA into a clean VMware-compatible VM.
 
-The database remains isolated as a separate failure domain.
+## Design commitments
 
----
-
-# API Gateway Strategy
-
-Azure API Management is intentionally deferred.
-
-APIM provides:
-
-* Authentication enforcement.
-* Rate limiting.
-* API governance.
-* External integration management.
-
-It becomes valuable when Equate evolves into a multi-tenant SaaS platform.
-
-The initial deployment uses:
-
-```
-Frontend
-    |
-    v
-Reverse Proxy
-    |
-    v
-Backend API
-    |
-    v
-PostgreSQL
-```
-
----
-
-# Container Strategy
-
-All services are designed as containers.
-
-This enables future migration to:
-
-* Azure Container Apps.
-* Kubernetes / AKS.
-* Larger distributed deployments.
-
-The initial deployment avoids unnecessary infrastructure complexity while maintaining a path toward enterprise scale.
-
----
-
-# Core Design Principles
-
-## Outbound-Only Customer Connectivity
-
-Customer environments do not require inbound cloud access.
-
-Telemetry flows outbound from the OOB environment to Azure.
-
-Benefits:
-
-* Reduced attack surface.
-* Easier firewall policies.
-* Improved isolation.
-
----
-
-## Cloud-Owned State
-
-The cloud owns persistent state.
-
-Customer deployments only maintain temporary delivery buffers.
-
----
-
-## Separate Failure Domains
-
-Applications and databases are separated.
-
-Application failures should not compromise persistent monitoring data.
-
----
-
-## Build for Scale, Deploy for Simplicity
-
-The architecture supports future growth without requiring premature operational complexity.
-
-Initial deployments optimize for:
-
-* Low cost.
-* Simple operations.
-* Clear ownership boundaries.
-
----
-
-# Deployments
-
-Operational stacks live under [`deployments/`](deployments/):
-
-| Profile | Purpose |
-|---------|---------|
-| [`end-to-end/`](deployments/end-to-end/) | Single-host Compose with every service (client-site smoke; real SNMP) |
-| [`development/`](deployments/development/) | Mac cloud plane + OrbStack VM collector (GNS3 Cloud) |
-| [`production/`](deployments/production/) | Hybrid skeleton: Azure cloud + on-site VxRail |
-
-See [`deployments/README.md`](deployments/README.md) for commands, ports, and the promotion checklist.
-
----
-
-# Development Status
-
-Equate OGSD is currently under active development.
-
-Current development priorities:
-
-* SNMP collection engine.
-* Telemetry normalization.
-* Secure telemetry transport.
-* Cloud ingestion pipeline.
-* Monitoring dashboard.
-
----
-
-# Technology Direction
-
-## Customer Plane
-
-* Go
-* SNMP
-* MQTT
-* Docker
-
-## Cloud Plane
-
-* Azure
-* PostgreSQL
-* Containerized services
-* REST API
-* Web dashboard
-
----
-
-# Project Goals
-
-Equate OGSD aims to provide reliable infrastructure visibility and recovery capabilities for organizations operating distributed networks where traditional monitoring may fail during outages.
-
-The platform is designed around one principle:
-
-**The monitoring system must remain available when the primary network is unavailable.**
+- Local-first and on-premises: the appliance remains useful without Internet
+  access after its release bundle is staged.
+- TUI-first operations: setup and day-2 collector configuration are performed
+  through local terminal workflows with explicit confirmation.
+- Reviewed discovery: scanning and enrollment are separate actions.
+- Durable telemetry: polling continues during broker interruption and drains
+  the SQLite outbox after recovery.
+- Honest health: direct failures, temperature warnings, and dependency-impact
+  Unknown states remain distinct.
+- Least privilege: local PAM authentication, private service networks, secret
+  redaction, and no public collector mutation endpoint.

@@ -338,7 +338,7 @@ func (a *API) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(traffic) > 0 {
-			info.TrafficHistory = toMetricPoints(traffic)
+			info.TrafficHistory = toTrafficHistoryPoints(traffic)
 		}
 		out = append(out, info)
 	}
@@ -476,6 +476,18 @@ func toMetricPoints(samples []store.MetricSampleRow) []models.MetricPoint {
 	points := make([]models.MetricPoint, 0, len(samples))
 	for _, s := range samples {
 		points = append(points, models.MetricPoint{TS: s.CollectedAt.UTC(), Value: s.Value})
+	}
+	return points
+}
+
+func toTrafficHistoryPoints(samples []store.InterfaceTrafficSampleRow) []models.TrafficHistoryPoint {
+	points := make([]models.TrafficHistoryPoint, 0, len(samples))
+	for _, s := range samples {
+		points = append(points, models.TrafficHistoryPoint{
+			TS:        s.CollectedAt.UTC(),
+			InOctets:  s.InOctets,
+			OutOctets: s.OutOctets,
+		})
 	}
 	return points
 }

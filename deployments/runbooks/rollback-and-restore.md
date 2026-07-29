@@ -1,28 +1,35 @@
-# Rollback and database restore
+# Rollback and restore
 
-## Collector image / compose rollback
+## Appliance release rollback
 
-1. Record the previous image digest or git SHA before upgrade.
-2. Pin the prior image tag in Compose (or check out the prior compose revision).
-3. `docker compose up -d` without wiping the `collector-state` volume.
-4. Verify `/healthz`, `/readyz`, and API device visibility.
+1. Record the active release version, image digests, and configuration revision.
+2. Stop the stack without deleting volumes.
+3. Select the previous immutable release and run its Compose stack.
+4. Verify `/healthz`, `/readyz`, the TUI configuration view, and dashboard data.
 
-## Managed inventory rollback
+Never remove the PostgreSQL or collector-state volumes during a release
+rollback.
 
-Invalid overlays do not activate. To undo a bad managed write:
+## TUI-managed configuration rollback
 
-1. Replace `/var/lib/snmp-collector/managed-inventory.yaml` with a known-good copy (`0600`).
-2. `config.reload` via TUI/control or `SIGHUP`.
-3. Confirm active revision in TUI configuration view / `config.get`.
+Invalid managed edits do not activate. To undo a valid but unwanted change:
 
-Static inventory is never written by the TUI; restore it from git if needed.
+1. Restore the known-good managed inventory with mode `0600`.
+2. Use the local TUI reload action or send `SIGHUP` to the collector.
+3. Confirm the active revision and inventory in the TUI.
+
+Static deployment YAML is never written by the TUI and should be restored from
+the matching release source when necessary.
 
 ## PostgreSQL restore
 
-1. Stop writers (ingestion) before restore when possible.
-2. Restore from `pg_dump` / volume snapshot / Azure PITR per environment.
-3. Re-run migrations only if restoring to an older schema baseline that still needs forward migrate.
-4. Start ingestion, then collector.
-5. Confirm API projections; delayed heartbeats must not overwrite newer collector status (observation-time ordering).
+1. Stop ingestion and other database writers.
+2. Restore the approved local `pg_dump` or volume backup.
+3. Apply forward migrations only when the restored database is behind the
+   release schema.
+4. Start PostgreSQL, ingestion, API, and collectors in that order.
+5. Confirm current projections, observation-time ordering, and dashboard data.
 
-Migrate helper: [`infrastructure/script/migrate.sh`](../../infrastructure/script/migrate.sh).
+Use [`infrastructure/script/migrate.sh`](../../infrastructure/script/migrate.sh)
+for migrations. Document the release manifest, backup identifier, and any lost
+telemetry before closing the incident.

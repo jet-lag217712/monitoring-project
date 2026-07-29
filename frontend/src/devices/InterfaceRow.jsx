@@ -10,6 +10,8 @@ export default function InterfaceRow({ iface, selected, onSelect }) {
   const key = getInterfaceSelectionKey(iface)
   const isSelected = selected === key
 
+  const isUp = String(iface.status ?? iface.oper_status ?? '').toLowerCase() === 'up'
+
   const handleActivate = () => onSelect?.(key)
 
   return (
@@ -25,9 +27,9 @@ export default function InterfaceRow({ iface, selected, onSelect }) {
         <span style={monoTextStyle}>{iface.name}</span>
       </td>
       <td>
-        <span className={`status-badge ${iface.status === 'up' ? 'ok' : 'alert'}`} style={{ fontSize: '0.58rem' }}>
+        <span className={`status-badge ${isUp ? 'ok' : 'alert'}`} style={{ fontSize: '0.58rem' }}>
           <span className="badge-dot" />
-          {iface.status === 'up' ? 'Up' : 'Down'}
+          {isUp ? 'Up' : 'Down'}
         </span>
       </td>
       <td>

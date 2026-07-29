@@ -2,11 +2,11 @@
 
 ## Purpose
 
-The collector is an operator-managed, local SNMPv2c service in the Customer OOB Monitoring Plane. It concurrently discovers (only when explicitly invoked) and polls a validated multi-device inventory, evaluates reachability-aware health, and reliably publishes v2 telemetry through outbound MQTT/TLS.
+The collector is an operator-managed, local SNMPv2c service inside the Equate appliance. It concurrently discovers (only when explicitly invoked) and polls a validated multi-device inventory, evaluates reachability-aware health, and reliably publishes v2 telemetry through local MQTT/TLS.
 
 ## Boundary and non-responsibilities
 
-The collector owns SNMP polling-path evidence, local inventory/configuration, the SQLite outbox, and local operator controls. It does not own cloud persistence, dashboard/API requests, alert workflows, device configuration, console access, or an inbound management channel. SNMPv3, write operations, automatic enrollment, automatic dependency activation, and cloud-side credential editing are out of scope.
+The collector owns SNMP polling-path evidence, local inventory/configuration, the SQLite outbox, and local operator controls. It does not own PostgreSQL persistence, dashboard/API requests, alert workflows, device configuration, console access, or a remote management channel. SNMPv3, write operations, automatic enrollment, automatic dependency activation, and remote credential editing are out of scope.
 
 Its public operational surfaces are scrape-only `/metrics`, liveness `/healthz`, readiness `/readyz`, and a localhost/Unix-socket status/control service. The Bubble Tea TUI is a local client of that socket; it is not exposed through HTTP.
 

@@ -1,6 +1,6 @@
 # PostgreSQL Architecture — v2
 
-PostgreSQL stores authoritative monitoring state and history in the UI/UX Cloud Plane. Collectors and frontend clients never connect directly.
+PostgreSQL stores authoritative monitoring state and history inside the local appliance. Collectors and frontend clients never connect directly.
 
 V2 requires migrations for enriched device/profile identity, interface metadata, component readings, health current state/history and dependency evidence, collector current status/history, plus seeded CPU, memory, temperature, and supported power metric types. All real-world timestamps use `TIMESTAMPTZ`; history tables remain append-oriented and current-state rows are updated only by valid, newer observations where ordering matters.
 

@@ -1,6 +1,6 @@
 # Monitoring Dashboard Architecture — v2
 
-The dashboard is a read-only UI/UX Cloud Plane frontend. It consumes Backend API responses only; it never accesses PostgreSQL, MQTT, SNMP, collector inventory, local TUI controls, or credentials.
+The dashboard is a read-only local appliance frontend. It consumes Backend API responses only; it never accesses PostgreSQL, MQTT, SNMP, collector inventory, local TUI controls, or credentials.
 
 V2 site summaries show healthy, warning, direct-critical, and dependency-impacted counts separately. Device rows and detail render an explicit Unknown treatment for `upstream_unreachable`, including the recorded unavailable-upstream and root-cause context. Unknown is not displayed as Critical.
 

@@ -1,142 +1,48 @@
-# Directory Structure of Project
+# Equate repository map
 
-## Project Structure
-```
+This repository is for one product: the local Equate monitoring appliance.
+The supported production shape is one VMware-compatible VM with all Equate
+services running locally. The `/.ai/` directory is the canonical source for
+architecture, decisions, standards, and roadmap documentation.
+
+```text
 monitoring-dashboard/
-├── .ai/
-├── .github/
-├── docs/
-│   ├── architecture/
-│   └── diagrams/
-│       └── system-design.md
-│
+├── .ai/                         canonical project guidance
+├── appliance/scripts/           release, VM, OVA, and verifier scripts
+├── deployments/production/
+│   └── appliance/               supported local appliance Compose runtime
+├── deployments/end-to-end/      single-host source validation
+├── deployments/development/     developer integration fixture
+├── deployments/runbooks/        operator procedures
 ├── services/
-│   ├── snmp-collector/
-│   │   ├── cmd/
-│   │   ├── internal/          # config, inventory, health DAG, discovery, TUI/socket,
-│   │   │                      # SQLite outbox, SNMP core + vendors/{cisco,arista}
-│   │   ├── configs/
-│   │   ├── data/
-│   │   ├── deployments/
-│   │   ├── tests/
-│   │   ├── Dockerfile
-│   │   ├── go.mod
-│   │   └── README.md
-│   │
-│   ├── ingestion-service/     # v1/v2 validation, dedup, transactional persistence
-│   │   ├── cmd/
-│   │   ├── internal/
-│   │   ├── configs/
-│   │   ├── tests/
-│   │   ├── Dockerfile
-│   │   └── README.md
-│   │
-│   └── backend-api/
-│       ├── cmd/
-│       ├── internal/
-│       ├── configs/
-│       ├── tests/
-│       ├── Dockerfile
-│       └── README.md
-│
-├── frontend/
-│   ├── src/
-│   ├── assets/
-│   ├── docs/
-│   ├── Dockerfile
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-│
-├── infrastructure/
-│   ├── terraform/
-│   │   ├── environments/
-│   │   │   ├── dev/
-│   │   │   └── prod/
-│   │   └── modules/
-│   │
-│   ├── docker/
-│   │   ├── mqtt-broker/
-│   │   ├── postgres/
-│   │   └── local-dev/
-│   └── script/
-│
-├── database/
-│   ├── migrations/
-│   ├── schema/
-│   └── seed/
-│
-├── deployments/
-│   ├── end-to-end/            # Single-host: all services including collector
-│   ├── development/           # Mac cloud Compose + development/vxrail (OrbStack/GNS3)
-│   │   ├── up.sh / down.sh
-│   │   ├── docker-compose.yml
-│   │   └── vxrail/            # Collector on VM → Mac Mosquitto (GNS3 Cloud)
-│   ├── production/            # Hybrid skeleton (no Terraform yet)
-│   │   ├── cloud/             # Azure VM Compose
-│   │   └── vxrail/            # On-site collector → Azure Mosquitto
-│   ├── runbooks/              # Install, rotation, queue, rollback, V2 cutover, field acceptance
-│   ├── lib/                   # Shared shell helpers (v2 smoke, MQTT drill)
-│   └── test.sh                # Aggregate validation runner
-│
-├── remote-server/
-│   └── configurations/
-│
-├── AGENTS.md
-├── README.md
-└── .gitignore
+│   ├── snmp-collector/           polling, TUI, outbox, and health evidence
+│   ├── ingestion-service/        validation and PostgreSQL writes
+│   └── backend-api/              read-only REST contracts
+├── frontend/                    local dashboard
+├── infrastructure/docker/       local Mosquitto and PostgreSQL images
+├── database/                    schema, seeds, and migrations
+├── docs/                        architecture, contracts, schemas, and release docs
+└── remote-server/               GNS3/VMware laboratory network fixtures
 ```
 
-## .ai Structure
+## `.ai` structure
 
-```
+```text
 .ai/
-├── project-context/
-│   ├── architecture.md
-│   ├── aws-deployment.md
-│   ├── data-flow.md
-│   ├── monitoring-requirements.md
-│   ├── network-topology.md
-│   └── service-boundaries.md
-│
-├── standards/
-│   ├── coding-standards.md
-│   ├── golang-standards.md
-│   ├── react-standards.md
-│   ├── api-standards.md
-│   ├── database-standards.md
-│   └── security-standards.md
-│
-├── decisions/
-│   ├── awsdeploy-1.md
-│   ├── collector-1.md
-│   ├── collector-2.md
-│   ├── collector-3.md
-│   ├── collector-4.md
-│   ├── collector-5.md
-│   ├── collector-6.md
-│   ├── collector-7.md
-│   ├── dashboard-1.md
-│   ├── dashboard-2.md
-│   ├── dashboard-3.md
-│   └── instructions.md
-│
-├── roadmap/
-│   ├── mvp-implementation-plan.md  # historical baseline
-│   └── snmp-collector-v2.md        # current roadmap authority
-└── directory-map.md
+├── project-context/              current product architecture and boundaries
+├── standards/                    implementation and security standards
+├── decisions/                    accepted design decisions
+├── roadmap/                      implementation sequencing
+└── directory-map.md              this map
 ```
 
-## Deployment profiles
+## Supported runtime boundaries
 
-Three deployment profiles under [`deployments/`](../deployments/):
+The appliance contains per-site collectors, local MQTT/TLS, ingestion,
+PostgreSQL, Backend API, nginx, and the React dashboard. Collectors reach
+monitored SNMP networks through the VM route table. The TUI reaches each
+collector through an owner-only Unix socket. Only nginx publishes 80/443.
 
-- **`deployments/end-to-end/`** — one Compose project with every service (including collector) for client-site smoke; no SNMP simulator
-- **`deployments/development/`** — Mac cloud Compose (Mosquitto, Postgres, apps) + [`development/vxrail/`](../deployments/development/vxrail/) on OrbStack Ubuntu VM (GNS3 Cloud → Mac MQTT)
-- **`deployments/production/`** — hybrid skeleton: Azure cloud Compose + on-site VxRail collector (Terraform deferred)
-
-Do not add phase-named stacks under these profiles. Extend `end-to-end/`, `development/`, or `production/` instead.
-
-## SNMP Collector v2 documentation
-
-The v2 roadmap is [`.ai/roadmap/snmp-collector-v2.md`](roadmap/snmp-collector-v2.md). The versioned wire contract is [`docs/architecture/contracts.md`](../docs/architecture/contracts.md). Collector implementation keeps core MIB work under `services/snmp-collector/internal/snmp/core/`, vendor profiles under `internal/snmp/vendors/{cisco,arista}/`, and separates runtime configuration/inventory, discovery, health dependency evaluation, local TUI/control, and durable outbox concerns.
+The old split deployment directories and retired infrastructure files are not
+product architecture. Do not add documentation that presents them as customer
+installation options.

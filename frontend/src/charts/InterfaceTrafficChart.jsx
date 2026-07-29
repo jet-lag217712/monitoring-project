@@ -24,6 +24,12 @@ function formatTime(ts) {
 }
 
 export default function InterfaceTrafficChart({ data, interfaceName }) {
+  // #region agent log
+  if (interfaceName === 'Gi0/0' || data?.length) {
+    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'269a95'},body:JSON.stringify({sessionId:'269a95',location:'InterfaceTrafficChart.jsx:render',message:'chart data received',data:{interfaceName,dataCount:data?.length??0,firstPoint:data?.[0]??null,hasInMbps:data?.[0]?.in_mbps!=null,hasOutMbps:data?.[0]?.out_mbps!=null},timestamp:Date.now(),runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
+
   if (!data?.length) {
     return (
       <div className="chart-card chart-card-compact">

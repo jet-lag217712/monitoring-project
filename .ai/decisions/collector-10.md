@@ -40,7 +40,7 @@ broker/password and SNMP community configuration.
 ### Alternatives Considered
 
 - Four independent vxrail directories — rejected; duplicates secrets and sync overhead.
-- One collector with multiple CIDRs — rejected; does not model distinct cloud `site_id` values.
+- One collector with multiple CIDRs — rejected; it does not model distinct local `site_id` values.
 - Writable static YAML from setup — rejected; collector-9 static/managed split preserved.
 
 ### Pros
