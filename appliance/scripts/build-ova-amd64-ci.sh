@@ -121,8 +121,8 @@ SSH_OPTS=(
   -o ConnectTimeout=10
   -o ServerAliveInterval=30
   -o ServerAliveCountMax=240
+  -o "Port=${SSH_PORT}"
   -i "${SSH_KEY}"
-  -p "${SSH_PORT}"
 )
 
 QEMU_ACCEL=()

@@ -87,5 +87,9 @@ cat <<EOF
 Staged release ${VERSION} (${ARCH}) on ${HOST}.
 
 On the VM (as root):
-  sudo bash ${REMOTE_DIR}/configure-vm.sh --bundle ${REMOTE_DIR}/bundle --version ${VERSION}
+  Fresh install:
+    sudo bash ${REMOTE_DIR}/configure-vm.sh --bundle ${REMOTE_DIR}/bundle --version ${VERSION}
+  In-place upgrade (preserves sites, database, and secrets):
+    sudo equate upgrade --bundle ${REMOTE_DIR}/bundle --version ${VERSION} --yes
+    # or: sudo bash ${REMOTE_DIR}/configure-vm.sh --upgrade --bundle ${REMOTE_DIR}/bundle --version ${VERSION}
 EOF

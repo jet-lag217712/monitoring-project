@@ -29,6 +29,8 @@ func main() {
 		code = runStatus(os.Args[2:])
 	case "reset":
 		code = runReset(os.Args[2:])
+	case "upgrade":
+		code = runUpgrade(os.Args[2:])
 	case "version":
 		code = runVersion(os.Args[2:])
 	case "help", "-h", "--help":
@@ -46,6 +48,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: equate <command>\n\nCommands:\n")
 	fmt.Fprintf(os.Stderr, "  configure   Run appliance setup wizard (--reconfigure)\n")
 	fmt.Fprintf(os.Stderr, "  reset       Stop containers and clear setup state (--hard for full wipe, no restart)\n")
+	fmt.Fprintf(os.Stderr, "  upgrade     In-place release upgrade or rollback (--bundle, --version, --canary, --rollback)\n")
 	fmt.Fprintf(os.Stderr, "  view <site> Open per-site collector operator TUI\n")
 	fmt.Fprintf(os.Stderr, "  sites       List configured sites from manifest\n")
 	fmt.Fprintf(os.Stderr, "  status      Summarize stack health\n")
