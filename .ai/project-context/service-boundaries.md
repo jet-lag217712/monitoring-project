@@ -1,28 +1,41 @@
-# Service Boundaries — SNMP Collector v2
+# Local service boundaries
 
 ### SNMP Collector
 
-* Customer OOB Monitoring Plane.
-* Owns SNMPv2c polling, profile detection/collection, interface selection, local health/dependency evaluation, local inventory/reload, SQLite outbox, and heartbeat creation.
-* Exposes local Unix-socket/localhost operator tooling only. Does not own cloud persistence, public APIs, PostgreSQL, or dashboard workflows.
+- Owns SNMPv2c polling, vendor profile detection, interface selection, local
+  health/dependency evaluation, inventory reload, discovery, SQLite outbox,
+  and heartbeat creation.
+- Exposes local Unix-socket/localhost operator tooling only.
+- Does not own PostgreSQL, the API, dashboard workflows, or device writes.
 
-### Secure Outbound Telemetry Transport
+### Local MQTT/TLS transport
 
-* Boundary between planes.
-* Delivers authenticated MQTT/TLS QoS 1 events; does not own monitoring state or storage.
+- Delivers authenticated QoS 1 events from collectors to local ingestion.
+- Does not own monitoring state, health decisions, or durable history.
 
 ### Ingestion Service
 
-* UI/UX Cloud Plane.
-* Owns v1/v2 contract handling during migration, validation, deduplication, and transactional monitoring writes.
-* Persists collector-supplied health evidence, samples/components, and observation-time-ordered collector status. Does not poll SNMP or serve frontend requests.
+- Validates v2 events, deduplicates, persists monitoring data, and decides ACKs.
+- Does not poll devices, serve frontend requests, or configure collectors.
+
+### PostgreSQL
+
+- Owns authoritative inventory, samples, health evidence, alerts, and collector
+  status/history for the appliance.
+- Is reachable only by the services that require it.
 
 ### Backend API
 
-* UI/UX Cloud Plane.
-* Owns read-only REST contracts and adapters for health, dependency impact, telemetry, components, and collector status. Does not process transport or write monitoring samples.
+- Owns read-only REST contracts and adapters for the dashboard.
+- Uses a read-only database account and never exposes secrets or control paths.
 
 ### Dashboard
 
-* UI/UX Cloud Plane.
-* Owns presentation and reads only through the API. It displays the persisted health evidence without independently applying collector rules, and never accesses transport, PostgreSQL, or collectors directly.
+- Reads only through the API and displays persisted evidence.
+- Never accesses MQTT, PostgreSQL, SNMP, collector inventory, or TUI sockets.
+
+### Local TUI and appliance broker
+
+- The collector TUI performs approved local configuration over a Unix socket.
+- The host PAM broker performs privileged local account operations.
+- Neither surface is published as remote HTTP management.

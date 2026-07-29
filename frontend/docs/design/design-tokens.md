@@ -108,16 +108,14 @@ Status colors follow a traffic-light semantic plus a distinct Unknown slate: gre
 
 ### 3.1 Type Families
 
-Two font families are loaded from Google Fonts (`src/index.css` `@import`):
+The interface uses two font families. The production appliance should package
+or install these fonts locally so the dashboard does not depend on an external
+font service:
 
 | Family | Classification | Weights loaded | Role |
 |---|---|---|---|
 | **Epilogue** | Geometric humanist sans-serif | 400, 500, 600, 700, 800 | Body, headings, UI text, navigation |
 | **JetBrains Mono** | Monospaced | 400, 600, 700 | Technical labels, metric values, timestamps, IP addresses, table headers, uptime, latency |
-
-```css
-@import url('https://fonts.googleapis.com/css2?family=Epilogue:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
-```
 
 > **AI agent rule:** JetBrains Mono should be used wherever data feels "technical" — numbers that represent measurements (CPU %, memory %, latency ms, uptime days), IP addresses, labels that read like machine-readable identifiers, and all `text-transform: uppercase` metadata labels. Epilogue handles all human-readable text, headings, and prose.
 

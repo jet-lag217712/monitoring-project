@@ -59,6 +59,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage python3 curl
 
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: latest
+
       - name: Build AMD64 OVA
         env:
           EQUATE_VERSION: ${{ steps.version.outputs.value }}

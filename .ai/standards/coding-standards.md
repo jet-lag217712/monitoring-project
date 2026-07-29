@@ -1,6 +1,6 @@
 # Coding Standards
 
-These standards apply across the codebase. They are shaped by Google engineering practices, the TypeScript handbook, and the repository's existing Go and React code.
+These standards apply across the codebase. They are shaped by the relevant language/framework handbooks and the repository's existing Go and React code.
 
 ## Core Principles
 
@@ -73,6 +73,5 @@ These standards apply across the codebase. They are shaped by Google engineering
 
 ## References
 
-- Google engineering practices: https://google.github.io/eng-practices/
 - TypeScript handbook: https://www.typescriptlang.org/docs/handbook/intro.html
 - TypeScript basics and strictness: https://www.typescriptlang.org/docs/handbook/2/basic-types.html

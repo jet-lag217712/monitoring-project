@@ -11,7 +11,7 @@ SNMP Collector
 ### Choice Made
 
 Phase 6 adds a local-only Unix status/control protocol and a Bubble Tea TUI
-client. The TUI never talks to SNMP, MQTT, or cloud APIs directly; it is only a
+client. The TUI never talks to SNMP or MQTT directly; it is only a
 client of the control socket.
 
 #### Transport and auth

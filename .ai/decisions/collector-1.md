@@ -66,7 +66,7 @@ drive v2 health state.
 
 | Component | Owns | Does not own |
 |---|---|---|
-| SNMP Collector | Polling, profile detection, normalization, local health, event creation, SQLite outbox | Cloud persistence, public API, dashboard behavior |
+| SNMP Collector | Polling, profile detection, normalization, local health, event creation, SQLite outbox | PostgreSQL persistence, public API, dashboard behavior |
 | MQTT/TLS transport | Authentication, delivery, QoS 1, reconnect, transport buffering | Schema meaning, health decisions, persistence |
 | Ingestion Service | Validation, topic/body checks, deduplication, database transactions, ACK decisions | SNMP polling, dashboard presentation |
 | PostgreSQL | Authoritative inventory, samples, health, dependency, collector state/history | SNMP access or message delivery |

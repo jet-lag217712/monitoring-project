@@ -127,6 +127,13 @@ type MetricSampleRow struct {
 	Value       float64
 }
 
+// InterfaceTrafficSampleRow is one interface_samples traffic point.
+type InterfaceTrafficSampleRow struct {
+	CollectedAt time.Time
+	InOctets    float64
+	OutOctets   float64
+}
+
 // ComponentRow is a temperature or power component with latest reading.
 type ComponentRow struct {
 	ComponentID string
@@ -368,10 +375,13 @@ func (s *Store) ListInterfaces(ctx context.Context, deviceID uuid.UUID) ([]Inter
 	return out, rows.Err()
 }
 
-// ListInterfaceTrafficHistory returns recent in_octets samples for an interface.
-func (s *Store) ListInterfaceTrafficHistory(ctx context.Context, interfaceID uuid.UUID, start time.Time) ([]MetricSampleRow, error) {
+// ListInterfaceTrafficHistory returns recent in/out octet samples for an interface.
+func (s *Store) ListInterfaceTrafficHistory(ctx context.Context, interfaceID uuid.UUID, start time.Time) ([]InterfaceTrafficSampleRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT collected_at, COALESCE(in_octets, 0)::double precision
+		SELECT
+			collected_at,
+			COALESCE(in_octets, 0)::double precision,
+			COALESCE(out_octets, 0)::double precision
 		FROM interface_samples
 		WHERE interface_id = $1 AND collected_at >= $2
 		ORDER BY collected_at ASC
@@ -381,10 +391,10 @@ func (s *Store) ListInterfaceTrafficHistory(ctx context.Context, interfaceID uui
 	}
 	defer rows.Close()
 
-	var out []MetricSampleRow
+	var out []InterfaceTrafficSampleRow
 	for rows.Next() {
-		var r MetricSampleRow
-		if err := rows.Scan(&r.CollectedAt, &r.Value); err != nil {
+		var r InterfaceTrafficSampleRow
+		if err := rows.Scan(&r.CollectedAt, &r.InOctets, &r.OutOctets); err != nil {
 			return nil, fmt.Errorf("scan interface traffic: %w", err)
 		}
 		out = append(out, r)

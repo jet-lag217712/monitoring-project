@@ -1,34 +1,52 @@
-# Production profile (skeleton)
+# Production local appliance
 
-Hybrid deployment for real customer sites. **No Terraform in this profile** — infrastructure provisioning comes later. This tree is an implementation-ready Compose + runbook skeleton.
+The production product is a complete on-premises appliance for a
+VxRail- or VMware-type virtual machine. Every Equate service runs locally:
 
 ```text
-Customer site (VxRail Ubuntu VM)          Azure VM (cloud plane)
-─────────────────────────────────         ─────────────────────────
-SNMP devices                              Mosquitto (MQTT/TLS :8883)
-    │                                          ▲
-    ▼                                          │ outbound TLS only
-SNMP Collector ───────────────────────────────┘
-                                              Ingestion → PostgreSQL
-                                              Backend API → Frontend
+SNMP devices → per-site collectors → local MQTT/TLS → ingestion → PostgreSQL
+                                                               ↓
+                                                       API → nginx → UI
 ```
 
-| Plane | Path | Contents |
-|-------|------|----------|
-| Cloud | [`cloud/`](cloud/) | Azure-hosted Mosquitto, Postgres (or Flexible Server), ingestion, API, frontend |
-| VxRail | [`vxrail/`](vxrail/) | On-site collector only |
+Use [`appliance/`](appliance/) for the runtime. The appliance setup TUI creates
+the site manifest and generated collector services; operators then use the
+collector TUI for inventory, discovery, thresholds, dependencies, transport,
+and reload operations.
 
-## Promotion checklist
+## Runtime requirements
 
-1. Prove path on [`../end-to-end/`](../end-to-end/) with real SNMP devices
-2. Prove lab path on [`../development/`](../development/) (Mac + OrbStack/GNS3)
-3. Fill production secrets, TLS, inventory, and image tags
-4. Deploy Azure cloud plane first, then on-site collector
-5. Run verification steps in each README
+- Debian 12 minimal guest or an equivalent supported appliance base
+- VMware-compatible virtual machine with one virtual NIC
+- Initial target: 4 vCPU, 8 GB RAM, 64 GB disk
+- Layer-2/L3 reachability from the guest to the monitored SNMP networks
+- No Internet connection required after the release bundle is staged
 
-## Explicitly deferred
+The VM publishes only TCP 80/443. Internal service ports and control sockets
+remain private. Generated database, MQTT, TLS, and appliance credentials are
+kept under runtime/state directories and are never supplied as release inputs.
 
-- Terraform / Azure resource provisioning
-- CI image publish + registry wiring
-- Production secret manager integration
-- Automated DNS / TLS certificate issuance
+## Source checkout
+
+For a local source validation run:
+
+```bash
+cd deployments/production/appliance
+./bootstrapper.sh
+```
+
+For customer installation, use the checksummed offline release and follow
+[`docs/releases/appliance-ova.md`](../../docs/releases/appliance-ova.md).
+
+## Operator entry points
+
+```bash
+# First boot or deliberate reconfiguration
+./bootstrapper.sh --reconfigure
+
+# Day-2 collector configuration, per site
+collector tui -socket ./sites/<site-id>/run/control.sock -theme auto
+```
+
+The setup TUI must be completed before the stack is started. A failed
+validation or reload leaves the last active configuration in place.

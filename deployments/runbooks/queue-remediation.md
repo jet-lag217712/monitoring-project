@@ -1,30 +1,35 @@
 # Queue remediation (SQLite outbox)
 
-The collector SQLite buffer is **transport durability**, not cloud source of truth.
-Path in hardened deployments: `/var/lib/snmp-collector/buffer.db`.
+The collector SQLite database is transport durability. PostgreSQL on the
+appliance remains the monitoring system of record. The hardened buffer path is
+`/var/lib/snmp-collector/buffer.db`.
 
 ## Symptoms
 
-- Growing `sqlite_queue_depth` in heartbeats / TUI transport view
-- MQTT disconnected / publish failures
-- Collector `/readyz` failing while `/healthz` remains OK
+- `sqlite_queue_depth` grows in heartbeats or the TUI transport view.
+- MQTT is disconnected or publish attempts fail.
+- `/readyz` fails while `/healthz` remains healthy.
 
-## MQTT outage
+## Local broker interruption
 
-1. Confirm Mosquitto reachability and TLS trust.
-2. Leave the collector running — it continues polling and buffering.
-3. After broker recovery, the flusher drains the outbox (QoS 1).
-4. Optional drill: `./deployments/lib/mqtt_outage_drill.sh deployments/end-to-end`
+1. Confirm the local Mosquitto container is running and its TLS files are
+   readable.
+2. Leave the collector running; it continues polling and buffering.
+3. Restore the broker and allow the flusher to drain the outbox in order.
+4. Confirm the TUI transport view, queue depth, and dashboard update.
 
-## Cap / full buffer
+## Full buffer
 
-If `max_entries` is reached, new enqueues fail. Remediate by restoring MQTT first.
-Do not delete the DB while the collector is running.
+If `max_entries` is reached, restore local broker delivery first. Do not delete
+the database while the collector is running.
 
-## Corrupt or unreadable DB
+## Corrupt or unreadable buffer
 
-1. Stop the collector.
-2. Copy `buffer.db*` aside for forensics (`buffer.db.bak-$(date -u +%Y%m%dT%H%M%SZ)`).
-3. Remove the corrupt files from the state volume.
-4. Start the collector — a fresh outbox is created (in-flight unacked telemetry may be lost; cloud SoR is PostgreSQL).
-5. Confirm `/readyz` and a successful v2 smoke or real poll.
+1. Stop the affected collector.
+2. Copy `buffer.db*` to a protected forensic location.
+3. Remove the corrupt files from the collector state volume.
+4. Start the collector; it creates a fresh outbox. In-flight unacknowledged
+   events may be lost.
+5. Confirm `/readyz`, a v2 smoke, or a live poll.
+
+Preserve the old files until the incident review is complete.

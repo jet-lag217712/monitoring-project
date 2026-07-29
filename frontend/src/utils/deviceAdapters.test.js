@@ -76,12 +76,42 @@ describe('adaptInterface', () => {
       out_octets: 50,
       in_errors: 1,
       out_errors: 0,
-      traffic_history: [{ ts: '2026-07-16T18:00:00Z', value: 100 }],
+      traffic_history: [
+        { ts: '2026-07-16T17:00:00Z', in_octets: 0, out_octets: 0 },
+        { ts: '2026-07-16T18:00:00Z', in_octets: 450_000_000, out_octets: 225_000_000 },
+      ],
     })
     expect(adapted.bytes_in).toBe(100)
     expect(adapted.errors_in).toBe(1)
     expect(adapted.traffic_history).toHaveLength(1)
+    expect(adapted.traffic_history[0].in_mbps).toBe(1)
+    expect(adapted.traffic_history[0].out_mbps).toBe(0.5)
+    expect(adapted.utilization_pct).toBe(0.15)
     expect(adapted.speed).toBe('1 Gbps')
+    expect(adapted.status).toBe('up')
+  })
+
+  it('preserves demo traffic history with precomputed Mbps', () => {
+    const adapted = adaptInterface({
+      if_index: 1,
+      name: 'Gi1/0/1',
+      traffic_history: [{ ts: '2026-07-16T18:00:00Z', in_mbps: 12.5, out_mbps: 4.2 }],
+    })
+    expect(adapted.traffic_history[0]).toEqual({
+      ts: '2026-07-16T18:00:00Z',
+      in_mbps: 12.5,
+      out_mbps: 4.2,
+    })
+  })
+
+  it('derives list status from oper_status when status is absent', () => {
+    const adapted = adaptInterface({
+      if_index: 1,
+      name: 'Gi0/0',
+      admin_status: 'up',
+      oper_status: 'up',
+    })
+    expect(adapted.status).toBe('up')
   })
 })
 

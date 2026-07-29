@@ -1,7 +1,9 @@
-# Local / reference PostgreSQL
+# Local PostgreSQL
 
-OGSD uses stock `postgres:16-alpine` for local development. There is no custom image.
+Equate uses stock `postgres:16-alpine` inside the local appliance. There is no
+custom database image.
 
-**Local stack:** [`deployments/development/`](../../../deployments/development/) — compose service `postgres`, migrations via [`../../script/migrate.sh`](../../script/migrate.sh).
-
-**Cloud:** Azure Database for PostgreSQL Flexible Server — [`../../terraform/modules/postgresql/`](../../terraform/modules/postgresql/).
+The Compose service is `postgres`; migrations are applied from
+[`../../script/migrate.sh`](../../script/migrate.sh). PostgreSQL is attached to
+the private appliance network and is never published as a customer-facing
+endpoint.

@@ -1,90 +1,45 @@
-# Historical Instructions
+# Decision record instructions
 
-## Purpose
+Decision records document choices that affect Equate architecture or
+implementation. Store them in `.ai/decisions/` with one file per decision.
 
-Document architectural and implementation decisions that impact the system.
+## Naming
 
-Store all decisions in:
-
-```text
-.codex/decisions/
-```
----
-
-## Naming Convention
-
-Create a new file for every decision:
+Use the most specific service prefix and an incrementing number:
 
 ```text
-{service}-{decision-number}.md
+collector-11.md
+dashboard-4.md
+appliance-2.md
+database-1.md
 ```
 
-Examples:
-
-```text
-ingestion-1.md
-database-2.md
-backendapi-1.md
-```
-
----
-
-## Service Mapping
-
-| Service                    | Prefix       |
-| -------------------------- | ------------ |
-| SNMP Collector             | collector    |
-| Monitoring Dashboard       | dashboard    |
-| Backend API                | backendapi   |
-| Ingestion Service          | ingestion    |
-| Database                   | database     |
-| Deployments (AWS)          | awsdeploy    |
-| Deployments (Docker)       | dockerdeploy |
-| Infrastructure (Docker)    | dockerinfra  |
-| Infrastructure (AWS, Prod) | awsprodinfra |
-| Infrastructure (AWS, Dev)  | awsdevinfra  |
-
-Use the most specific category available.
-
----
-
-## Required Format
+## Required format
 
 ```markdown
-## ingestion - 1
+## collector - 11
 
 ### Primary Service
-Ingestion Service
+SNMP Collector
 
 ### Secondary Services
-- Deployments (AWS)
+- Ingestion Service
+- Local appliance deployment
 
 ### Choice Made
-Docker-based EC2 Deployment
+Short statement of the accepted local design.
 
 ### Alternatives Considered
-- AWS Lambda
-- ECS Fargate
+- Alternative one
+- Alternative two
 
-### Pros
-- No cold starts
-- Predictable cost
-
-### Cons
-- Requires instance management
-
-### Cost / Benefit
-Cheaper and simpler than Lambda for a continuously active workload.
+### Trade-offs
+Operational and technical consequences.
 
 ### Status
 Accepted
 ```
 
----
-
-## Notes
-
-* Create a new file for every decision.
-* Do not modify historical decisions.
-* If a decision changes, create a new record that supersedes the previous one.
-* Keep entries concise and focused on the reasoning behind the choice.
+Record local appliance decisions, TUI behavior, service boundaries, data
+contracts, and security controls. Do not introduce external deployment options or
+remote configuration assumptions into a decision record.

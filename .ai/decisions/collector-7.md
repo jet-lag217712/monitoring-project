@@ -7,7 +7,7 @@ SNMP Collector
 ### Secondary Services
 
 - Ingestion Service
-- Deployment profiles (`end-to-end`, `development`, `production`)
+- Local validation and appliance deployment
 
 ### Choice Made
 
@@ -52,10 +52,10 @@ Collector-bearing Compose profiles use:
 
 #### Explicitly out of scope
 
-- Terraform full application stack and Azure Monitor dashboards.
+- External infrastructure provisioning or external monitoring dashboards.
 - Automated Playwright/Cypress dashboard E2E in CI.
 - Committed live lab SNMP captures.
-- New phase-named deployment stacks (only the three existing profiles).
+- New phase-named deployment stacks.
 
 ### Status
 

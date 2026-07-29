@@ -4,7 +4,7 @@ Operator-owned checklist. Not automated in CI.
 
 ## Preconditions
 
-- [ ] Profile chosen (`development` + vxrail, or `end-to-end`)
+- [ ] Local validation fixture chosen (`development` + vxrail, or `end-to-end`)
 - [ ] Migrations applied before collector enablement
 - [ ] `community_env` values set locally (never committed)
 - [ ] Mosquitto CA trusted by collector
@@ -22,7 +22,7 @@ Operator-owned checklist. Not automated in CI.
 - [ ] Real device appears in API with `status` and optional `status_reason`
 - [ ] CPU/memory/temperature/power visible when vendor profile applies
 - [ ] Interface counters update for selected interfaces
-- [ ] Collector heartbeat updates cloud collector status
+- [ ] Collector heartbeat updates local collector status
 
 ## Reachability / cascade
 

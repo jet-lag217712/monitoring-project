@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Backend API is the read-only UI/UX Cloud Plane interface over PostgreSQL monitoring state. It translates persisted v2 telemetry and health evidence into stable dashboard contracts; it does not poll SNMP, consume MQTT, modify collector inventory, or write telemetry samples.
+The Backend API is the read-only application interface over the local appliance's PostgreSQL monitoring state. It translates persisted v2 telemetry and health evidence into stable dashboard contracts; it does not poll SNMP, consume MQTT, modify collector inventory, or write telemetry samples.
 
 ## Resources
 

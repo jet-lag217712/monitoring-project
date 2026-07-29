@@ -1,0 +1,1 @@
+{"sessionId":"210dd3","location":"deviceAdapters.js:adaptInterface","message":"interface status mapping","data":{"name":"Gi0/0","if_index":1,"admin_status":"up","oper_status":"up","derivedStatus":"up"},"timestamp":1785285839280,"runId":"post-fix","hypothesisId":"A"}
