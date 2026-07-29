@@ -49,20 +49,27 @@ OVF_NAME="${BASE}.ovf"
 OVA="${OUT_DIR}/${BASE}.ova"
 
 mkdir -p "${OUT_DIR}"
-cp "${VMDK}" "${WORK}/${DISK_NAME}"
+
+VMDK_ABS="$(readlink -f "${VMDK}")"
+VMDK_DIR="$(dirname "${VMDK_ABS}")"
+VMDK_BASE="$(basename "${VMDK_ABS}")"
+
+if [[ "${VMDK_BASE}" != "${DISK_NAME}" ]]; then
+  echo "vmdk basename must be ${DISK_NAME}, got: ${VMDK_BASE}" >&2
+  exit 1
+fi
 
 "${SCRIPT_DIR}/generate-ovf.sh" \
   --arch "${ARCH}" \
   --version "${VERSION}" \
   --name "${BASE}" \
-  --vmdk "${WORK}/${DISK_NAME}" \
+  --vmdk "${VMDK_ABS}" \
   --out "${WORK}/${OVF_NAME}" \
   --disk-gb "${DISK_GB}"
 
-(
-  cd "${WORK}"
-  tar --format=posix -cf "${OVA}" "${OVF_NAME}" "${DISK_NAME}"
-)
+tar --format=posix -cf "${OVA}" \
+  -C "${WORK}" "${OVF_NAME}" \
+  -C "${VMDK_DIR}" "${DISK_NAME}"
 
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum "${OVA}" >"${OVA}.sha256"

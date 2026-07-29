@@ -170,23 +170,6 @@ if [[ "${READY}" -ne 1 ]]; then
   exit 1
 fi
 
-# #region agent log
-GUEST_DIAG="$(ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'cloud-init status 2>&1; echo "---"; pgrep -a apt-get 2>/dev/null || echo "no apt-get"; pgrep -a dpkg 2>/dev/null || echo "no dpkg"' 2>&1 || true)"
-echo "==> debug guest state at SSH ready (hypothesis A/D):"
-echo "${GUEST_DIAG}"
-GUEST_DIAG="${GUEST_DIAG}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
-import json, os, time
-print(json.dumps({
-  "sessionId": "c7a2e2",
-  "location": "build-ova-amd64-ci.sh:ssh-ready",
-  "message": "guest state at SSH ready",
-  "data": {"diag": os.environ.get("GUEST_DIAG", "")},
-  "timestamp": int(time.time() * 1000),
-  "hypothesisId": "A",
-}))
-PY
-# #endregion
-
 wait_for_guest_apt() {
   local max_wait=600
   local waited=0
@@ -201,20 +184,6 @@ wait_for_guest_apt() {
     if [[ "${apt_busy}" -eq 0 ]]; then
       echo "==> guest apt is idle after ${waited}s"
       echo "${diag}"
-      # #region agent log
-      GUEST_DIAG="${diag}" WAITED_S="${waited}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
-import json, os, time
-print(json.dumps({
-  "sessionId": "c7a2e2",
-  "location": "build-ova-amd64-ci.sh:apt-idle",
-  "message": "guest apt idle",
-  "data": {"diag": os.environ.get("GUEST_DIAG", ""), "waited_s": int(os.environ.get("WAITED_S", "0"))},
-  "timestamp": int(time.time() * 1000),
-  "hypothesisId": "F",
-  "runId": "post-fix",
-}))
-PY
-      # #endregion
       return 0
     fi
     echo "==> guest apt still busy after ${waited}s:"
@@ -254,6 +223,12 @@ VMDK="${VMDK_WORK}/Equate-Appliance-${VERSION}-amd64-disk1.vmdk"
 
 echo "==> converting disk to streamOptimized VMDK"
 qemu-img convert -f qcow2 -O vmdk -o subformat=streamOptimized "${DISK}" "${VMDK}"
+
+echo "==> removing qcow2 images to free disk before packaging"
+rm -f "${DISK}" "${CLOUD_IMG}"
+
+echo "==> disk space before OVA packaging"
+df -h "${OUT_DIR}" "${WORK}" / 2>/dev/null || df -h /
 
 echo "==> packaging OVA"
 chmod +x "${SCRIPT_DIR}/package-ova.sh" "${SCRIPT_DIR}/generate-ovf.sh"
