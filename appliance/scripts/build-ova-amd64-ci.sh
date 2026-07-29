@@ -182,7 +182,7 @@ tar -C "${BUNDLE_DIR}" -cf - . | ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo tar
 tar -cf - \
   -C "${SCRIPT_DIR}" configure-vm.sh prepare-ova.sh \
   -C "${ROOT}/appliance/ci" provision-guest.sh | \
-  ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "tar -xf - -C /tmp/equate-ci-scripts"
+  ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo tar -xf - -C /tmp/equate-ci-scripts"
 ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo install -m 0755 /tmp/equate-ci-scripts/configure-vm.sh /tmp/equate-ci-scripts/prepare-ova.sh /tmp/equate-ci-scripts/provision-guest.sh ${STAGING}/ && sudo rm -rf /tmp/equate-ci-scripts"
 
 echo "==> provisioning appliance on guest (configure-vm + prepare-ova); this may take 30+ minutes"
