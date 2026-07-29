@@ -13,6 +13,6 @@ func NewDisabledAuthenticator() *DisabledAuthenticator { return &DisabledAuthent
 // mounted directly on the API mux and therefore require no session or token.
 func (a *DisabledAuthenticator) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/method", func(w http.ResponseWriter, _ *http.Request) {
-		writeAuthJSON(w, http.StatusOK, map[string]string{"provider": "disabled"})
+		writeJSONAuth(w, http.StatusOK, map[string]string{"provider": "disabled"})
 	})
 }
