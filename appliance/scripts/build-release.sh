@@ -71,10 +71,55 @@ require_cmd() {
 
 require_cmd docker git go
 
+# #region agent log
+_debug_log() {
+  local hypothesis_id="$1" location="$2" message="$3" data="$4"
+  printf '{"sessionId":"11e234","hypothesisId":"%s","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
+    "$hypothesis_id" "$location" "$message" "$data" "$(($(date +%s) * 1000))" \
+    >> "${ROOT}/.cursor/debug-11e234.log" 2>/dev/null || true
+}
+# #endregion
+
+docker_config_uses_osxkeychain() {
+  local config="${HOME}/.docker/config.json"
+  [[ -f "${config}" ]] || return 1
+  python3 - <<'PY' "${config}"
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+store = cfg.get("credsStore") or cfg.get("credStore")
+sys.exit(0 if store == "osxkeychain" else 1)
+PY
+}
+
 ensure_docker_credential_path() {
-  local dir cred resolved
+  local os_name dir cred resolved
+  os_name="$(uname -s)"
+  # #region agent log
+  _debug_log "A" "build-release.sh:ensure_docker_credential_path" "credential check entry" "{\"os\":\"${os_name}\"}"
+  # #endregion
+
+  if [[ "${os_name}" != "Darwin" ]]; then
+    # #region agent log
+    _debug_log "A" "build-release.sh:ensure_docker_credential_path" "skipped on non-macOS" "{\"os\":\"${os_name}\"}"
+    # #endregion
+    return 0
+  fi
+
+  if ! docker_config_uses_osxkeychain; then
+    # #region agent log
+    _debug_log "B" "build-release.sh:ensure_docker_credential_path" "skipped; docker config does not use osxkeychain" "{}"
+    # #endregion
+    return 0
+  fi
+
   resolved="$(command -v docker-credential-osxkeychain 2>/dev/null || true)"
   if [[ -n "${resolved}" ]] && [[ -x "${resolved}" ]]; then
+    # #region agent log
+    _debug_log "C" "build-release.sh:ensure_docker_credential_path" "credential helper already in PATH" "{\"path\":\"${resolved}\"}"
+    # #endregion
     return 0
   fi
   local candidates=(
@@ -86,9 +131,15 @@ ensure_docker_credential_path() {
     cred="${dir}/docker-credential-osxkeychain"
     if [[ -x "${cred}" ]]; then
       export PATH="${dir}:${PATH}"
+      # #region agent log
+      _debug_log "C" "build-release.sh:ensure_docker_credential_path" "credential helper added to PATH" "{\"path\":\"${cred}\"}"
+      # #endregion
       return 0
     fi
   done
+  # #region agent log
+  _debug_log "D" "build-release.sh:ensure_docker_credential_path" "credential helper missing on macOS" "{}"
+  # #endregion
   echo "docker-credential-osxkeychain not found in PATH (broken OrbStack symlink or missing Docker Desktop)" >&2
   echo "fix: reinstall Docker Desktop, restore OrbStack, or remove credsStore from ~/.docker/config.json" >&2
   exit 1
