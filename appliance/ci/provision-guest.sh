@@ -13,14 +13,35 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+wait_for_apt() {
+  local waited=0
+  local max_wait=300
+  while pgrep -x apt-get >/dev/null 2>&1 \
+    || pgrep -x apt >/dev/null 2>&1 \
+    || pgrep -x dpkg >/dev/null 2>&1 \
+    || pgrep -x unattended-upgrade >/dev/null 2>&1; do
+    if (( waited >= max_wait )); then
+      echo "timed out waiting for apt/dpkg after ${max_wait}s" >&2
+      pgrep -a apt-get apt dpkg unattended-upgrade 2>/dev/null || true
+      return 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+}
+
 ensure_docker_compose() {
   if docker compose version >/dev/null 2>&1; then
     return 0
   fi
   echo "installing Docker Engine with compose plugin..."
+  # #region agent log
+  echo "==> debug apt state before docker install (hypothesis A/C): cloud-init=$(cloud-init status 2>&1 || true); apt-get=$(pgrep -a apt-get 2>/dev/null || echo none); dpkg=$(pgrep -a dpkg 2>/dev/null || echo none)"
+  # #endregion
+  wait_for_apt
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq curl ca-certificates
+  apt-get -o DPkg::Lock::Timeout=300 update -qq
+  apt-get -o DPkg::Lock::Timeout=300 install -y -qq curl ca-certificates
   curl -fsSL https://get.docker.com | sh
 }
 

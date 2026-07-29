@@ -175,6 +175,44 @@ if [[ "${READY}" -ne 1 ]]; then
   exit 1
 fi
 
+# #region agent log
+GUEST_DIAG="$(ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'cloud-init status 2>&1; echo "---"; pgrep -a apt-get 2>/dev/null || echo "no apt-get"; pgrep -a dpkg 2>/dev/null || echo "no dpkg"' 2>&1 || true)"
+echo "==> debug guest state at SSH ready (hypothesis A/D):"
+echo "${GUEST_DIAG}"
+GUEST_DIAG="${GUEST_DIAG}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
+import json, os, time
+print(json.dumps({
+  "sessionId": "c7a2e2",
+  "location": "build-ova-amd64-ci.sh:ssh-ready",
+  "message": "guest state at SSH ready",
+  "data": {"diag": os.environ.get("GUEST_DIAG", "")},
+  "timestamp": int(time.time() * 1000),
+  "hypothesisId": "A",
+}))
+PY
+# #endregion
+
+echo "==> waiting for cloud-init to finish on guest (avoids apt lock contention)"
+ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo cloud-init status --wait"
+
+# #region agent log
+GUEST_DIAG_AFTER="$(ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'cloud-init status 2>&1; echo "---"; pgrep -a apt-get 2>/dev/null || echo "no apt-get"; pgrep -a dpkg 2>/dev/null || echo "no dpkg"' 2>&1 || true)"
+echo "==> debug guest state after cloud-init wait (hypothesis A/D):"
+echo "${GUEST_DIAG_AFTER}"
+GUEST_DIAG="${GUEST_DIAG_AFTER}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
+import json, os, time
+print(json.dumps({
+  "sessionId": "c7a2e2",
+  "location": "build-ova-amd64-ci.sh:cloud-init-wait",
+  "message": "guest state after cloud-init wait",
+  "data": {"diag": os.environ.get("GUEST_DIAG", "")},
+  "timestamp": int(time.time() * 1000),
+  "hypothesisId": "A",
+  "runId": "post-fix",
+}))
+PY
+# #endregion
+
 STAGING="/tmp/equate-staging"
 echo "==> staging bundle and installer scripts on guest"
 ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo rm -rf ${STAGING} /tmp/equate-ci-scripts && sudo mkdir -p ${STAGING}/bundle /tmp/equate-ci-scripts"
