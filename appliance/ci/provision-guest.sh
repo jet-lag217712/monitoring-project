@@ -25,9 +25,24 @@ wait_for_apt() {
       pgrep -a apt-get apt dpkg unattended-upgrade 2>/dev/null || true
       return 1
     fi
+    if (( waited > 0 && waited % 30 == 0 )); then
+      echo "==> still waiting for apt/dpkg (${waited}s elapsed)..."
+    fi
     sleep 2
     waited=$((waited + 2))
   done
+}
+
+install_ci_host_packages() {
+  echo "installing CI host packages (open-vm-tools, qemu-guest-agent)..."
+  # #region agent log
+  echo "==> debug apt state before host packages (hypothesis A/C): cloud-init=$(cloud-init status 2>&1 || true); apt-get=$(pgrep -a apt-get 2>/dev/null || echo none); dpkg=$(pgrep -a dpkg 2>/dev/null || echo none)"
+  # #endregion
+  wait_for_apt
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get -o DPkg::Lock::Timeout=300 update -qq
+  apt-get -o DPkg::Lock::Timeout=300 install -y -qq open-vm-tools qemu-guest-agent curl ca-certificates
+  systemctl enable --now qemu-guest-agent 2>/dev/null || true
 }
 
 ensure_docker_compose() {
@@ -45,6 +60,7 @@ ensure_docker_compose() {
   curl -fsSL https://get.docker.com | sh
 }
 
+install_ci_host_packages
 ensure_docker_compose
 
 if [[ ! -f "${STAGING}/configure-vm.sh" ]]; then

@@ -98,19 +98,14 @@ EOF
 PUB_KEY="$(cat "${SSH_PUB}")"
 cat >"${CI_SEED_DIR}/user-data" <<EOF
 #cloud-config
-package_update: true
+package_update: false
 package_upgrade: false
-packages:
-  - open-vm-tools
-  - qemu-guest-agent
 users:
   - default
   - name: debian
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
       - ${PUB_KEY}
-runcmd:
-  - [ systemctl, enable, --now, qemu-guest-agent ]
 EOF
 
 genisoimage -output "${CI_SEED}" -volid cidata -joliet -rock "${CI_SEED_DIR}/user-data" "${CI_SEED_DIR}/meta-data"
@@ -192,26 +187,48 @@ print(json.dumps({
 PY
 # #endregion
 
-echo "==> waiting for cloud-init to finish on guest (avoids apt lock contention)"
-ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo cloud-init status --wait"
-
-# #region agent log
-GUEST_DIAG_AFTER="$(ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'cloud-init status 2>&1; echo "---"; pgrep -a apt-get 2>/dev/null || echo "no apt-get"; pgrep -a dpkg 2>/dev/null || echo "no dpkg"' 2>&1 || true)"
-echo "==> debug guest state after cloud-init wait (hypothesis A/D):"
-echo "${GUEST_DIAG_AFTER}"
-GUEST_DIAG="${GUEST_DIAG_AFTER}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
+wait_for_guest_apt() {
+  local max_wait=600
+  local waited=0
+  local interval=15
+  echo "==> waiting for guest apt/dpkg to become idle (max ${max_wait}s)"
+  while true; do
+    local diag apt_busy=0
+    diag="$(ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'cloud-init status 2>&1; echo "---"; pgrep -a apt-get 2>/dev/null || echo "no apt-get"; pgrep -a dpkg 2>/dev/null || echo "no dpkg"' 2>&1 || true)"
+    if ssh "${SSH_OPTS[@]}" debian@127.0.0.1 'pgrep -x apt-get >/dev/null || pgrep -x apt >/dev/null || pgrep -x dpkg >/dev/null' 2>/dev/null; then
+      apt_busy=1
+    fi
+    if [[ "${apt_busy}" -eq 0 ]]; then
+      echo "==> guest apt is idle after ${waited}s"
+      echo "${diag}"
+      # #region agent log
+      GUEST_DIAG="${diag}" WAITED_S="${waited}" python3 - <<'PY' >> "${ROOT}/.cursor/debug-c7a2e2.log" 2>/dev/null || true
 import json, os, time
 print(json.dumps({
   "sessionId": "c7a2e2",
-  "location": "build-ova-amd64-ci.sh:cloud-init-wait",
-  "message": "guest state after cloud-init wait",
-  "data": {"diag": os.environ.get("GUEST_DIAG", "")},
+  "location": "build-ova-amd64-ci.sh:apt-idle",
+  "message": "guest apt idle",
+  "data": {"diag": os.environ.get("GUEST_DIAG", ""), "waited_s": int(os.environ.get("WAITED_S", "0"))},
   "timestamp": int(time.time() * 1000),
-  "hypothesisId": "A",
+  "hypothesisId": "F",
   "runId": "post-fix",
 }))
 PY
-# #endregion
+      # #endregion
+      return 0
+    fi
+    echo "==> guest apt still busy after ${waited}s:"
+    echo "${diag}"
+    waited=$((waited + interval))
+    if (( waited >= max_wait )); then
+      echo "timed out waiting for guest apt after ${max_wait}s" >&2
+      return 1
+    fi
+    sleep "${interval}"
+  done
+}
+
+wait_for_guest_apt
 
 STAGING="/tmp/equate-staging"
 echo "==> staging bundle and installer scripts on guest"
