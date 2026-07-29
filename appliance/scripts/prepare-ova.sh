@@ -60,6 +60,15 @@ rm -f /etc/ssh/ssh_host_*
 truncate -s 0 /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 
+echo "removing build SSH credentials..."
+rm -f /root/.ssh/authorized_keys /root/.ssh/id_rsa /root/.ssh/id_ed25519 /root/.ssh/id_ecdsa
+rmdir /root/.ssh 2>/dev/null || true
+for build_home in /home/debian /home/packer; do
+  if [[ -d "${build_home}/.ssh" ]]; then
+    rm -rf "${build_home}/.ssh"
+  fi
+done
+
 echo "removing DHCP leases..."
 rm -f /var/lib/dhcp/dhcpd.leases /var/lib/NetworkManager/*.lease 2>/dev/null || true
 
