@@ -18,8 +18,13 @@ Monitored SNMP networks
 ```
 
 The `upstream_device_ids` graph is a local dependency DAG for reachability
-correlation. It is not a complete physical topology, does not suppress child
-polling, and does not create a management path.
+correlation within one collector inventory. It is not a complete physical
+topology, does not suppress child polling, and does not create a management
+path.
+
+Cross-collector site relationships use `sites.upstream_site_ids` in PostgreSQL,
+configured in the multi-site manifest and evaluated at read time by the backend
+API. See [api-1](../decisions/api-1.md).
 
 ## Installation shapes
 

@@ -47,8 +47,20 @@ export default function SiteDetail({ data, siteId, onBack, onDeviceClick }) {
                   <span className="badge-dot" /> Dependency Impact
                 </span>
               )}
+              {data.site_dependency_impacted && (data.root_cause_site_ids?.length ?? 0) > 0 && (
+                <span className="status-badge unknown">
+                  <span className="badge-dot" /> Upstream: {data.root_cause_site_ids.join(', ')}
+                </span>
+              )}
             </div>
           </div>
+
+          {data.site_dependency_impacted && (data.unavailable_upstream_site_ids?.length ?? 0) > 0 && (
+            <div className="site-dependency-banner" style={{ marginBottom: '1rem', color: 'var(--status-unknown)', fontSize: '0.82rem' }}>
+              Site dependency impact: upstream {data.unavailable_upstream_site_ids.join(', ')} unavailable
+              {(data.root_cause_site_ids?.length ?? 0) > 0 && ` · root cause ${data.root_cause_site_ids.join(', ')}`}
+            </div>
+          )}
 
           <DevicesTable
             devices={data.latest?.devices ?? {}}

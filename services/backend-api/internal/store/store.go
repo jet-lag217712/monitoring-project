@@ -64,9 +64,11 @@ func (s *Store) Pool() *pgxpool.Pool {
 
 // SiteRow is a sites table row.
 type SiteRow struct {
-	ID       uuid.UUID
-	Name     string
-	Location *string
+	ID              uuid.UUID
+	Name            string
+	Location        *string
+	UpstreamSiteIDs []string
+	HubDeviceIDs    []string
 }
 
 // DeviceRow is a devices table row with optional latest metrics and health.
@@ -160,7 +162,7 @@ type AlertRow struct {
 // ListSites returns all sites.
 func (s *Store) ListSites(ctx context.Context) ([]SiteRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, location
+		SELECT id, name, location, COALESCE(upstream_site_ids, '{}'), COALESCE(hub_device_ids, '{}')
 		FROM sites
 		ORDER BY name
 	`)
@@ -172,7 +174,7 @@ func (s *Store) ListSites(ctx context.Context) ([]SiteRow, error) {
 	var out []SiteRow
 	for rows.Next() {
 		var r SiteRow
-		if err := rows.Scan(&r.ID, &r.Name, &r.Location); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Location, &r.UpstreamSiteIDs, &r.HubDeviceIDs); err != nil {
 			return nil, fmt.Errorf("scan site: %w", err)
 		}
 		out = append(out, r)
@@ -184,10 +186,10 @@ func (s *Store) ListSites(ctx context.Context) ([]SiteRow, error) {
 func (s *Store) GetSiteByName(ctx context.Context, name string) (SiteRow, error) {
 	var r SiteRow
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, location
+		SELECT id, name, location, COALESCE(upstream_site_ids, '{}'), COALESCE(hub_device_ids, '{}')
 		FROM sites
 		WHERE name = $1
-	`, name).Scan(&r.ID, &r.Name, &r.Location)
+	`, name).Scan(&r.ID, &r.Name, &r.Location, &r.UpstreamSiteIDs, &r.HubDeviceIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SiteRow{}, ErrNotFound
 	}

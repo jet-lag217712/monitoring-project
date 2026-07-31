@@ -182,6 +182,7 @@ Public reason codes are:
 - `temperature_threshold`
 - `direct_unreachable`
 - `upstream_unreachable`
+- `upstream_site_unreachable`
 - `recovered`
 
 Pending failures do not create a new terminal state. They retain the prior

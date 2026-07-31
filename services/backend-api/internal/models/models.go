@@ -8,10 +8,14 @@ import (
 
 // SiteOverview is one entry in GET /api/sites (keyed by site string ID).
 type SiteOverview struct {
-	Location string             `json:"location"`
-	Type     string             `json:"type"`
-	Status   string             `json:"status"`
-	Latest   SiteOverviewLatest `json:"latest"`
+	Location                   string             `json:"location"`
+	Type                       string             `json:"type"`
+	Status                     string             `json:"status"`
+	UpstreamSiteIDs            []string           `json:"upstream_site_ids,omitempty"`
+	UnavailableUpstreamSiteIDs []string           `json:"unavailable_upstream_site_ids,omitempty"`
+	RootCauseSiteIDs           []string           `json:"root_cause_site_ids,omitempty"`
+	SiteDependencyImpacted     bool               `json:"site_dependency_impacted"`
+	Latest                     SiteOverviewLatest `json:"latest"`
 }
 
 // SiteOverviewLatest wraps the summary block expected by normalizeSites().
@@ -36,10 +40,14 @@ type SiteSummary struct {
 
 // SiteDetail is the GET /api/sites/{siteId} response.
 type SiteDetail struct {
-	SiteID   string            `json:"site_id"`
-	Location string            `json:"location"`
-	Summary  SiteDetailSummary `json:"summary"`
-	Latest   SiteDetailLatest  `json:"latest"`
+	SiteID                     string            `json:"site_id"`
+	Location                   string            `json:"location"`
+	UpstreamSiteIDs            []string          `json:"upstream_site_ids,omitempty"`
+	UnavailableUpstreamSiteIDs []string          `json:"unavailable_upstream_site_ids,omitempty"`
+	RootCauseSiteIDs           []string          `json:"root_cause_site_ids,omitempty"`
+	SiteDependencyImpacted     bool              `json:"site_dependency_impacted"`
+	Summary                    SiteDetailSummary `json:"summary"`
+	Latest                     SiteDetailLatest  `json:"latest"`
 }
 
 // SiteDetailSummary is the detail-view summary (field names match mockData).
@@ -72,6 +80,9 @@ type DeviceSummary struct {
 	UpstreamDeviceIDs      []string `json:"upstream_device_ids,omitempty"`
 	UnavailableUpstreamIDs []string `json:"unavailable_upstream_device_ids,omitempty"`
 	RootCauseDeviceIDs     []string `json:"root_cause_device_ids,omitempty"`
+	UpstreamSiteIDs        []string `json:"upstream_site_ids,omitempty"`
+	UnavailableUpstreamSiteIDs []string `json:"unavailable_upstream_site_ids,omitempty"`
+	RootCauseSiteIDs       []string `json:"root_cause_site_ids,omitempty"`
 	CPUPct                 *float64 `json:"cpu_pct"`
 	MemoryPct              *float64 `json:"memory_pct"`
 	UptimeDays             *float64 `json:"uptime_days"`
@@ -121,6 +132,9 @@ type DeviceDetail struct {
 	UpstreamDeviceIDs      []string           `json:"upstream_device_ids,omitempty"`
 	UnavailableUpstreamIDs []string           `json:"unavailable_upstream_device_ids,omitempty"`
 	RootCauseDeviceIDs     []string           `json:"root_cause_device_ids,omitempty"`
+	UpstreamSiteIDs        []string           `json:"upstream_site_ids,omitempty"`
+	UnavailableUpstreamSiteIDs []string       `json:"unavailable_upstream_site_ids,omitempty"`
+	RootCauseSiteIDs       []string           `json:"root_cause_site_ids,omitempty"`
 	Role                   string             `json:"role"`
 	CPUPct                 *float64           `json:"cpu_pct"`
 	MemoryPct              *float64           `json:"memory_pct"`

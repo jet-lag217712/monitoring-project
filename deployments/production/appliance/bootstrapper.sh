@@ -128,6 +128,15 @@ done
 docker compose "${COMPOSE_FILES[@]}" up -d "${SERVICES[@]}"
 rm -f "${COMPOSE_OVERRIDE}"
 
+if [[ -x "${SCRIPT_DIR}/scripts/sync-site-topology.sh" && -f sites/manifest.yaml ]]; then
+  if [[ -f /run/equate/rendered/compose.env ]]; then
+    # shellcheck disable=SC1091
+    source /run/equate/rendered/compose.env
+    export DATABASE_URL="postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB:-ogsd}?sslmode=disable"
+    bash "${SCRIPT_DIR}/scripts/sync-site-topology.sh" || echo "bootstrapper: site topology sync failed (continuing)" >&2
+  fi
+fi
+
 echo "bootstrapper: ${#SERVICES[@]} site collector(s) started."
 for i in "${!SITE_IDS[@]}"; do
   port="${ADMIN_PORTS[$i]:-$((9090 + i))}"
