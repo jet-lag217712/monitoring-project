@@ -1,9 +1,15 @@
 import logoUrl from '../../assets/logo.svg'
+import SearchBar from '../common/SearchBar.jsx'
 
-export default function Nav({ onLogoClick, sites, dataMode, user, onSignOut }) {
-  const siteCount = sites.length
-  const unitCount = sites.reduce((sum, site) => sum + (site.device_count ?? 0), 0)
-
+export default function Nav({
+  onLogoClick,
+  user,
+  onSignOut,
+  searchQuery,
+  onSearchQueryChange,
+  onSearchFocus,
+  onSearchClear,
+}) {
   return (
     <nav className="app-nav">
       <span className="nav-logo" onClick={onLogoClick}>
@@ -12,6 +18,16 @@ export default function Nav({ onLogoClick, sites, dataMode, user, onSignOut }) {
         </span>
         Equate
       </span>
+
+      <SearchBar
+        variant="nav"
+        value={searchQuery}
+        onChange={onSearchQueryChange}
+        onFocus={onSearchFocus}
+        onClear={onSearchClear}
+        placeholder="Search sites, hostname, or IP…"
+        id="nav-search"
+      />
 
       <div className="nav-right">
         {user?.email && (

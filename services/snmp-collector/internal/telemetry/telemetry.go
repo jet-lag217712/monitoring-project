@@ -228,6 +228,7 @@ func HealthEvent(ctx Context, siteID string, ev health.Event) events.HealthState
 			UpstreamDeviceIDs:            upstream,
 			UnavailableUpstreamDeviceIDs: unavailable,
 			RootCauseDeviceIDs:           rootCause,
+			AlertsEnabled:                ev.AlertsEnabled,
 		},
 	}
 }

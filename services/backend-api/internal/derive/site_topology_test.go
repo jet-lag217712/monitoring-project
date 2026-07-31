@@ -14,16 +14,17 @@ func TestEvaluateSiteTopology_DownstreamImpactedByCore(t *testing.T) {
 			Devices: []SiteDeviceHealth{{
 				InventoryDeviceID: "do-core",
 				Projection: DeviceProjection{
-					Status:       StatusCritical,
-					StatusReason: "direct_unreachable",
+					Status:        StatusCritical,
+					StatusReason:  "direct_unreachable",
+					AlertsEnabled: true,
 				},
 			}},
 			Counts: SiteHealthCounts{CriticalCount: 1},
 		},
 		"site-a-mdf": {
 			Devices: []SiteDeviceHealth{
-				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable"}},
-				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable"}},
+				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable", AlertsEnabled: true}},
+				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable", AlertsEnabled: true}},
 			},
 			Counts: SiteHealthCounts{CriticalCount: 2},
 		},
@@ -58,14 +59,14 @@ func TestEvaluateSiteTopology_PartialFailureNotImpacted(t *testing.T) {
 		"do-core": {
 			Devices: []SiteDeviceHealth{{
 				InventoryDeviceID: "do-core",
-				Projection:        DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable"},
+				Projection:        DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable", AlertsEnabled: true},
 			}},
 			Counts: SiteHealthCounts{CriticalCount: 1},
 		},
 		"site-a-mdf": {
 			Devices: []SiteDeviceHealth{
-				{Projection: DeviceProjection{Status: StatusHealthy, StatusReason: "reachable"}},
-				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable"}},
+				{Projection: DeviceProjection{Status: StatusHealthy, StatusReason: "reachable", AlertsEnabled: true}},
+				{Projection: DeviceProjection{Status: StatusCritical, StatusReason: "direct_unreachable", AlertsEnabled: true}},
 			},
 			Counts: SiteHealthCounts{HealthyCount: 1, CriticalCount: 1},
 		},

@@ -9,10 +9,17 @@ export default function AppShell({ children, dashboard, auth }) {
     <div className="app-layout">
       <Nav
         onLogoClick={dashboard.handleBack}
-        sites={dashboard.sites}
-        dataMode={dashboard.dataMode}
         user={auth?.user}
         onSignOut={auth?.signOut}
+        searchQuery={dashboard.searchQuery}
+        onSearchQueryChange={value => {
+          dashboard.setSearchQuery(value)
+          if (!dashboard.searchOpen) {
+            dashboard.openSearch()
+          }
+        }}
+        onSearchFocus={dashboard.openSearch}
+        onSearchClear={dashboard.closeSearch}
       />
       <AlertBanner alerts={dashboard.alerts} />
 

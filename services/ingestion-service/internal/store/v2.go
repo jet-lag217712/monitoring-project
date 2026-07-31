@@ -159,14 +159,14 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 			device_id, site_id, state, reason, transition, previous_state,
 			failure_count, failure_threshold, temperature_c, temperature_warning_c,
 			temperature_policy_revision, upstream_device_ids, unavailable_upstream_device_ids,
-			root_cause_device_ids, observed_at, event_id, config_revision
+			root_cause_device_ids, alerts_enabled, observed_at, event_id, config_revision
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
 		)
 	`, sample.DeviceUUID, sample.SiteUUID, sample.State, sample.Reason, sample.Transition, sample.PreviousState,
 		sample.FailureCount, sample.FailureThreshold, sample.TemperatureC, sample.TemperatureWarningC,
 		sample.TemperaturePolicyRevision, upstream, unavailable,
-		rootCause, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
+		rootCause, sample.AlertsEnabled, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
 	if err != nil {
 		return 0, fmt.Errorf("insert device_health_history: %w", err)
 	}
@@ -176,9 +176,9 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 			device_id, site_id, state, reason, transition, previous_state,
 			failure_count, failure_threshold, temperature_c, temperature_warning_c,
 			temperature_policy_revision, upstream_device_ids, unavailable_upstream_device_ids,
-			root_cause_device_ids, observed_at, event_id, config_revision, updated_at
+			root_cause_device_ids, alerts_enabled, observed_at, event_id, config_revision, updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW()
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW()
 		)
 		ON CONFLICT (device_id) DO UPDATE SET
 			site_id = EXCLUDED.site_id,
@@ -194,6 +194,7 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 			upstream_device_ids = EXCLUDED.upstream_device_ids,
 			unavailable_upstream_device_ids = EXCLUDED.unavailable_upstream_device_ids,
 			root_cause_device_ids = EXCLUDED.root_cause_device_ids,
+			alerts_enabled = EXCLUDED.alerts_enabled,
 			observed_at = EXCLUDED.observed_at,
 			event_id = EXCLUDED.event_id,
 			config_revision = EXCLUDED.config_revision,
@@ -202,7 +203,7 @@ func (s *Store) PersistHealth(ctx context.Context, sample transform.HealthSample
 	`, sample.DeviceUUID, sample.SiteUUID, sample.State, sample.Reason, sample.Transition, sample.PreviousState,
 		sample.FailureCount, sample.FailureThreshold, sample.TemperatureC, sample.TemperatureWarningC,
 		sample.TemperaturePolicyRevision, upstream, unavailable,
-		rootCause, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
+		rootCause, sample.AlertsEnabled, sample.ObservedAt, sample.EventID, sample.ConfigRevision)
 	if err != nil {
 		return 0, fmt.Errorf("upsert device_health_current: %w", err)
 	}

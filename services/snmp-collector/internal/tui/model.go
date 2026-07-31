@@ -393,6 +393,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewDevice || m.view == viewInventory {
 				return m.beginDepsInput()
 			}
+		case "i":
+			if m.view == viewDevice || m.view == viewInventory {
+				m.loading = true
+				return m, m.prepareAlertingToggle()
+			}
 		case "n":
 			if m.view == viewDevice && len(m.deviceIDs) > 0 {
 				m.deviceIdx = (m.deviceIdx + 1) % len(m.deviceIDs)
@@ -717,6 +722,46 @@ func (m model) prepareDependencies(value, deviceID string) tea.Cmd {
 			token:    fmt.Sprint(resp.Result["confirm_token"]),
 			revision: fmt.Sprint(resp.Result["revision"]),
 			action:   "dependencies",
+		}
+	}
+}
+
+func (m model) prepareAlertingToggle() tea.Cmd {
+	client := m.client
+	deviceID := m.selectedDeviceID()
+	if deviceID == "" {
+		return func() tea.Msg {
+			return refreshMsg{err: "no device selected"}
+		}
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		dev, err := client.Call(ctx, "a0", "device.get", map[string]any{"device_id": deviceID})
+		if err != nil {
+			return refreshMsg{err: err.Error()}
+		}
+		if !dev.OK {
+			return refreshMsg{err: dev.Error.Code + ": " + dev.Error.Message}
+		}
+		currentlyEnabled := true
+		if v, ok := dev.Result["alerts_enabled"].(bool); ok {
+			currentlyEnabled = v
+		}
+		resp, err := client.Call(ctx, "a1", "device.alerting.prepare", map[string]any{
+			"device_id":       deviceID,
+			"alerts_enabled": !currentlyEnabled,
+		})
+		if err != nil {
+			return refreshMsg{err: err.Error()}
+		}
+		if !resp.OK {
+			return refreshMsg{err: resp.Error.Code + ": " + resp.Error.Message}
+		}
+		return pendingPreparedMsg{
+			token:    fmt.Sprint(resp.Result["confirm_token"]),
+			revision: fmt.Sprint(resp.Result["revision"]),
+			action:   "device.alerting",
 		}
 	}
 }

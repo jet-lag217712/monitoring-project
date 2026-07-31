@@ -53,6 +53,10 @@ func (s *Server) handle(ctx context.Context, req Request) (map[string]any, error
 		return s.handleDependenciesPrepare(req.Params)
 	case "dependencies.commit":
 		return s.handleDependenciesCommit(req.Params)
+	case "device.alerting.prepare":
+		return s.handleAlertingPrepare(req.Params)
+	case "device.alerting.commit":
+		return s.handleAlertingCommit(req.Params)
 	default:
 		return nil, newProtoError(CodeMethodNotFound, "unknown method "+req.Method)
 	}
@@ -102,6 +106,8 @@ func (s *Server) handleInventoryList() (map[string]any, error) {
 			"community_env":       device.CommunityEnv,
 			"role":                device.Role,
 			"upstream_device_ids": append([]string(nil), device.UpstreamDeviceIDs...),
+			"alerts_enabled":      device.AlertsEnabledOrDefault(),
+			"administratively_ignored": device.AdministrativelyIgnored(),
 		}
 		if device.TemperatureWarningC != nil {
 			row["temperature_warning_c"] = *device.TemperatureWarningC
@@ -147,6 +153,8 @@ func (s *Server) handleDeviceGet(params map[string]any) (map[string]any, error) 
 		"community_env":       device.CommunityEnv,
 		"version":             device.Version,
 		"upstream_device_ids": append([]string(nil), device.UpstreamDeviceIDs...),
+		"alerts_enabled":      device.AlertsEnabledOrDefault(),
+		"administratively_ignored": device.AdministrativelyIgnored(),
 		"config_revision":     s.activeRevision(),
 	}
 	if device.TemperatureWarningC != nil {
@@ -350,6 +358,52 @@ func (s *Server) handleDependenciesCommit(params map[string]any) (map[string]any
 	}, nil
 }
 
+func (s *Server) handleAlertingPrepare(params map[string]any) (map[string]any, error) {
+	if err := validateAlertingParams(params); err != nil {
+		_ = s.audit.Record(AuditEntry{Action: "device.alerting.prepare", Success: false, Code: CodeValidationFailed, Message: err.Error()})
+		return nil, err
+	}
+	rev := s.activeRevision()
+	item, err := s.pending.put("device.alerting", rev, cloneParams(params))
+	if err != nil {
+		return nil, newProtoError(CodeInternal, err.Error())
+	}
+	_ = s.audit.Record(AuditEntry{Action: "device.alerting.prepare", Success: true, Revision: rev})
+	return map[string]any{
+		"confirm_token": item.Token,
+		"revision":      item.Revision,
+		"expires_at":    item.ExpiresAt.Format(time.RFC3339Nano),
+	}, nil
+}
+
+func (s *Server) handleAlertingCommit(params map[string]any) (map[string]any, error) {
+	token, _ := params["confirm_token"].(string)
+	revision, _ := params["revision"].(string)
+	if token == "" || revision == "" {
+		_ = s.audit.Record(AuditEntry{Action: "device.alerting.commit", Success: false, Code: CodeInvalidRequest, Message: "confirm_token and revision are required"})
+		return nil, newProtoError(CodeInvalidRequest, "confirm_token and revision are required")
+	}
+	if revision != s.activeRevision() {
+		_ = s.audit.Record(AuditEntry{Action: "device.alerting.commit", Success: false, Code: CodeRevisionMismatch, Message: "active revision differs", Revision: s.activeRevision()})
+		return nil, newProtoError(CodeRevisionMismatch, "configuration revision changed since prepare")
+	}
+	item, pe := s.pending.take(token, revision, "device.alerting")
+	if pe != nil {
+		_ = s.audit.Record(AuditEntry{Action: "device.alerting.commit", Success: false, Code: pe.Code, Message: pe.Message, Revision: revision})
+		return nil, pe
+	}
+	if err := s.applyAlertingMutation(item.Payload); err != nil {
+		_ = s.audit.Record(AuditEntry{Action: "device.alerting.commit", Success: false, Code: CodeValidationFailed, Message: err.Error(), Revision: revision})
+		return nil, err
+	}
+	_ = s.audit.Record(AuditEntry{Action: "device.alerting.commit", Success: true, Revision: revision, Details: map[string]any{"written": true}})
+	return map[string]any{
+		"written":  true,
+		"revision": revision,
+		"note":     "call config.reload to activate",
+	}, nil
+}
+
 func validateThresholdParams(params map[string]any) error {
 	if _, ok := params["temperature_warning_c"]; ok {
 		if _, err := asFloat(params["temperature_warning_c"]); err != nil {
@@ -383,6 +437,23 @@ func validateDependencyParams(params map[string]any) error {
 		return newProtoError(CodeValidationFailed, "upstream_device_ids must be a string array")
 	}
 	return nil
+}
+
+func validateAlertingParams(params map[string]any) error {
+	id, _ := params["device_id"].(string)
+	if id == "" {
+		return newProtoError(CodeValidationFailed, "device_id is required")
+	}
+	raw, ok := params["alerts_enabled"]
+	if !ok || raw == nil {
+		return newProtoError(CodeValidationFailed, "alerts_enabled is required")
+	}
+	switch raw.(type) {
+	case bool:
+		return nil
+	default:
+		return newProtoError(CodeValidationFailed, "alerts_enabled must be a boolean")
+	}
 }
 
 func (s *Server) applyThresholdMutation(params map[string]any) error {
@@ -468,6 +539,50 @@ func (s *Server) applyDependencyMutation(params map[string]any) error {
 		doc.Devices = append(doc.Devices, config.DeviceConfig{
 			ID:                deviceID,
 			UpstreamDeviceIDs: upstreams,
+		})
+	}
+	if err := config.WriteManagedDocument(managedPath, doc); err != nil {
+		return newProtoError(CodeValidationFailed, err.Error())
+	}
+	return nil
+}
+
+func (s *Server) applyAlertingMutation(params map[string]any) error {
+	cfg := s.manager.Current()
+	managedPath := cfg.ManagedInventoryPath()
+	if managedPath == "" {
+		return newProtoError(CodeValidationFailed, "inventory.managed_path is not configured")
+	}
+	deviceID, _ := params["device_id"].(string)
+	enabled, ok := params["alerts_enabled"].(bool)
+	if !ok {
+		return newProtoError(CodeValidationFailed, "alerts_enabled must be a boolean")
+	}
+	if err := s.validateDeviceInInventory(deviceID); err != nil {
+		return err
+	}
+
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+
+	doc, err := config.ReadManagedDocument(managedPath)
+	if err != nil {
+		return newProtoError(CodeValidationFailed, err.Error())
+	}
+	found := false
+	for i := range doc.Devices {
+		if doc.Devices[i].ID == deviceID {
+			v := enabled
+			doc.Devices[i].AlertsEnabled = &v
+			found = true
+			break
+		}
+	}
+	if !found {
+		v := enabled
+		doc.Devices = append(doc.Devices, config.DeviceConfig{
+			ID:            deviceID,
+			AlertsEnabled: &v,
 		})
 	}
 	if err := config.WriteManagedDocument(managedPath, doc); err != nil {
