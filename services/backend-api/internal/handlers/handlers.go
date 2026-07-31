@@ -63,6 +63,7 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := a.now()
+	projections := buildSiteProjections(sites, devices, now, a.onlineThreshold)
 	bySite := make(map[uuid.UUID][]store.DeviceRow)
 	for _, d := range devices {
 		bySite[d.SiteID] = append(bySite[d.SiteID], d)
@@ -71,17 +72,14 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 	out := make(map[string]models.SiteOverview, len(sites))
 	for _, site := range sites {
 		devs := bySite[site.ID]
-		deviceCount := len(devs)
+		bundle := projections.bundleForSite(site)
 		onlineCount := 0
-		var counts derive.SiteHealthCounts
 		var cpuVals, memVals []*float64
 		for _, d := range devs {
 			online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
 			if online {
 				onlineCount++
 			}
-			proj := projectDevice(d, online)
-			counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
 			cpuVals = append(cpuVals, d.CPUPct)
 			memVals = append(memVals, d.MemoryPct)
 		}
@@ -90,23 +88,28 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 		if site.Location != nil {
 			loc = *site.Location
 		}
+		upstreamSites, unavailableSites, rootCauseSites, impacted := siteTopologyFields(bundle.state)
 		out[site.Name] = models.SiteOverview{
-			Location: derive.LocationOrName(loc, site.Name),
-			Type:     "",
-			Status:   derive.SiteStatusFromHealth(counts),
+			Location:                   derive.LocationOrName(loc, site.Name),
+			Type:                       "",
+			Status:                     derive.SiteStatusFromHealth(bundle.counts),
+			UpstreamSiteIDs:            upstreamSites,
+			UnavailableUpstreamSiteIDs: unavailableSites,
+			RootCauseSiteIDs:           rootCauseSites,
+			SiteDependencyImpacted:     impacted,
 			Latest: models.SiteOverviewLatest{
 				Summary: models.SiteSummary{
 					IDFCount:                0,
-					DeviceCount:             deviceCount,
+					DeviceCount:             len(devs),
 					OnlineCount:             onlineCount,
 					AvgCPU:                  derive.AvgNullable(cpuVals),
 					AvgMemory:               derive.AvgNullable(memVals),
 					ActiveAlerts:            alertCounts[site.ID],
-					HealthyCount:            counts.HealthyCount,
-					WarningCount:            counts.WarningCount,
-					CriticalCount:           counts.CriticalCount,
-					UnknownCount:            counts.UnknownCount,
-					DependencyImpactedCount: counts.DependencyImpactedCount,
+					HealthyCount:            bundle.counts.HealthyCount,
+					WarningCount:            bundle.counts.WarningCount,
+					CriticalCount:           bundle.counts.CriticalCount,
+					UnknownCount:            bundle.counts.UnknownCount,
+					DependencyImpactedCount: bundle.counts.DependencyImpactedCount,
 				},
 			},
 		}
@@ -117,54 +120,75 @@ func (a *API) handleListSites(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleGetSite(w http.ResponseWriter, r *http.Request) {
 	siteID := r.PathValue("siteId")
-	site, err := a.store.GetSiteByName(r.Context(), siteID)
+	ctx := r.Context()
+	sites, err := a.store.ListSites(ctx)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
-	devices, err := a.store.ListDevicesBySite(r.Context(), site.ID)
+	site, err := a.store.GetSiteByName(ctx, siteID)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
-	alertCounts, err := a.store.CountActiveAlertsBySite(r.Context())
+	devices, err := a.store.ListDevicesBySite(ctx, site.ID)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	alertCounts, err := a.store.CountActiveAlertsBySite(ctx)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
 
 	now := a.now()
+	allDevices, err := a.store.ListAllDevices(ctx)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	projections := buildSiteProjections(sites, allDevices, now, a.onlineThreshold)
+	bundle := projections.bundleForSite(site)
+
 	deviceMap := make(map[string]models.DeviceSummary, len(devices))
 	onlineCount := 0
-	var counts derive.SiteHealthCounts
 	for _, d := range devices {
 		online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
 		if online {
 			onlineCount++
 		}
-		proj := projectDevice(d, online)
-		counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
 		key := derive.DeviceMapKey(d.IPAddress, d.Hostname)
-		deviceMap[key] = toDeviceSummary(d, proj)
+		if projected, ok := bundle.devices[key]; ok {
+			deviceMap[key] = toDeviceSummaryWithSite(projected.row, projected.proj, bundle.state)
+			continue
+		}
+		proj := derive.ApplySiteDependencyOverlay(bundle.state, projectDevice(d, online))
+		deviceMap[key] = toDeviceSummaryWithSite(d, proj, bundle.state)
 	}
 
 	loc := ""
 	if site.Location != nil {
 		loc = *site.Location
 	}
+	upstreamSites, unavailableSites, rootCauseSites, impacted := siteTopologyFields(bundle.state)
 	writeJSON(w, http.StatusOK, models.SiteDetail{
-		SiteID:   site.Name,
-		Location: derive.LocationOrName(loc, site.Name),
+		SiteID:                     site.Name,
+		Location:                   derive.LocationOrName(loc, site.Name),
+		UpstreamSiteIDs:            upstreamSites,
+		UnavailableUpstreamSiteIDs: unavailableSites,
+		RootCauseSiteIDs:           rootCauseSites,
+		SiteDependencyImpacted:     impacted,
 		Summary: models.SiteDetailSummary{
 			TotalDevices:            len(devices),
 			OnlineCount:             onlineCount,
 			IDFCount:                0,
 			ActiveAlerts:            alertCounts[site.ID],
-			HealthyCount:            counts.HealthyCount,
-			WarningCount:            counts.WarningCount,
-			CriticalCount:           counts.CriticalCount,
-			UnknownCount:            counts.UnknownCount,
-			DependencyImpactedCount: counts.DependencyImpactedCount,
+			HealthyCount:            bundle.counts.HealthyCount,
+			WarningCount:            bundle.counts.WarningCount,
+			CriticalCount:           bundle.counts.CriticalCount,
+			UnknownCount:            bundle.counts.UnknownCount,
+			DependencyImpactedCount: bundle.counts.DependencyImpactedCount,
 		},
 		Latest: models.SiteDetailLatest{Devices: deviceMap},
 	})
@@ -172,22 +196,42 @@ func (a *API) handleGetSite(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleListSiteDevices(w http.ResponseWriter, r *http.Request) {
 	siteID := r.PathValue("siteId")
-	site, err := a.store.GetSiteByName(r.Context(), siteID)
+	ctx := r.Context()
+	sites, err := a.store.ListSites(ctx)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
-	devices, err := a.store.ListDevicesBySite(r.Context(), site.ID)
+	site, err := a.store.GetSiteByName(ctx, siteID)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	devices, err := a.store.ListDevicesBySite(ctx, site.ID)
 	if err != nil {
 		a.writeStoreError(w, err)
 		return
 	}
 
 	now := a.now()
+	allDevices, err := a.store.ListAllDevices(ctx)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	projections := buildSiteProjections(sites, allDevices, now, a.onlineThreshold)
+	bundle := projections.bundleForSite(site)
+
 	out := make([]models.DeviceSummary, 0, len(devices))
 	for _, d := range devices {
 		online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
-		out = append(out, toDeviceSummary(d, projectDevice(d, online)))
+		key := derive.DeviceMapKey(d.IPAddress, d.Hostname)
+		if projected, ok := bundle.devices[key]; ok {
+			out = append(out, toDeviceSummaryWithSite(projected.row, projected.proj, bundle.state))
+			continue
+		}
+		proj := derive.ApplySiteDependencyOverlay(bundle.state, projectDevice(d, online))
+		out = append(out, toDeviceSummaryWithSite(d, proj, bundle.state))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -202,7 +246,23 @@ func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	online := derive.DeviceOnline(d.Status, d.LastSeen, a.now(), a.onlineThreshold)
-	proj := projectDevice(d, online)
+	sites, err := a.store.ListSites(ctx)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	allDevices, err := a.store.ListAllDevices(ctx)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	projections := buildSiteProjections(sites, allDevices, a.now(), a.onlineThreshold)
+	bundle, ok := projections.bundleForSiteName(d.SiteName)
+	if !ok {
+		bundle = siteProjectionBundle{state: derive.SiteDependencyState{}}
+	}
+	proj := derive.ApplySiteDependencyOverlay(bundle.state, projectDevice(d, online))
+	upstreamSites, unavailableSites, rootCauseSites := deviceSiteTopologyFields(bundle.state)
 
 	tempComponents, err := a.store.ListTemperatureComponents(ctx, d.ID)
 	if err != nil {
@@ -232,10 +292,13 @@ func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 		Status:                 proj.Status,
 		StatusReason:           proj.StatusReason,
 		FailureCount:           proj.FailureCount,
-		UpstreamDeviceIDs:      emptyToNil(proj.UpstreamDeviceIDs),
-		UnavailableUpstreamIDs: emptyToNil(proj.UnavailableUpstreamIDs),
-		RootCauseDeviceIDs:     emptyToNil(proj.RootCauseDeviceIDs),
-		Role:                   d.Role,
+		UpstreamDeviceIDs:          emptyToNil(proj.UpstreamDeviceIDs),
+		UnavailableUpstreamIDs:     emptyToNil(proj.UnavailableUpstreamIDs),
+		RootCauseDeviceIDs:         emptyToNil(proj.RootCauseDeviceIDs),
+		UpstreamSiteIDs:            upstreamSites,
+		UnavailableUpstreamSiteIDs: unavailableSites,
+		RootCauseSiteIDs:           rootCauseSites,
+		Role:                       d.Role,
 		CPUPct:                 d.CPUPct,
 		MemoryPct:              d.MemoryPct,
 		TemperatureC:           d.TemperatureC,

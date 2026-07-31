@@ -30,13 +30,15 @@ var siteIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // SiteSpec describes one isolated collector site in a multi-site deployment.
 type SiteSpec struct {
-	Index        int    `yaml:"index"`
-	SiteID       string `yaml:"site_id"`
-	CollectorID  string `yaml:"collector_id"`
-	MQTTClientID string `yaml:"mqtt_client_id"`
-	ServiceName  string `yaml:"service_name"`
-	CIDR         string `yaml:"cidr"`
-	AdminPort    int    `yaml:"admin_port"`
+	Index            int      `yaml:"index"`
+	SiteID           string   `yaml:"site_id"`
+	CollectorID      string   `yaml:"collector_id"`
+	MQTTClientID     string   `yaml:"mqtt_client_id"`
+	ServiceName      string   `yaml:"service_name"`
+	CIDR             string   `yaml:"cidr"`
+	AdminPort        int      `yaml:"admin_port"`
+	UpstreamSiteIDs  []string `yaml:"upstream_site_ids,omitempty"`
+	HubDeviceIDs     []string `yaml:"hub_device_ids,omitempty"`
 }
 
 // Manifest is the generated multi-site deployment contract.

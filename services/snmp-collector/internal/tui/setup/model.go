@@ -18,6 +18,7 @@ type step int
 const (
 	stepEnv step = iota
 	stepSites
+	stepSiteTopology
 	stepStart
 	stepReview
 	stepThresholds
@@ -59,6 +60,8 @@ type model struct {
 	siteIDInputs   []textinput.Model
 	cidrInputs     []textinput.Model
 	siteFocus      int
+	upstreamInputs []textinput.Model
+	topologyFocus  int
 	thresholdInput textinput.Model
 
 	sites         []SiteSpec
@@ -216,8 +219,22 @@ func (m *model) resizeSiteInputs(count int) {
 	}
 	m.siteIDInputs = siteIDs
 	m.cidrInputs = cidrs
+	upstreams := make([]textinput.Model, count)
+	for i := range upstreams {
+		upstreams[i] = styleTextInput(textinput.New(), m.theme)
+		upstreams[i].Placeholder = "comma-separated upstream site ids"
+		upstreams[i].CharLimit = 256
+		upstreams[i].Width = 40
+		if i < len(m.upstreamInputs) && strings.TrimSpace(m.upstreamInputs[i].Value()) != "" {
+			upstreams[i].SetValue(m.upstreamInputs[i].Value())
+		}
+	}
+	m.upstreamInputs = upstreams
 	if m.siteFocus >= m.siteFieldCount() {
 		m.siteFocus = 0
+	}
+	if m.topologyFocus >= len(m.upstreamInputs) {
+		m.topologyFocus = 0
 	}
 }
 
@@ -472,6 +489,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case stepSites:
 			if len(msg.sites) > 0 {
+				m.sites = SuggestSiteTopology(msg.sites)
+				for i, spec := range m.sites {
+					if i < len(m.upstreamInputs) {
+						m.upstreamInputs[i].SetValue(FormatUpstreamSiteIDs(spec.UpstreamSiteIDs))
+					}
+				}
+			}
+			m.topologyFocus = 0
+			m.step = stepSiteTopology
+			m = m.focusTopologyInput()
+			return m, textinput.Blink
+		case stepSiteTopology:
+			if len(msg.sites) > 0 {
 				m.sites = msg.sites
 			}
 			m.step = stepStart
@@ -510,6 +540,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEnv(msg)
 	case stepSites:
 		return m.updateSites(msg)
+	case stepSiteTopology:
+		return m.updateSiteTopology(msg)
 	case stepStart:
 		return m.updateStart(msg)
 	case stepReview:
@@ -614,6 +646,57 @@ func (m model) updateSites(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) updateSiteTopology(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		if m.topologyFocus < len(m.upstreamInputs) {
+			var cmd tea.Cmd
+			m.upstreamInputs[m.topologyFocus], cmd = m.upstreamInputs[m.topologyFocus].Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+	lastFocus := len(m.upstreamInputs) - 1
+	switch key.String() {
+	case "tab", "down":
+		if len(m.upstreamInputs) == 0 {
+			return m, nil
+		}
+		m.topologyFocus = (m.topologyFocus + 1) % len(m.upstreamInputs)
+		return m.focusTopologyInput(), textinput.Blink
+	case "shift+tab", "up":
+		if len(m.upstreamInputs) == 0 {
+			return m, nil
+		}
+		m.topologyFocus = (m.topologyFocus - 1 + len(m.upstreamInputs)) % len(m.upstreamInputs)
+		return m.focusTopologyInput(), textinput.Blink
+	case "enter":
+		if lastFocus >= 0 && m.topologyFocus < lastFocus {
+			m.topologyFocus++
+			return m.focusTopologyInput(), textinput.Blink
+		}
+		m.loading = true
+		m.err = ""
+		return m, m.persistTopologyAndSites()
+	}
+	if m.topologyFocus < len(m.upstreamInputs) {
+		var cmd tea.Cmd
+		m.upstreamInputs[m.topologyFocus], cmd = m.upstreamInputs[m.topologyFocus].Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m model) focusTopologyInput() model {
+	for i := range m.upstreamInputs {
+		m.upstreamInputs[i].Blur()
+	}
+	if len(m.upstreamInputs) > 0 && m.topologyFocus < len(m.upstreamInputs) {
+		m.upstreamInputs[m.topologyFocus].Focus()
+	}
+	return m
+}
+
 func (m model) updateStart(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -706,14 +789,6 @@ func (m model) persistEnvAndSites() tea.Cmd {
 	for i := range m.siteIDInputs {
 		siteIDs[i] = strings.TrimSpace(m.siteIDInputs[i].Value())
 	}
-	rate, _ := strconv.ParseFloat(strings.TrimSpace(m.probeRate), 64)
-	if rate <= 0 {
-		rate = 5
-	}
-	burst, _ := strconv.Atoi(strings.TrimSpace(m.probeBurst))
-	if burst <= 0 {
-		burst = 2
-	}
 	return func() tea.Msg {
 		specs, err := BuildSiteSpecs(profile, count, siteIDs, cidrs)
 		if err != nil {
@@ -723,11 +798,48 @@ func (m model) persistEnvAndSites() tea.Cmd {
 			return asyncDoneMsg{err: err}
 		}
 		applyEnvToProcess(values)
-		if err := persistMultiSiteArtifacts(deployDir, profile, specs, rate, burst); err != nil {
+		return asyncDoneMsg{
+			body:  fmt.Sprintf("Validated %d site(s). Configure upstream site dependencies next.", len(specs)),
+			sites: specs,
+		}
+	}
+}
+
+func (m model) persistTopologyAndSites() tea.Cmd {
+	deployDir := m.deployDir
+	profile := m.profile
+	specs := append([]SiteSpec(nil), m.sites...)
+	upstreams := make([][]string, len(m.upstreamInputs))
+	for i := range m.upstreamInputs {
+		upstreams[i] = ParseUpstreamSiteIDs(m.upstreamInputs[i].Value())
+	}
+	rate, _ := strconv.ParseFloat(strings.TrimSpace(m.probeRate), 64)
+	if rate <= 0 {
+		rate = 5
+	}
+	burst, _ := strconv.Atoi(strings.TrimSpace(m.probeBurst))
+	if burst <= 0 {
+		burst = 2
+	}
+	return func() tea.Msg {
+		updated, err := ApplyUpstreamSiteIDs(specs, upstreams)
+		if err != nil {
 			return asyncDoneMsg{err: err}
 		}
-		body := fmt.Sprintf("Saved shared .env, manifest, and %d site artifact(s).", len(specs))
-		return asyncDoneMsg{body: body, sites: specs}
+		for i := range updated {
+			lower := strings.ToLower(updated[i].SiteID)
+			if len(updated[i].HubDeviceIDs) == 0 && strings.Contains(lower, "core") {
+				updated[i].HubDeviceIDs = []string{updated[i].SiteID}
+			}
+		}
+		if err := ValidateSiteTopology(updated); err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		if err := persistMultiSiteArtifacts(deployDir, profile, updated, rate, burst); err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		body := fmt.Sprintf("Saved shared .env, manifest, and %d site artifact(s).", len(updated))
+		return asyncDoneMsg{body: body, sites: updated}
 	}
 }
 
@@ -975,11 +1087,29 @@ func (m model) View() string {
 		}
 		body.WriteString("\n")
 		body.WriteString(th.Muted.Render("tab next field · enter on last CIDR to save artifacts"))
+	case stepSiteTopology:
+		body.WriteString(th.Title.Render("Step 3 - Site upstream dependencies"))
+		body.WriteString("\n\n")
+		for i, spec := range m.sites {
+			body.WriteString(th.Label.Render(spec.SiteID))
+			body.WriteString(" ")
+			if i < len(m.upstreamInputs) {
+				body.WriteString(m.upstreamInputs[i].View())
+			}
+			body.WriteString("\n")
+		}
+		if m.body != "" {
+			body.WriteString("\n")
+			body.WriteString(th.Value.Render(m.body))
+			body.WriteString("\n")
+		}
+		body.WriteString("\n")
+		body.WriteString(th.Muted.Render("comma-separated upstream site ids · tab next · enter on last row to save artifacts"))
 	case stepStart, stepReview:
 		if m.step == stepAdminUser && m.loading {
 			body.WriteString(th.Muted.Render("Checking administrator accounts…"))
 		} else if m.step == stepStart {
-			body.WriteString(th.Title.Render("Step 3 - Starting collectors"))
+			body.WriteString(th.Title.Render("Step 4 - Starting collectors"))
 			body.WriteString("\n\n")
 			if m.body != "" {
 				body.WriteString(th.Value.Render(m.body))
@@ -992,7 +1122,7 @@ func (m model) View() string {
 			}
 		} else {
 			if m.profileCfg.AutoAcceptDiscovery {
-				body.WriteString(th.Title.Render("Step 4 - Review inventory"))
+				body.WriteString(th.Title.Render("Step 5 - Review inventory"))
 				body.WriteString("\n")
 				if m.body != "" {
 					body.WriteString(th.Value.Render(m.body))
@@ -1010,7 +1140,7 @@ func (m model) View() string {
 			}
 		}
 	case stepThresholds:
-		body.WriteString(th.Title.Render("Step 5 - Thresholds"))
+		body.WriteString(th.Title.Render("Step 6 - Thresholds"))
 		body.WriteString("\n\n")
 		body.WriteString(th.Label.Render("Global temperature warning °C"))
 		body.WriteString(" ")
@@ -1040,10 +1170,20 @@ func (m model) View() string {
 }
 
 func (m model) progressRail() string {
-	labels := []string{"Env", "Sites", "Start", "Review", "Thresholds", "Done"}
-	parts := make([]string, len(labels))
-	for i, label := range labels {
-		if step(i) == m.step {
+	order := []step{stepEnv, stepSites, stepSiteTopology, stepStart, stepReview, stepThresholds, stepDone}
+	labels := map[step]string{
+		stepEnv:            "Env",
+		stepSites:          "Sites",
+		stepSiteTopology:   "Topology",
+		stepStart:          "Start",
+		stepReview:         "Review",
+		stepThresholds:     "Thresholds",
+		stepDone:           "Done",
+	}
+	parts := make([]string, len(order))
+	for i, st := range order {
+		label := labels[st]
+		if st == m.step {
 			parts[i] = m.theme.TabActive.Render(label)
 		} else {
 			parts[i] = m.theme.TabIdle.Render(label)

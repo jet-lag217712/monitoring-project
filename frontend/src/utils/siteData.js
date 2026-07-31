@@ -4,6 +4,10 @@ export function normalizeSites(data) {
     location: value.location,
     type: value.type,
     status: value.status?.toLowerCase() ?? 'ok',
+    upstream_site_ids: value.upstream_site_ids ?? [],
+    unavailable_upstream_site_ids: value.unavailable_upstream_site_ids ?? [],
+    root_cause_site_ids: value.root_cause_site_ids ?? [],
+    site_dependency_impacted: value.site_dependency_impacted ?? false,
     ...value.latest?.summary,
   }))
 }

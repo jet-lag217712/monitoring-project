@@ -116,6 +116,15 @@ export default function DeviceInfoCard({ device, ip }) {
         <InfoItem label="Root Cause Devices" span2>
           {formatIds(device.root_cause_device_ids)}
         </InfoItem>
+        <InfoItem label="Upstream Sites" span2>
+          {formatIds(device.upstream_site_ids)}
+        </InfoItem>
+        <InfoItem label="Unavailable Upstream Sites" span2>
+          {formatIds(device.unavailable_upstream_site_ids)}
+        </InfoItem>
+        <InfoItem label="Root Cause Sites" span2>
+          {formatIds(device.root_cause_site_ids)}
+        </InfoItem>
         <InfoItem label="Administrative Status" rowStart>
           <PortStatusBadge status={device.admin_status} />
         </InfoItem>

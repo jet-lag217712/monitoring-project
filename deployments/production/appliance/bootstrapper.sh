@@ -38,6 +38,22 @@ ensure_appliance_rendered_secrets() {
   bash "${configure_script}" --bootstrap-only
 }
 
+sync_appliance_db_role_passwords() {
+  local script="${SCRIPT_DIR}/scripts/sync-db-role-passwords.sh"
+  local compose_env="/run/equate/rendered/compose.env"
+  if [[ ! -f "${compose_env}" || ! -f "${script}" ]]; then
+    return 0
+  fi
+  echo "bootstrapper: syncing database role passwords…" >&2
+  EQUATE_RELEASE_DIR="${SCRIPT_DIR}" COMPOSE_ENV="${compose_env}" bash "${script}"
+}
+
+compose_env_args() {
+  if [[ -f /run/equate/rendered/compose.env ]]; then
+    echo --env-file /run/equate/rendered/compose.env
+  fi
+}
+
 if [[ ! -f .setup-complete ]]; then
   ensure_appliance_rendered_secrets
   echo "First boot: launching Equate appliance setup wizard…" >&2
@@ -108,9 +124,16 @@ COMPOSE_OVERRIDE="$(mktemp)"
 } >"${COMPOSE_OVERRIDE}"
 
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.sites.generated.yml -f "${COMPOSE_OVERRIDE}")
+COMPOSE_ENV_ARGS=()
+while IFS= read -r arg; do
+  [[ -n "${arg}" ]] && COMPOSE_ENV_ARGS+=("${arg}")
+done < <(compose_env_args)
 
-docker compose "${COMPOSE_FILES[@]}" build --build-arg BUILDKIT_INLINE_CACHE=1 "${SERVICES[@]}" 2>/dev/null || true
-docker compose "${COMPOSE_FILES[@]}" up -d --build --remove-orphans
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f docker-compose.yml -f docker-compose.sites.generated.yml up -d postgres mosquitto 2>/dev/null || true
+sync_appliance_db_role_passwords
+
+docker compose "${COMPOSE_ENV_ARGS[@]}" "${COMPOSE_FILES[@]}" build --build-arg BUILDKIT_INLINE_CACHE=1 "${SERVICES[@]}" 2>/dev/null || true
+docker compose "${COMPOSE_ENV_ARGS[@]}" "${COMPOSE_FILES[@]}" up -d --build --remove-orphans
 
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-equate-appliance}"
 for site_id in "${SITE_IDS[@]}"; do
@@ -125,8 +148,18 @@ for site_id in "${SITE_IDS[@]}"; do
     chown -R 65532:65532 /var/lib/snmp-collector/managed >/dev/null 2>&1 || true
 done
 
-docker compose "${COMPOSE_FILES[@]}" up -d "${SERVICES[@]}"
+docker compose "${COMPOSE_ENV_ARGS[@]}" "${COMPOSE_FILES[@]}" up -d "${SERVICES[@]}"
 rm -f "${COMPOSE_OVERRIDE}"
+
+if [[ -x "${SCRIPT_DIR}/scripts/sync-site-topology.sh" && -f sites/manifest.yaml ]]; then
+  echo "bootstrapper: syncing site topology into PostgreSQL…" >&2
+  EQUATE_DEPLOY_DIR="${SCRIPT_DIR}" \
+    EQUATE_COMPOSE_ENV="/run/equate/rendered/compose.env" \
+    bash "${SCRIPT_DIR}/scripts/sync-site-topology.sh" || {
+      echo "bootstrapper: site topology sync failed" >&2
+      exit 1
+    }
+fi
 
 echo "bootstrapper: ${#SERVICES[@]} site collector(s) started."
 for i in "${!SITE_IDS[@]}"; do

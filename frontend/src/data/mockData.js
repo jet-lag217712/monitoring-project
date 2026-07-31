@@ -253,6 +253,9 @@ function enrichDevice(ip, device, siteLocation) {
     upstream_device_ids: device.upstream_device_ids ?? [],
     unavailable_upstream_device_ids: device.unavailable_upstream_device_ids ?? [],
     root_cause_device_ids: device.root_cause_device_ids ?? [],
+    upstream_site_ids: device.upstream_site_ids ?? [],
+    unavailable_upstream_site_ids: device.unavailable_upstream_site_ids ?? [],
+    root_cause_site_ids: device.root_cause_site_ids ?? [],
     temperature_components: device.temperature_components ?? [
       {
         component_id: 'temp-1',
@@ -325,8 +328,10 @@ function deriveSiteSummary(detail) {
   const dependencyImpactedCount = devices.filter(
     device =>
       device.status === 0 &&
-      Array.isArray(device.unavailable_upstream_device_ids) &&
-      device.unavailable_upstream_device_ids.length > 0,
+      ((Array.isArray(device.unavailable_upstream_device_ids) &&
+        device.unavailable_upstream_device_ids.length > 0) ||
+        device.status_reason === 'upstream_site_unreachable' ||
+        device.status_reason === 'upstream_unreachable'),
   ).length
   const onlineCount = devices.filter(device => device.status === 1 || device.status === 2).length
   const avgCpu = Math.round(
@@ -349,6 +354,10 @@ function deriveSiteSummary(detail) {
     location: detail.location,
     type: detail.summary.idf_count > 1 ? 'Multi-IDF Campus' : 'Single-IDF Campus',
     status: criticalCount > 0 ? 'alert' : warningCount > 0 || unknownCount > 0 ? 'caution' : 'ok',
+    upstream_site_ids: detail.upstream_site_ids ?? [],
+    unavailable_upstream_site_ids: detail.unavailable_upstream_site_ids ?? [],
+    root_cause_site_ids: detail.root_cause_site_ids ?? [],
+    site_dependency_impacted: detail.site_dependency_impacted ?? false,
     latest: {
       summary: {
         idf_count: detail.summary.idf_count,
@@ -420,6 +429,24 @@ export const mockScenarios = {
     details['district-office'].latest.devices['10.10.0.2'].root_cause_device_ids = ['dist-core-01']
     details['district-office'].latest.devices['10.10.0.2'].cpu_pct = null
     details['district-office'].latest.devices['10.10.0.2'].memory_pct = null
+  }),
+  'site-cascade': buildScenario(details => {
+    details['district-office'].latest.devices['10.10.0.1'].status = 3
+    details['district-office'].latest.devices['10.10.0.1'].status_reason = 'poll_failed'
+    details['district-office'].latest.devices['10.10.0.1'].failure_count = 2
+
+    details['school-a'].upstream_site_ids = ['district-office']
+    details['school-a'].unavailable_upstream_site_ids = ['district-office']
+    details['school-a'].root_cause_site_ids = ['district-office']
+    details['school-a'].site_dependency_impacted = true
+
+    for (const ip of Object.keys(details['school-a'].latest.devices)) {
+      details['school-a'].latest.devices[ip].status = 0
+      details['school-a'].latest.devices[ip].status_reason = 'upstream_site_unreachable'
+      details['school-a'].latest.devices[ip].upstream_site_ids = ['district-office']
+      details['school-a'].latest.devices[ip].unavailable_upstream_site_ids = ['district-office']
+      details['school-a'].latest.devices[ip].root_cause_site_ids = ['district-office']
+    }
   }),
 }
 

@@ -15,7 +15,14 @@ export default function SiteCard({ site, onClick }) {
     critical_count = 0,
     unknown_count = 0,
     dependency_impacted_count = 0,
+    site_dependency_impacted = false,
+    root_cause_site_ids = [],
+    unavailable_upstream_site_ids = [],
   } = site
+
+  const rootCauseLabel = root_cause_site_ids.length > 0
+    ? root_cause_site_ids.join(', ')
+    : null
 
   return (
     <div
@@ -28,6 +35,11 @@ export default function SiteCard({ site, onClick }) {
       <div className="site-card-header">
         <div>
           <div className="site-name">{location}</div>
+          {site_dependency_impacted && rootCauseLabel && (
+            <div className="site-dependency-note" style={{ color: 'var(--status-unknown)', fontSize: '0.68rem', marginTop: '0.25rem' }}>
+              Impacted by {rootCauseLabel}
+            </div>
+          )}
         </div>
         <SiteStatusBadge status={status} />
       </div>

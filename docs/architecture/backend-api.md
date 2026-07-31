@@ -10,6 +10,8 @@ Existing site, device, interface, metric, and alert endpoints remain the resourc
 
 - Current device status plus numeric compatibility (`0` unknown, `1` healthy, `2` warning, `3` critical), explicit `status_reason`, failure count, and dependency/root-cause fields.
 - Site summaries that distinguish warning count, direct critical count, and dependency-impacted count rather than counting Unknown dependents as Critical.
+- Site topology fields: `upstream_site_ids`, `unavailable_upstream_site_ids`, `root_cause_site_ids`, and `site_dependency_impacted`.
+- Device overlay reason `upstream_site_unreachable` when a site-level upstream outage explains direct poll failures.
 - Device identity/profile/fingerprint, vendor/model/serial, SNMP identity, CPU/memory/temperature histories, primary temperature, and component power/temperature data.
 - Interface identity/metadata, admin/operational state, counters, errors, speed, and traffic history.
 - Collector operational status and latest heartbeat metadata where administrative views need it.

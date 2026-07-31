@@ -49,6 +49,104 @@ Configuration is an operator workflow, not a remote control plane:
 Discovery is operator-invoked, limited to configured CIDRs and rate bounds, and
 never enrolls a device without review and confirmation.
 
+## Operator interfaces
+
+The appliance exposes two Bubble Tea TUIs and an `equate` CLI for stack-level
+operations. Per-site collector control uses a Unix socket; stack management
+uses Docker Compose under the active release directory.
+
+### Setup TUI (`collector setup`)
+
+First boot and reconfiguration:
+
+```bash
+collector setup -dir <deploy-dir> -theme auto -profile appliance
+```
+
+Common keys: `Enter` continue/submit, `Tab`/`↓` next field, `Shift+Tab`/`↑`
+previous field, `Ctrl+C` quit (confirms unless on splash), `q` quit from splash
+or done screen.
+
+During discovery review: `↑`/`↓` navigate candidates, `Space` toggle,
+`Enter` accept reviewed, `s` skip site, `r` retry on error.
+
+### Operator TUI (`collector tui`)
+
+Day-2 per-site monitoring and configuration:
+
+```bash
+collector tui -socket <control.sock> -theme auto
+equate view <site-id>    # runs collector tui inside the site container
+```
+
+| Key | Action |
+|-----|--------|
+| `1`–`6` | Switch views: Inventory, Device, Discovery, Thresholds, Transport, Config |
+| `Tab`, `→`, `l` / `Shift+Tab`, `←`, `h` | Next / previous view |
+| `r` | Refresh current view (auto-refreshes every 5s) |
+| `R` | Force `config.reload` |
+| `↑`/`↓`, `j`/`k`, `PgUp`/`PgDn` | Scroll |
+| `q`, `Ctrl+C` | Quit |
+
+View-specific keys:
+
+| Key | View | Action |
+|-----|------|--------|
+| `n` / `p` | Device | Next / previous device |
+| `t` | Device, Thresholds | Edit temperature threshold (global or per-device) |
+| `d` | Inventory, Device | Edit upstream dependencies |
+| `S` | Discovery | Start discovery scan |
+| `A` | Discovery | Accept successful candidates |
+| `e` | Discovery | Edit CIDR allowlist policy |
+
+Mutations use prepare → confirm → commit → reload. After editing a value,
+`Enter` submits, `y` confirms commit, `n`/`Esc` cancels.
+
+### `equate` CLI
+
+Appliance-level stack management. Deploy directory resolution:
+`EQUATE_DEPLOY_DIR` → `/etc/equate/deploy-dir` → `/opt/equate/current`.
+
+| Command | Purpose |
+|---------|---------|
+| `equate configure` | Run first-boot or reconfigure setup wizard |
+| `equate reset` | Stop containers and clear setup state (root required) |
+| `equate upgrade` | In-place release upgrade or rollback (root required) |
+| `equate view <site-id>` | Open per-site collector operator TUI |
+| `equate sites` | List configured sites from manifest |
+| `equate status` | Summarize stack and collector health |
+| `equate version` | Show release version |
+
+#### `equate reset`
+
+```bash
+sudo equate reset [--yes] [--volumes] [--full] [--hard]
+```
+
+| Flag | Effect |
+|------|--------|
+| *(none)* | Stop containers, clear setup artifacts, restart core stack |
+| `--yes` | Skip interactive confirmation (otherwise type `RESET`) |
+| `--volumes` | Remove named Docker volumes (collector state, postgres, mosquitto) |
+| `--full` | Also wipe Postgres data under `/var/lib/equate/postgres` |
+| `--hard` | Full wipe (`--volumes` + `--full` + mosquitto data); leaves stack stopped |
+
+Always removes from the deploy directory: `.setup-complete`, `.env`,
+`docker-compose.sites.generated.yml`, and `sites/`. After a normal reset, run
+`sudo equate configure`. After `--hard`, bring the stack up manually, then
+configure.
+
+#### `equate upgrade`
+
+```bash
+sudo equate upgrade --bundle <dir> --version <semver> [--canary] [--yes]
+sudo equate upgrade --rollback [--yes]
+```
+
+`--canary` rolls out collectors one site at a time with health checks.
+`--rollback` reverts to the previous release (prompts for `ROLLBACK` unless
+`--yes`).
+
 ## Repository guide
 
 | Area | Purpose |
