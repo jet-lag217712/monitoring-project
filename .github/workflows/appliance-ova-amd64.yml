@@ -22,6 +22,15 @@ concurrency:
 
 jobs:
   build-amd64-ova:
+    # release: only vX.Y.0 (not patch tags like v1.2.3). workflow_dispatch: any version.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'release' &&
+        startsWith(github.event.release.tag_name, 'v') &&
+        endsWith(github.event.release.tag_name, '.0') &&
+        !contains(github.event.release.tag_name, '-')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
