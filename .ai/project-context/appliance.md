@@ -44,14 +44,17 @@ are validated, atomically written, and audited without secrets.
 
 1. Build an architecture-matched offline bundle with pinned images, migrations,
    configuration templates, checksums, image digests, and SBOM.
-2. Prepare a clean VM and stage the bundle.
-3. Finalize the guest by removing build accounts, staging material, and
+2. Optionally package a signed `.eqa` and publish it to an Azure Blob update
+   channel for connected sites (`docs/releases/appliance-updates.md`).
+3. Prepare a clean VM and stage the bundle (or let `equate upgrade` download it).
+4. Finalize the guest by removing build accounts, staging material, and
    clone-specific identity.
-4. Export the VM to OVA and verify its manifest and checksums.
-5. Re-import into a clean VM, complete first boot, and run acceptance.
+5. Export the VM to OVA and verify its manifest and checksums.
+6. Re-import into a clean VM, complete first boot, and run acceptance.
 
 The OVA must boot, configure, poll, display local telemetry, survive reboot,
-and roll back invalid TUI changes without external service access.
+and roll back invalid TUI changes without external service access. Connected
+updates are optional; air-gapped installs continue to use offline staging.
 
 ## Local identity and access
 
@@ -60,9 +63,9 @@ permissioned host broker socket. The API is unprivileged, never mounts
 `/etc/shadow`, uses generic login errors and rate limiting, and stores opaque
 revocable sessions. Appliance users are not members of the Docker group.
 
-Day-2 operator commands (`equate view`, `equate configure`, `equate users`) are
-available to members of the `equate-appliance` group via passwordless sudo rules
-installed to `/etc/sudoers.d/equate-appliance`.
+Day-2 operator commands (`equate view`, `equate configure`, `equate users`,
+`equate upgrade`) are available to members of the `equate-appliance` group via
+passwordless sudo rules installed to `/etc/sudoers.d/equate-appliance`.
 
 Generated database, MQTT, TLS, session, and SNMP credentials remain outside
 release artifacts and are redacted from logs, diagnostics, manifests, and

@@ -52,3 +52,6 @@ deployments/**/.env
 **/*_override.tf.json
 .cursor/debug-36805e.log
 .cursor/debug-36805e.log
+
+# Update signing private keys
+**/equate-updates.priv

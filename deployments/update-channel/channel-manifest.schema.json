@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://equate.local/schemas/channel-manifest.json",
+  "title": "Equate appliance update channel manifest",
+  "type": "object",
+  "required": ["channel", "edition", "latest", "releases"],
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Channel name (e.g. stable)."
+    },
+    "edition": {
+      "type": "string",
+      "enum": ["standard", "noauth"]
+    },
+    "latest": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Semver of the newest release in this channel."
+    },
+    "releases": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["architectures"],
+        "properties": {
+          "published_at": { "type": "string" },
+          "min_version": {
+            "type": "string",
+            "description": "Oldest installed version allowed to upgrade to this release."
+          },
+          "architectures": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["artifact", "url", "sha256", "signature"],
+              "properties": {
+                "artifact": { "type": "string" },
+                "url": { "type": "string", "format": "uri" },
+                "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+                "size_bytes": { "type": "integer", "minimum": 0 },
+                "signature": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}
