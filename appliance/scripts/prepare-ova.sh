@@ -120,6 +120,69 @@ fi
 echo "removing DHCP leases..."
 rm -f /var/lib/dhcp/dhcpd.leases /var/lib/NetworkManager/*.lease 2>/dev/null || true
 
+# Retarget cloud-image guests for VMware VGA first-boot (AMD64 CI uses Debian cloud).
+# Without this: serial-only console, GRUB_TIMEOUT=0, and cloud-init re-runs after
+# machine-id wipe — blank console, Docker printk spam, no setup TUI, no rescue GRUB.
+configure_appliance_console() {
+  echo "disabling cloud-init for appliance golden image..."
+  if [[ -d /etc/cloud ]]; then
+    touch /etc/cloud/cloud-init.disabled
+  fi
+  local unit
+  for unit in cloud-init.service cloud-init-local.service cloud-config.service cloud-final.service; do
+    systemctl disable "${unit}" 2>/dev/null || true
+    systemctl mask "${unit}" 2>/dev/null || true
+  done
+
+  echo "configuring GRUB for interactive VGA console..."
+  if [[ -f /etc/default/grub ]]; then
+    local grub_file="/etc/default/grub"
+    if grep -q '^GRUB_CMDLINE_LINUX=' "${grub_file}"; then
+      sed -i 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="console=tty0"/' "${grub_file}"
+    else
+      printf '\nGRUB_CMDLINE_LINUX="console=tty0"\n' >>"${grub_file}"
+    fi
+    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "${grub_file}"; then
+      sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' "${grub_file}"
+    else
+      printf 'GRUB_CMDLINE_LINUX_DEFAULT=""\n' >>"${grub_file}"
+    fi
+    if grep -q '^GRUB_TIMEOUT=' "${grub_file}"; then
+      sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' "${grub_file}"
+    else
+      printf 'GRUB_TIMEOUT=5\n' >>"${grub_file}"
+    fi
+    if grep -q '^GRUB_TIMEOUT_STYLE=' "${grub_file}"; then
+      sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' "${grub_file}"
+    else
+      printf 'GRUB_TIMEOUT_STYLE=menu\n' >>"${grub_file}"
+    fi
+    if grep -q '^GRUB_TERMINAL_OUTPUT=' "${grub_file}"; then
+      sed -i 's/^GRUB_TERMINAL_OUTPUT=.*/GRUB_TERMINAL_OUTPUT=console/' "${grub_file}"
+    else
+      printf 'GRUB_TERMINAL_OUTPUT=console\n' >>"${grub_file}"
+    fi
+    if command -v update-grub >/dev/null 2>&1; then
+      update-grub
+    elif command -v grub-mkconfig >/dev/null 2>&1; then
+      grub-mkconfig -o /boot/grub/grub.cfg
+    else
+      report "GRUB tools missing; cannot rewrite boot console for VGA first-boot"
+    fi
+  else
+    report "missing /etc/default/grub; cannot configure VGA console"
+  fi
+
+  echo "reducing kernel console spam for first-boot TUI..."
+  install -d -m 0755 /etc/sysctl.d
+  cat >/etc/sysctl.d/99-equate-console.conf <<'EOF'
+# Keep first-boot TUI readable; Docker/AppArmor printk otherwise floods tty1.
+kernel.printk = 3 4 1 3
+EOF
+}
+
+configure_appliance_console
+
 SENSITIVE_PATHS=(
   /run/equate/rendered
   /tmp/equate-staging
@@ -146,6 +209,12 @@ if [[ "$(hostname)" == "equate-appliance-build" ]]; then
 fi
 if [[ -n "${DEPLOY_DIR}" && -f "${DEPLOY_DIR}/.setup-complete" ]]; then
   report "deploy dir still marked setup-complete"
+fi
+if [[ -d /etc/cloud && ! -f /etc/cloud/cloud-init.disabled ]]; then
+  report "cloud-init was not disabled for golden image export"
+fi
+if [[ -f /etc/default/grub ]] && ! grep -q 'console=tty0' /etc/default/grub; then
+  report "GRUB console=tty0 not configured for VGA first-boot"
 fi
 
 if [[ "${FAIL}" -ne 0 ]]; then
