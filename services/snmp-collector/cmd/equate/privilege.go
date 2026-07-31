@@ -10,6 +10,8 @@ var privilegedCommands = map[string]bool{
 	"configure": true,
 	"view":      true,
 	"users":     true,
+	"upgrade":   true,
+	"reset":     true,
 }
 
 func commandNeedsElevation(cmd string) bool {

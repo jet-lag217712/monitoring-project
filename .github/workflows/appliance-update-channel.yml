@@ -1,0 +1,191 @@
+name: Publish appliance update channel (.eqa → Azure)
+
+# Builds an offline appliance bundle, signs a .eqa, and uploads it to Azure Blob
+# Storage (public-read container). See docs/releases/appliance-updates.md.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (semver, without v prefix)
+        required: true
+        type: string
+      arch:
+        description: Target architecture
+        required: true
+        type: choice
+        options:
+          - amd64
+          - arm64
+        default: amd64
+      channel:
+        description: Update channel name
+        required: true
+        type: string
+        default: stable
+      edition:
+        description: Appliance edition (must match channel)
+        required: true
+        type: choice
+        options:
+          - standard
+          - noauth
+        default: standard
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: appliance-update-channel-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}-${{ inputs.arch || 'amd64' }}
+  cancel-in-progress: false
+
+jobs:
+  publish-eqa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+      CONTAINER: ${{ vars.AZURE_UPDATE_CONTAINER }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          if [ -z "${STORAGE_ACCOUNT}" ]; then
+            echo "Set repository variable AZURE_STORAGE_ACCOUNT" >&2
+            exit 1
+          fi
+          if [ -z "${CONTAINER}" ]; then
+            echo "CONTAINER=updates" >> "$GITHUB_ENV"
+          fi
+          if [ -z "${{ secrets.EQUATE_UPDATE_SIGNING_KEY }}" ]; then
+            echo "Set repository secret EQUATE_UPDATE_SIGNING_KEY (hex private key)" >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ] || [ -z "${{ secrets.AZURE_TENANT_ID }}" ] || [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "Set secrets AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID for OIDC login" >&2
+            exit 1
+          fi
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/snmp-collector/go.mod
+          cache-dependency-path: services/snmp-collector/go.sum
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve version and arch
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            v="${{ github.event.release.tag_name }}"
+            v="${v#v}"
+            arch="amd64"
+            channel="stable"
+            edition="standard"
+          else
+            v="${{ inputs.version }}"
+            arch="${{ inputs.arch }}"
+            channel="${{ inputs.channel }}"
+            edition="${{ inputs.edition }}"
+          fi
+          if [ -z "$v" ]; then
+            echo "version is empty" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "edition=$edition" >> "$GITHUB_OUTPUT"
+          echo "Publishing Equate ${v} (${arch}) to channel=${channel} edition=${edition}"
+
+      - name: Build offline release bundle
+        run: |
+          chmod +x appliance/scripts/*.sh
+          ./appliance/scripts/build-release.sh \
+            --arch "${{ steps.meta.outputs.arch }}" \
+            --version "${{ steps.meta.outputs.version }}"
+
+      - name: Write signing key
+        env:
+          EQUATE_UPDATE_SIGNING_KEY: ${{ secrets.EQUATE_UPDATE_SIGNING_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$EQUATE_UPDATE_SIGNING_KEY" > "${RUNNER_TEMP}/equate-updates.priv"
+          # Accept either raw hex or hex with trailing newline noise.
+          tr -d '[:space:]' < "${RUNNER_TEMP}/equate-updates.priv" > "${RUNNER_TEMP}/equate-updates.priv.clean"
+          mv "${RUNNER_TEMP}/equate-updates.priv.clean" "${RUNNER_TEMP}/equate-updates.priv"
+          echo "EQUATE_UPDATE_SIGNING_KEY=${RUNNER_TEMP}/equate-updates.priv" >> "$GITHUB_ENV"
+
+      - name: Package and sign .eqa
+        run: |
+          chmod +x appliance/scripts/package-eqa.sh
+          ./appliance/scripts/package-eqa.sh \
+            --arch "${{ steps.meta.outputs.arch }}" \
+            --version "${{ steps.meta.outputs.version }}"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publish to Azure Blob
+        run: |
+          chmod +x appliance/scripts/publish-update-channel-azure.sh
+          ./appliance/scripts/publish-update-channel-azure.sh \
+            --storage-account "${STORAGE_ACCOUNT}" \
+            --container "${CONTAINER}" \
+            --channel "${{ steps.meta.outputs.channel }}" \
+            --edition "${{ steps.meta.outputs.edition }}" \
+            --arch "${{ steps.meta.outputs.arch }}" \
+            --version "${{ steps.meta.outputs.version }}"
+
+      - name: Smoke-test public URLs
+        run: |
+          base="https://${STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER}"
+          man="${base}/v1/channel/${{ steps.meta.outputs.channel }}/manifest.json"
+          eqa="${base}/v1/channel/${{ steps.meta.outputs.channel }}/${{ steps.meta.outputs.version }}/Equate-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.arch }}.eqa"
+          echo "Checking ${man}"
+          curl -fsSL "${man}" | head -c 400
+          echo
+          echo "Checking HEAD ${eqa}"
+          curl -fsSI "${eqa}" | head -n 15
+          echo
+          echo "Appliance config:"
+          echo "  channel_url=${man}"
+          echo "  edition=${{ steps.meta.outputs.edition }}"
+
+      - name: Upload .eqa artifacts to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: equate-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.arch }}-eqa
+          path: |
+            dist/Equate-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.arch }}.eqa
+            dist/Equate-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.arch }}.eqa.sha256
+            dist/Equate-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.arch }}.eqa.sig
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Scrub signing key
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/equate-updates.priv"

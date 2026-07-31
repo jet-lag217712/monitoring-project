@@ -8,14 +8,16 @@ architecture, decisions, standards, and roadmap documentation.
 ```text
 monitoring-dashboard/
 ├── .ai/                         canonical project guidance
-├── appliance/scripts/           release, VM, OVA, and verifier scripts
 ├── deployments/production/
 │   └── appliance/               supported local appliance Compose runtime
+├── deployments/update-channel/  Azure Blob channel manifest examples/schema
 ├── deployments/end-to-end/      single-host source validation
 ├── deployments/development/     developer integration fixture
 ├── deployments/runbooks/        operator procedures
+├── appliance/scripts/           release, VM, OVA, .eqa package/publish scripts
+├── appliance/keys/              update-signing public key (no private keys)
 ├── services/
-│   ├── snmp-collector/           polling, TUI, outbox, and health evidence
+│   ├── snmp-collector/           polling, TUI, outbox, equate upgrade, health evidence
 │   ├── ingestion-service/        validation and PostgreSQL writes
 │   └── backend-api/              read-only REST contracts
 ├── frontend/                    local dashboard
