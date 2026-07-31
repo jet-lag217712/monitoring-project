@@ -20,3 +20,5 @@
 {"sessionId":"11e234","hypothesisId":"C","location":"build-release.sh:ensure_docker_credential_path","message":"credential helper added to PATH","data":{"path":"/Applications/Docker.app/Contents/Resources/bin/docker-credential-osxkeychain"},"timestamp":1785483450000}
 {"sessionId":"11e234","hypothesisId":"A","location":"build-release.sh:ensure_docker_credential_path","message":"credential check entry","data":{"os":"Darwin"},"timestamp":1785483535000}
 {"sessionId":"11e234","hypothesisId":"C","location":"build-release.sh:ensure_docker_credential_path","message":"credential helper added to PATH","data":{"path":"/Applications/Docker.app/Contents/Resources/bin/docker-credential-osxkeychain"},"timestamp":1785483535000}
+{"sessionId":"11e234","hypothesisId":"A","location":"build-release.sh:ensure_docker_credential_path","message":"credential check entry","data":{"os":"Darwin"},"timestamp":1785507374000}
+{"sessionId":"11e234","hypothesisId":"C","location":"build-release.sh:ensure_docker_credential_path","message":"credential helper added to PATH","data":{"path":"/Applications/Docker.app/Contents/Resources/bin/docker-credential-osxkeychain"},"timestamp":1785507374000}

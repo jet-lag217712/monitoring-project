@@ -99,20 +99,60 @@ with `--public-access blob` (anyone can `GET` a blob URL; listing is not public)
 
 ### One-time GitHub Actions auth (OIDC)
 
-1. In Entra ID, create an App registration (or use an existing one).
-2. Add a **federated credential**:
-   - Issuer: `https://token.actions.githubusercontent.com`
-   - Subject: `repo:<org>/<repo>:ref:refs/heads/main` (and/or
-     `repo:<org>/<repo>:environment:production` if you use environments)
-   - Audience: `api://AzureADTokenExchange`
-3. On the storage account → **Access control (IAM)** → add role assignment:
+Publishing uses a GitHub **Environment** named `update-channel` so both
+release tags and manual `workflow_dispatch` runs present the same OIDC subject
+to Entra (a `refs/heads/main` federated credential does **not** match
+`refs/tags/v…`).
+
+#### A. Create the GitHub Environment
+
+1. Repo → **Settings → Environments → New environment**
+2. Name: `update-channel`
+3. Leave protection rules empty for now (optional later: required reviewers)
+4. Save
+
+No environment secrets are required; the workflow still reads repo-level
+Actions secrets/variables.
+
+#### B. Entra federated credential
+
+1. In Entra ID, open the App registration used for Actions (or create one).
+2. **Certificates & secrets → Federated credentials → Add credential**
+3. Scenario: **GitHub Actions deploying Azure resources**
+4. Fill in:
+
+| Field | Value |
+|---|---|
+| Organization | `jet-lag217712` |
+| Repository | `monitoring-dashboard` |
+| Entity type | **Environment** |
+| GitHub environment name | `update-channel` |
+| Name (credential display name) | `github-update-channel` |
+
+That produces subject:
+
+```text
+repo:jet-lag217712/monitoring-dashboard:environment:update-channel
+```
+
+Issuer: `https://token.actions.githubusercontent.com`  
+Audience: `api://AzureADTokenExchange`
+
+If you already have a credential whose subject is `…:ref:refs/heads/main`,
+**keep or delete it** — it is unused by this workflow. Add the environment
+credential above (do not only edit the subject to a tag; tags change every
+release).
+
+#### C. Storage RBAC + GitHub secrets
+
+1. On the storage account → **Access control (IAM)** → add role assignment:
    - Role: **Storage Blob Data Contributor**
    - Assign to the app’s service principal
-4. In the GitHub repo → **Settings → Secrets and variables → Actions**:
+2. In the GitHub repo → **Settings → Secrets and variables → Actions**:
 
 | Type | Name | Value |
 |---|---|---|
-| Variable | `AZURE_STORAGE_ACCOUNT` | your storage account name |
+| Variable | `AZURE_STORAGE_ACCOUNT` | your storage account name (e.g. `equateupdate`) |
 | Variable | `AZURE_UPDATE_CONTAINER` | `updates` (optional; default) |
 | Secret | `AZURE_CLIENT_ID` | app (client) ID |
 | Secret | `AZURE_TENANT_ID` | directory (tenant) ID |
@@ -157,7 +197,18 @@ Cross-edition updates are rejected.
 After the first successful publish, point appliances at:
 
 ```text
-https://<account>.blob.core.windows.net/updates/v1/channel/stable/manifest.json
+https://equateupdate.blob.core.windows.net/updates/v1/channel/stable/manifest.json
+```
+
+On the appliance:
+
+```bash
+sudo tee /etc/equate/update-channel.conf >/dev/null <<'EOF'
+channel_url=https://equateupdate.blob.core.windows.net/updates/v1/channel/stable/manifest.json
+edition=standard
+EOF
+sudo equate upgrade --check
+sudo equate upgrade
 ```
 
 ## Channel manifest

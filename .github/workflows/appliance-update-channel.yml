@@ -44,6 +44,10 @@ concurrency:
 
 jobs:
   publish-eqa:
+    # Bind OIDC to this GitHub Environment so Entra can trust release + dispatch
+    # runs (tag refs alone do not match a main-branch federated credential).
+    # Create the environment once under Settings → Environments → New environment.
+    environment: update-channel
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
