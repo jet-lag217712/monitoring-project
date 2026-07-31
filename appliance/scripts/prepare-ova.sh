@@ -100,6 +100,31 @@ for build_user in debian packer; do
   fi
 done
 
+# Temporary break-glass console login for field bring-up when first-boot TUI fails.
+# Login: equate / equate (Ctrl+Alt+F2 if tty1 has no prompt). Rotate after setup.
+echo "installing break-glass console account equate..."
+if ! id equate >/dev/null 2>&1; then
+  # Use existing 'users' group so we do not create a conflicting 'equate' group.
+  useradd -m -s /bin/bash -g users equate
+fi
+echo 'equate:equate' | chpasswd
+usermod -aG sudo equate 2>/dev/null || true
+if getent group equate-appliance >/dev/null 2>&1; then
+  usermod -aG equate-appliance equate 2>/dev/null || true
+fi
+install -d -m 0755 /etc/sudoers.d
+cat >/etc/sudoers.d/equate-breakglass <<'EOF'
+# Temporary break-glass account — remove after first-boot/admin is configured.
+equate ALL=(ALL) NOPASSWD:ALL
+EOF
+chmod 0440 /etc/sudoers.d/equate-breakglass
+visudo -c -f /etc/sudoers.d/equate-breakglass
+
+# Allow a normal login on tty1 even when setup is incomplete (first-boot may have failed).
+rm -f /etc/systemd/system/getty@tty1.service.d/equate-first-boot.conf
+rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
+
 echo "resetting hostname to equate-appliance..."
 hostnamectl set-hostname equate-appliance 2>/dev/null || echo "equate-appliance" > /etc/hostname
 if [[ -f /etc/hosts ]]; then
@@ -203,6 +228,12 @@ fi
 
 if id debian >/dev/null 2>&1; then
   report "CI build account debian still present"
+fi
+if ! id equate >/dev/null 2>&1; then
+  report "break-glass equate account missing"
+fi
+if [[ ! -f /etc/sudoers.d/equate-breakglass ]]; then
+  report "break-glass sudoers missing"
 fi
 if [[ "$(hostname)" == "equate-appliance-build" ]]; then
   report "hostname still set to CI build name"
