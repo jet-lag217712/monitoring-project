@@ -278,10 +278,14 @@ mkdir -p "${BUNDLE_DIR}/scripts"
 cp "${SCRIPTS_SRC}/auth-broker.sh" "${BUNDLE_DIR}/scripts/auth-broker.sh"
 cp "${SCRIPTS_SRC}/configure-vm.sh" "${BUNDLE_DIR}/scripts/configure-vm.sh"
 cp "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" "${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh"
+cp "${SCRIPTS_SRC}/sync-db-role-passwords.sh" "${BUNDLE_DIR}/scripts/sync-db-role-passwords.sh"
 cp "${SCRIPTS_SRC}/prepare-ova.sh" "${BUNDLE_DIR}/scripts/prepare-ova.sh"
 cp "${SCRIPTS_SRC}/equate-auth-broker.service" "${BUNDLE_DIR}/scripts/equate-auth-broker.service"
 if [[ -f "${DEPLOY_SRC}/scripts/manage-users.sh" ]]; then
   cp "${DEPLOY_SRC}/scripts/manage-users.sh" "${BUNDLE_DIR}/scripts/manage-users.sh"
+fi
+if [[ -f "${DEPLOY_SRC}/scripts/sync-site-topology.sh" ]]; then
+  cp "${DEPLOY_SRC}/scripts/sync-site-topology.sh" "${BUNDLE_DIR}/scripts/sync-site-topology.sh"
 fi
 chmod 0755 "${BUNDLE_DIR}/scripts/"*.sh
 

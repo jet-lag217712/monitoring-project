@@ -81,6 +81,15 @@ render_mqtt_passwords() {
   chown "${MOSQUITTO_UID}:${MOSQUITTO_UID}" "${out}"
 }
 
+sync_appliance_db_role_passwords() {
+  local script="${RELEASE_DIR}/scripts/sync-db-role-passwords.sh"
+  if [[ ! -f "${script}" ]]; then
+    echo "sync_appliance_db_role_passwords: missing ${script}" >&2
+    return 1
+  fi
+  EQUATE_RELEASE_DIR="${RELEASE_DIR}" COMPOSE_ENV="${COMPOSE_ENV}" bash "${script}"
+}
+
 bootstrap_appliance_rendered_and_stack() {
   local load_images="${LOAD_IMAGES:-1}"
 
@@ -217,13 +226,7 @@ EOF
   echo "running database migrations..."
   compose run --rm migrate
 
-  sql_escape() {
-    printf "%s" "${1//\'/\'\'}"
-  }
-
-  compose exec -T postgres psql -U "${POSTGRES_SUPERUSER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 \
-    -c "ALTER ROLE ogsd_ingestion WITH PASSWORD '$(sql_escape "${INGESTION_DB_PASSWORD}")';" \
-    -c "ALTER ROLE ogsd_api WITH PASSWORD '$(sql_escape "${API_DB_PASSWORD}")';"
+  sync_appliance_db_role_passwords
 
   compose up -d --remove-orphans
 
@@ -435,6 +438,8 @@ upgrade_appliance_release() {
   echo "running database migrations..."
   compose_from_release "${RELEASE_DIR}" run --rm migrate
 
+  sync_appliance_db_role_passwords
+
   if [[ "${canary}" == "1" ]]; then
     echo "canary rollout: starting core services..."
     compose_from_release "${RELEASE_DIR}" up -d postgres mosquitto
@@ -530,6 +535,11 @@ PY
 
   RELEASE_DIR="${previous_release_dir}"
   VERSION="${previous_version}"
+  # shellcheck disable=SC1091
+  source "${COMPOSE_ENV}"
+  compose_from_release "${RELEASE_DIR}" up -d postgres mosquitto
+  wait_for_postgres "${RELEASE_DIR}" "${POSTGRES_USER:-ogsd}" "${POSTGRES_DB:-ogsd}"
+  sync_appliance_db_role_passwords
   compose_from_release "${RELEASE_DIR}" up -d --remove-orphans
 
   install -m 0644 "${RELEASE_DIR}/scripts/equate-auth-broker.service" /etc/systemd/system/equate-auth-broker.service

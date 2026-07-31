@@ -79,14 +79,55 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+sync_db_role_passwords_from_release() {
+  local release_dir="$1"
+  local script="${release_dir}/scripts/sync-db-role-passwords.sh"
+  local compose_env="${RUN_DIR}/rendered/compose.env"
+  if [[ ! -f "${script}" || ! -f "${compose_env}" ]]; then
+    return 0
+  fi
+  echo "syncing database role passwords from release ${release_dir}..."
+  EQUATE_RELEASE_DIR="${release_dir}" COMPOSE_ENV="${compose_env}" bash "${script}"
+  local compose_files=(-f docker-compose.yml)
+  if [[ -f "${release_dir}/docker-compose.sites.generated.yml" ]]; then
+    compose_files+=(-f docker-compose.sites.generated.yml)
+  fi
+  (
+    cd "${release_dir}"
+    docker compose \
+      --env-file "${compose_env}" \
+      "${compose_files[@]}" \
+      restart backend-api ingestion
+  )
+}
+
+sync_site_topology_from_release() {
+  local release_dir="$1"
+  local script="${release_dir}/scripts/sync-site-topology.sh"
+  local manifest="${release_dir}/sites/manifest.yaml"
+  if [[ ! -f "${script}" || ! -f "${manifest}" ]]; then
+    return 0
+  fi
+  echo "syncing site topology from ${manifest}..."
+  EQUATE_DEPLOY_DIR="${release_dir}" \
+    EQUATE_COMPOSE_ENV="${RUN_DIR}/rendered/compose.env" \
+    bash "${script}"
+}
+
 source_bootstrap_script() {
-  local candidates=(
+  local candidates=()
+  # Prefer the staged bundle during install/upgrade so new bootstrap logic applies
+  # before /opt/equate/current is repointed at the target release.
+  if [[ -n "${BUNDLE_DIR}" ]]; then
+    candidates+=(
+      "${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh"
+      "${BUNDLE_DIR}/bootstrap-appliance-rendered.sh"
+    )
+  fi
+  candidates+=(
     "${SCRIPT_DIR}/bootstrap-appliance-rendered.sh"
     "${SCRIPT_DIR}/scripts/bootstrap-appliance-rendered.sh"
   )
-  if [[ -n "${BUNDLE_DIR}" ]]; then
-    candidates+=("${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh")
-  fi
   if [[ -f "${ETC_DIR}/deploy-dir" ]]; then
     local release_dir
     release_dir="$(tr -d '[:space:]' < "${ETC_DIR}/deploy-dir")"
@@ -212,6 +253,9 @@ finalize_release_install() {
   if [[ -f "${RELEASE_DIR}/scripts/manage-users.sh" ]]; then
     install -m 0755 "${RELEASE_DIR}/scripts/manage-users.sh" /opt/equate/scripts/manage-users.sh
   fi
+  if [[ -f "${RELEASE_DIR}/scripts/sync-db-role-passwords.sh" ]]; then
+    install -m 0755 "${RELEASE_DIR}/scripts/sync-db-role-passwords.sh" /opt/equate/scripts/sync-db-role-passwords.sh
+  fi
 }
 
 install_host_packages
@@ -252,6 +296,8 @@ elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
 
   export UPGRADE_CANARY
   upgrade_appliance_release "${OLD_RELEASE_DIR}" "${OLD_VERSION}"
+  sync_db_role_passwords_from_release "${RELEASE_DIR}"
+  sync_site_topology_from_release "${RELEASE_DIR}"
 
   ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
   finalize_release_install

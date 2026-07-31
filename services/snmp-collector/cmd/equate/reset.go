@@ -97,13 +97,31 @@ func runReset(args []string) int {
 	}
 
 	fmt.Fprintln(os.Stderr, "starting core stack...")
+	if wipePostgres {
+		if err := runDockerCompose(deployDir, "up", "-d", "postgres", "mosquitto"); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: start postgres: %v\n", err)
+			return 1
+		}
+		if err := runDockerCompose(deployDir, "run", "--rm", "migrate"); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: database migrate: %v\n", err)
+			return 1
+		}
+		if err := runSyncDBRolePasswords(deployDir); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: %v\n", err)
+			return 1
+		}
+	}
 	if err := runDockerCompose(deployDir, "up", "-d", "--remove-orphans"); err != nil {
 		fmt.Fprintf(os.Stderr, "reset: start core stack: %v\n", err)
 		return 1
 	}
-	if wipePostgres {
-		if err := runDockerCompose(deployDir, "run", "--rm", "migrate"); err != nil {
-			fmt.Fprintf(os.Stderr, "reset: database migrate: %v\n", err)
+	if !wipePostgres {
+		if err := runSyncDBRolePasswords(deployDir); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: %v\n", err)
+			return 1
+		}
+		if err := runDockerCompose(deployDir, "up", "-d", "backend-api", "ingestion"); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: restart api services: %v\n", err)
 			return 1
 		}
 	}

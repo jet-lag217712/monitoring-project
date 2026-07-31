@@ -3,19 +3,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-MANIFEST="${DEPLOY_DIR}/sites/manifest.yaml"
+DEPLOY_DIR="${EQUATE_DEPLOY_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+MANIFEST="${EQUATE_MANIFEST:-${DEPLOY_DIR}/sites/manifest.yaml}"
+COMPOSE_ENV="${EQUATE_COMPOSE_ENV:-/run/equate/rendered/compose.env}"
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL is required" >&2
-  exit 1
-fi
 if [[ ! -f "${MANIFEST}" ]]; then
   echo "manifest not found: ${MANIFEST}" >&2
   exit 1
 fi
 
-python3 - "${MANIFEST}" <<'PY' | psql "${DATABASE_URL}" -v ON_ERROR_STOP=1
+generate_sql() {
+  python3 - "${MANIFEST}" <<'PY'
 import sys
 import uuid
 import yaml
@@ -56,5 +54,33 @@ for site in sites:
         "hub_device_ids = EXCLUDED.hub_device_ids;"
     )
 PY
+}
+
+run_psql() {
+  if [[ -f "${COMPOSE_ENV}" && -f "${DEPLOY_DIR}/docker-compose.yml" ]]; then
+    # Appliance postgres is not published on the host; use the compose network.
+    set -a
+    # shellcheck disable=SC1090
+    source "${COMPOSE_ENV}"
+    set +a
+    (
+      cd "${DEPLOY_DIR}"
+      docker compose \
+        --env-file "${COMPOSE_ENV}" \
+        -f docker-compose.yml \
+        -f docker-compose.sites.generated.yml \
+        exec -T postgres \
+        psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1
+    )
+    return
+  fi
+  if [[ -z "${DATABASE_URL:-}" ]]; then
+    echo "sync-site-topology: DATABASE_URL or compose env (${COMPOSE_ENV}) is required" >&2
+    exit 1
+  fi
+  psql "${DATABASE_URL}" -v ON_ERROR_STOP=1
+}
+
+generate_sql | run_psql
 
 echo "Site topology synced from ${MANIFEST}"

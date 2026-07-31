@@ -21,6 +21,10 @@ func runConfigure(args []string) int {
 		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
 		return 1
 	}
+	if err := runSyncDBRolePasswords(deployDir); err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
 	bootstrapper, err := resolveBootstrapper(deployDir)
 	if err != nil {
 		return runCollectorSetup(deployDir, true)

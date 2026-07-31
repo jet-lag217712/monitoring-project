@@ -43,13 +43,6 @@ func resolveBootstrapper(deployDir string) (string, error) {
 	return "", fmt.Errorf("bootstrapper not found in %s", deployDir)
 }
 
-func dockerComposeFiles(deployDir string) []string {
-	return []string{
-		filepath.Join(deployDir, "docker-compose.yml"),
-		filepath.Join(deployDir, "docker-compose.sites.generated.yml"),
-	}
-}
-
 func runDockerCompose(deployDir string, args ...string) error {
 	files := dockerComposeFiles(deployDir)
 	cmdArgs := []string{"compose"}
@@ -69,4 +62,34 @@ func runDockerCompose(deployDir string, args ...string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
+}
+
+func dockerComposeFiles(deployDir string) []string {
+	return []string{
+		filepath.Join(deployDir, "docker-compose.yml"),
+		filepath.Join(deployDir, "docker-compose.sites.generated.yml"),
+	}
+}
+
+func runSyncDBRolePasswords(deployDir string) error {
+	const composeEnv = "/run/equate/rendered/compose.env"
+	if _, err := os.Stat(composeEnv); err != nil {
+		return nil
+	}
+	script := filepath.Join(deployDir, "scripts", "sync-db-role-passwords.sh")
+	if _, err := os.Stat(script); err != nil {
+		return fmt.Errorf("sync database role passwords: missing %s", script)
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Dir = deployDir
+	cmd.Env = append(os.Environ(),
+		"EQUATE_RELEASE_DIR="+deployDir,
+		"EQUATE_COMPOSE_ENV="+composeEnv,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sync database role passwords: %w", err)
+	}
+	return nil
 }
