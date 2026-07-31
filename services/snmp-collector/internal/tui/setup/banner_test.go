@@ -41,7 +41,7 @@ func TestWithTopPadding(t *testing.T) {
 }
 
 func TestViewSplashContainsFooter(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeDark), "test", ProfileDevVxrail)
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeDark), "test", ProfileDevVxrail, RunOptions{})
 	m.width = 100
 	m.height = 40
 	out := m.viewSplash()

@@ -10,7 +10,7 @@ import (
 )
 
 // Run starts the first-boot setup wizard for a deployment directory.
-func Run(deployDir string, theme tui.ThemeName, version string, profile Profile) error {
+func Run(deployDir string, theme tui.ThemeName, version string, profile Profile, opts RunOptions) error {
 	deployDir, err := filepath.Abs(deployDir)
 	if err != nil {
 		return err
@@ -18,8 +18,13 @@ func Run(deployDir string, theme tui.ThemeName, version string, profile Profile)
 	if _, err := os.Stat(deployDir); err != nil {
 		return fmt.Errorf("deploy dir: %w", err)
 	}
-	m := newModel(deployDir, tui.NewTheme(theme), version, profile)
+	m := newModel(deployDir, tui.NewTheme(theme), version, profile, opts)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
+}
+
+// RunOptions configures setup wizard behavior.
+type RunOptions struct {
+	Reconfigure ReconfigureMode
 }

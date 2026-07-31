@@ -17,10 +17,15 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	if commandNeedsElevation(os.Args[1]) && os.Getuid() != 0 {
+		os.Exit(runElevated(os.Args[1:]))
+	}
 	var code int
 	switch os.Args[1] {
 	case "configure":
 		code = runConfigure(os.Args[2:])
+	case "users":
+		code = runUsers(os.Args[2:])
 	case "view":
 		code = runView(os.Args[2:])
 	case "sites":
@@ -46,7 +51,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: equate <command>\n\nCommands:\n")
-	fmt.Fprintf(os.Stderr, "  configure   Run appliance setup wizard (--reconfigure)\n")
+	fmt.Fprintf(os.Stderr, "  configure   Run appliance setup wizard (--sites or --users)\n")
+	fmt.Fprintf(os.Stderr, "  users       Manage local appliance users (create, delete, list, …)\n")
 	fmt.Fprintf(os.Stderr, "  reset       Stop containers and clear setup state (--hard for full wipe, no restart)\n")
 	fmt.Fprintf(os.Stderr, "  upgrade     In-place release upgrade or rollback (--bundle, --version, --canary, --rollback)\n")
 	fmt.Fprintf(os.Stderr, "  view <site> Open per-site collector operator TUI\n")

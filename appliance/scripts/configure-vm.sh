@@ -10,6 +10,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/debug-agent-log.sh" ]]; then
+  # shellcheck source=debug-agent-log.sh
+  source "${SCRIPT_DIR}/debug-agent-log.sh"
+fi
 
 BUNDLE_DIR=""
 VERSION=""
@@ -106,9 +110,48 @@ sync_site_topology_from_release() {
   local script="${release_dir}/scripts/sync-site-topology.sh"
   local manifest="${release_dir}/sites/manifest.yaml"
   if [[ ! -f "${script}" || ! -f "${manifest}" ]]; then
+    if declare -F debug_agent_log >/dev/null 2>&1; then
+      debug_agent_log "H1" "configure-vm.sh:sync_site_topology_from_release" "topology sync skipped" "{\"has_script\":$([[ -f "${script}" ]] && echo true || echo false),\"has_manifest\":$([[ -f "${manifest}" ]] && echo true || echo false)}"
+    fi
     return 0
   fi
+  if declare -F debug_agent_log >/dev/null 2>&1; then
+    local db_before manifest_data
+    db_before="$(query_db_topology_json "${release_dir}" "${RUN_DIR}/rendered/compose.env")"
+    manifest_data="$(manifest_topology_json "${manifest}")"
+    debug_agent_log "H2" "configure-vm.sh:sync_site_topology_from_release" "before topology sync" "{\"manifest\":${manifest_data},\"db_before\":${db_before}}"
+  fi
   echo "syncing site topology from ${manifest}..."
+  local sync_rc=0
+  EQUATE_DEPLOY_DIR="${release_dir}" \
+    EQUATE_COMPOSE_ENV="${RUN_DIR}/rendered/compose.env" \
+    bash "${script}" || sync_rc=$?
+  if declare -F debug_agent_log >/dev/null 2>&1; then
+    local db_after
+    db_after="$(query_db_topology_json "${release_dir}" "${RUN_DIR}/rendered/compose.env")"
+    debug_agent_log "H1" "configure-vm.sh:sync_site_topology_from_release" "after topology sync" "{\"sync_rc\":${sync_rc},\"db_after\":${db_after}}"
+  fi
+  return "${sync_rc}"
+}
+
+run_post_configure_from_release() {
+  local release_dir="$1"
+  local script="${release_dir}/scripts/post-configure.sh"
+  if [[ ! -f "${release_dir}/sites/manifest.yaml" ]]; then
+    if declare -F debug_agent_log >/dev/null 2>&1; then
+      debug_agent_log "H6" "configure-vm.sh:run_post_configure_from_release" "post-configure skipped (no manifest)" "{}"
+    fi
+    return 0
+  fi
+  if [[ ! -x "${script}" ]]; then
+    echo "post-configure.sh missing; falling back to topology sync only" >&2
+    sync_site_topology_from_release "${release_dir}"
+    return $?
+  fi
+  echo "running post-configure handoff from ${release_dir}..."
+  if declare -F debug_agent_log >/dev/null 2>&1; then
+    debug_agent_log "H6" "configure-vm.sh:run_post_configure_from_release" "starting post-configure" "{\"release_dir\":\"${release_dir}\"}"
+  fi
   EQUATE_DEPLOY_DIR="${release_dir}" \
     EQUATE_COMPOSE_ENV="${RUN_DIR}/rendered/compose.env" \
     bash "${script}"
@@ -209,10 +252,10 @@ fi
 
 install_host_packages() {
   if command -v apt-get >/dev/null 2>&1; then
-    echo "installing host packages (pamtester, python3)..."
+    echo "installing host packages (pamtester, python3, python3-yaml)..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq pamtester python3 curl
+    apt-get install -y -qq pamtester python3 python3-yaml curl
   else
     require_cmd pamtester python3 curl
   fi
@@ -256,6 +299,50 @@ finalize_release_install() {
   if [[ -f "${RELEASE_DIR}/scripts/sync-db-role-passwords.sh" ]]; then
     install -m 0755 "${RELEASE_DIR}/scripts/sync-db-role-passwords.sh" /opt/equate/scripts/sync-db-role-passwords.sh
   fi
+  install_first_boot_console
+  install_appliance_sudoers
+}
+
+install_first_boot_console() {
+  local lib_dir="/usr/local/lib/equate"
+  install -d -m 0755 "${lib_dir}"
+  for script in first-boot-needed.sh first-boot-console.sh; do
+    if [[ -f "${RELEASE_DIR}/scripts/${script}" ]]; then
+      install -m 0755 "${RELEASE_DIR}/scripts/${script}" "${lib_dir}/${script}"
+    elif [[ -f "${SCRIPT_DIR}/${script}" ]]; then
+      install -m 0755 "${SCRIPT_DIR}/${script}" "${lib_dir}/${script}"
+    fi
+  done
+  if [[ -f "${RELEASE_DIR}/scripts/equate-first-boot.service" ]]; then
+    install -m 0644 "${RELEASE_DIR}/scripts/equate-first-boot.service" /etc/systemd/system/equate-first-boot.service
+  elif [[ -f "${SCRIPT_DIR}/equate-first-boot.service" ]]; then
+    install -m 0644 "${SCRIPT_DIR}/equate-first-boot.service" /etc/systemd/system/equate-first-boot.service
+  fi
+  if [[ -f "${RELEASE_DIR}/scripts/getty-tty1-override.conf" ]]; then
+    install -d -m 0755 /etc/systemd/system/getty@tty1.service.d
+    install -m 0644 "${RELEASE_DIR}/scripts/getty-tty1-override.conf" \
+      /etc/systemd/system/getty@tty1.service.d/equate-first-boot.conf
+  elif [[ -f "${SCRIPT_DIR}/getty-tty1-override.conf" ]]; then
+    install -d -m 0755 /etc/systemd/system/getty@tty1.service.d
+    install -m 0644 "${SCRIPT_DIR}/getty-tty1-override.conf" \
+      /etc/systemd/system/getty@tty1.service.d/equate-first-boot.conf
+  fi
+  systemctl daemon-reload
+  systemctl enable equate-first-boot.service 2>/dev/null || true
+}
+
+install_appliance_sudoers() {
+  local src=""
+  if [[ -f "${RELEASE_DIR}/scripts/equate-appliance.sudoers" ]]; then
+    src="${RELEASE_DIR}/scripts/equate-appliance.sudoers"
+  elif [[ -f "${SCRIPT_DIR}/equate-appliance.sudoers" ]]; then
+    src="${SCRIPT_DIR}/equate-appliance.sudoers"
+  fi
+  if [[ -z "${src}" ]]; then
+    return 0
+  fi
+  install -m 0440 "${src}" /etc/sudoers.d/equate-appliance
+  visudo -c -f /etc/sudoers.d/equate-appliance
 }
 
 install_host_packages
@@ -297,7 +384,7 @@ elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
   export UPGRADE_CANARY
   upgrade_appliance_release "${OLD_RELEASE_DIR}" "${OLD_VERSION}"
   sync_db_role_passwords_from_release "${RELEASE_DIR}"
-  sync_site_topology_from_release "${RELEASE_DIR}"
+  run_post_configure_from_release "${RELEASE_DIR}"
 
   ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
   finalize_release_install

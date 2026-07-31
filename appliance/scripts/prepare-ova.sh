@@ -69,6 +69,30 @@ for build_home in /home/debian /home/packer; do
   fi
 done
 
+echo "removing CI build accounts..."
+for build_user in debian packer; do
+  if id "${build_user}" >/dev/null 2>&1; then
+    userdel -r "${build_user}" 2>/dev/null || userdel "${build_user}" 2>/dev/null || true
+  fi
+done
+
+echo "resetting hostname to equate-appliance..."
+hostnamectl set-hostname equate-appliance 2>/dev/null || echo "equate-appliance" > /etc/hostname
+if [[ -f /etc/hosts ]]; then
+  sed -i 's/equate-appliance-build/equate-appliance/g' /etc/hosts 2>/dev/null || true
+fi
+
+DEPLOY_DIR=""
+if [[ -f /etc/equate/deploy-dir ]]; then
+  DEPLOY_DIR="$(tr -d '[:space:]' < /etc/equate/deploy-dir)"
+fi
+if [[ -n "${DEPLOY_DIR}" && -d "${DEPLOY_DIR}" ]]; then
+  echo "scrubbing deploy setup state under ${DEPLOY_DIR}..."
+  rm -f "${DEPLOY_DIR}/.setup-complete" "${DEPLOY_DIR}/.env"
+  rm -f "${DEPLOY_DIR}/docker-compose.sites.generated.yml"
+  rm -rf "${DEPLOY_DIR}/sites"
+fi
+
 echo "removing DHCP leases..."
 rm -f /var/lib/dhcp/dhcpd.leases /var/lib/NetworkManager/*.lease 2>/dev/null || true
 
@@ -88,6 +112,16 @@ done
 
 if grep -R -E -q 'packer_password|CHANGE_ME|POSTGRES_PASSWORD=' /tmp /root /home 2>/dev/null; then
   report "possible plaintext secret remains under /tmp, /root, or /home"
+fi
+
+if id debian >/dev/null 2>&1; then
+  report "CI build account debian still present"
+fi
+if [[ "$(hostname)" == "equate-appliance-build" ]]; then
+  report "hostname still set to CI build name"
+fi
+if [[ -n "${DEPLOY_DIR}" && -f "${DEPLOY_DIR}/.setup-complete" ]]; then
+  report "deploy dir still marked setup-complete"
 fi
 
 if [[ "${FAIL}" -ne 0 ]]; then

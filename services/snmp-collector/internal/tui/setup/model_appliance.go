@@ -10,6 +10,14 @@ import (
 )
 
 func (m model) firstStepAfterSplash() step {
+	switch m.reconfigureMode {
+	case ReconfigureUsers:
+		if m.profileCfg.UserManagement {
+			return stepUsers
+		}
+	case ReconfigureSites:
+		return stepEnv
+	}
 	if m.profileCfg.RequireAdminUser {
 		return stepAdminUser
 	}
@@ -164,10 +172,18 @@ func (m model) updateUsers(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.usersFocus = 0
 			return m.updateUsersFocus(), textinput.Blink
 		case "4":
+			m.usersMode = "enable"
+			m.usersFocus = 0
+			return m.updateUsersFocus(), textinput.Blink
+		case "5":
 			m.usersMode = "reset"
 			m.usersFocus = 0
 			return m.updateUsersFocus(), textinput.Blink
-		case "5", "c", "enter":
+		case "6":
+			m.usersMode = "delete"
+			m.usersFocus = 0
+			return m.updateUsersFocus(), textinput.Blink
+		case "7", "c", "enter":
 			m.step = stepEnv
 			m.envFocus = 0
 			m = m.updateEnvFocus()
@@ -183,7 +199,11 @@ func (m model) updateUsers(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case 0:
 			m.usersUsername, cmd = m.usersUsername.Update(msg)
 		case 1:
-			m.usersPassword, cmd = m.usersPassword.Update(msg)
+			if m.usersMode == "delete" {
+				m.usersConfirm, cmd = m.usersConfirm.Update(msg)
+			} else {
+				m.usersPassword, cmd = m.usersPassword.Update(msg)
+			}
 		default:
 			m.usersConfirm, cmd = m.usersConfirm.Update(msg)
 		}
@@ -197,8 +217,13 @@ func (m model) updateUsers(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.refreshUsersList()
 	}
 	lastFocus := 1
-	if m.usersMode == "create" || m.usersMode == "reset" {
+	switch m.usersMode {
+	case "create", "reset":
 		lastFocus = 2
+	case "delete":
+		lastFocus = 1
+	case "disable", "enable":
+		lastFocus = 0
 	}
 	switch key.String() {
 	case "tab", "down":
@@ -220,7 +245,11 @@ func (m model) updateUsers(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case 0:
 		m.usersUsername, cmd = m.usersUsername.Update(msg)
 	case 1:
-		m.usersPassword, cmd = m.usersPassword.Update(msg)
+		if m.usersMode == "delete" {
+			m.usersConfirm, cmd = m.usersConfirm.Update(msg)
+		} else {
+			m.usersPassword, cmd = m.usersPassword.Update(msg)
+		}
 	default:
 		m.usersConfirm, cmd = m.usersConfirm.Update(msg)
 	}
@@ -235,7 +264,11 @@ func (m model) updateUsersFocus() model {
 	case 0:
 		m.usersUsername.Focus()
 	case 1:
-		m.usersPassword.Focus()
+		if m.usersMode == "delete" {
+			m.usersConfirm.Focus()
+		} else {
+			m.usersPassword.Focus()
+		}
 	default:
 		m.usersConfirm.Focus()
 	}
@@ -292,6 +325,25 @@ func (m model) runUsersAction() tea.Cmd {
 				return asyncDoneMsg{err: err}
 			}
 			return asyncDoneMsg{body: fmt.Sprintf("Disabled user %q.", username)}
+		case "enable":
+			if username == "" {
+				return asyncDoneMsg{err: fmt.Errorf("username is required")}
+			}
+			if err := pamUserEnable(helper, username); err != nil {
+				return asyncDoneMsg{err: err}
+			}
+			return asyncDoneMsg{body: fmt.Sprintf("Enabled user %q.", username)}
+		case "delete":
+			if username == "" {
+				return asyncDoneMsg{err: fmt.Errorf("username is required")}
+			}
+			if confirm != "DELETE" {
+				return asyncDoneMsg{err: fmt.Errorf("type DELETE to confirm removal")}
+			}
+			if err := pamUserDelete(helper, username); err != nil {
+				return asyncDoneMsg{err: err}
+			}
+			return asyncDoneMsg{body: fmt.Sprintf("Deleted user %q.", username)}
 		case "reset":
 			if username == "" || password == "" {
 				return asyncDoneMsg{err: fmt.Errorf("username and password are required")}
@@ -504,7 +556,7 @@ func (m model) viewUsers(th tui.Theme) string {
 			body.WriteString(th.Value.Render(m.usersBody))
 			body.WriteString("\n\n")
 		}
-		body.WriteString(th.Muted.Render("1 create · 2 list · 3 disable · 4 reset password · 5 continue"))
+		body.WriteString(th.Muted.Render("1 create · 2 list · 3 disable · 4 enable · 5 reset password · 6 delete · 7 continue"))
 		return body.String()
 	}
 	switch m.usersMode {
@@ -512,18 +564,28 @@ func (m model) viewUsers(th tui.Theme) string {
 		body.WriteString(th.Label.Render("new username"))
 	case "disable":
 		body.WriteString(th.Label.Render("username to disable"))
+	case "enable":
+		body.WriteString(th.Label.Render("username to enable"))
+	case "delete":
+		body.WriteString(th.Label.Render("username to delete"))
 	case "reset":
 		body.WriteString(th.Label.Render("username to reset"))
 	}
 	body.WriteString(" ")
 	body.WriteString(m.usersUsername.View())
 	body.WriteString("\n")
-	if m.usersMode == "create" || m.usersMode == "reset" {
+	switch m.usersMode {
+	case "create", "reset":
 		body.WriteString(th.Label.Render("password"))
 		body.WriteString(" ")
 		body.WriteString(m.usersPassword.View())
 		body.WriteString("\n")
 		body.WriteString(th.Label.Render("confirm"))
+		body.WriteString(" ")
+		body.WriteString(m.usersConfirm.View())
+		body.WriteString("\n")
+	case "delete":
+		body.WriteString(th.Label.Render("type DELETE"))
 		body.WriteString(" ")
 		body.WriteString(m.usersConfirm.View())
 		body.WriteString("\n")

@@ -8,7 +8,7 @@ import (
 )
 
 func TestHandleQuitKeyFromStartStep(t *testing.T) {
-	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance)
+	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance, RunOptions{})
 	m.splash = false
 	m.step = stepStart
 
@@ -30,7 +30,7 @@ func TestHandleQuitKeyFromStartStep(t *testing.T) {
 }
 
 func TestHandleQuitKeyImmediateOnDone(t *testing.T) {
-	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance)
+	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance, RunOptions{})
 	m.splash = false
 	m.step = stepDone
 
@@ -41,7 +41,7 @@ func TestHandleQuitKeyImmediateOnDone(t *testing.T) {
 }
 
 func TestHandleQuitKeyIgnoresQDuringInputSteps(t *testing.T) {
-	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance)
+	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance, RunOptions{})
 	m.splash = false
 	m.step = stepEnv
 
@@ -52,7 +52,7 @@ func TestHandleQuitKeyIgnoresQDuringInputSteps(t *testing.T) {
 }
 
 func TestHandleQuitKeyCancel(t *testing.T) {
-	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance)
+	m := newModel("/tmp/deploy", tui.Theme{}, "test", ProfileAppliance, RunOptions{})
 	m.splash = false
 	m.step = stepEnv
 	m.confirmQuit = true

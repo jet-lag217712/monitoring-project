@@ -60,7 +60,7 @@ Equate Appliance ${VERSION} ARM64 OVA — VMware Fusion import notes
 2. BEFORE first boot, open VM Settings → General and set Guest OS to
    "Debian 13 64-bit Arm" (or edit the .vmx: guestOS = "arm-debian13-64").
    ovftool may label the guest as "Other", which Fusion treats as x86.
-3. Power on. Complete first-boot setup: sudo equate configure
+3. Power on. The console launches the first-boot setup wizard automatically.
 4. Open https://<vm-ip>/ and sign in with a local appliance user.
 
 Checksum: see ${OVA}.sha256

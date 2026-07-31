@@ -43,9 +43,16 @@ For customer installation, use the checksummed offline release and follow
 ```bash
 # First boot or deliberate reconfiguration
 ./bootstrapper.sh --reconfigure
+sudo equate configure              # full wizard
+sudo equate configure --sites      # sites/SNMP/thresholds only
+sudo equate configure --users      # user management only
 
 # Day-2 collector configuration, per site
-collector tui -socket ./sites/<site-id>/run/control.sock -theme auto
+equate view <site-id>
+
+# Day-2 user administration
+equate users list
+equate users create <username>
 ```
 
 The setup TUI must be completed before the stack is started. A failed

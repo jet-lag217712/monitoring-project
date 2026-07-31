@@ -21,8 +21,23 @@ resolve_collector_module() {
 
 if [[ "${1:-}" == "--reconfigure" ]]; then
   rm -f .setup-complete
+  RECONFIGURE_MODE="full"
   shift
 fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      RECONFIGURE_MODE="${2:-full}"
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+RECONFIGURE_MODE="${RECONFIGURE_MODE:-}"
 
 ensure_appliance_rendered_secrets() {
   local compose_env="/run/equate/rendered/compose.env"
@@ -58,10 +73,15 @@ if [[ ! -f .setup-complete ]]; then
   ensure_appliance_rendered_secrets
   echo "First boot: launching Equate appliance setup wizard…" >&2
   SETUP_CMD=()
+  SETUP_EXTRA=()
+  if [[ -n "${RECONFIGURE_MODE}" ]]; then
+    export EQUATE_SETUP_RECONFIGURE="${RECONFIGURE_MODE}"
+    SETUP_EXTRA=(-reconfigure "${RECONFIGURE_MODE}")
+  fi
   if command -v collector >/dev/null 2>&1; then
-    SETUP_CMD=(collector setup -dir "${SCRIPT_DIR}" -theme auto -profile appliance)
+    SETUP_CMD=(collector setup -dir "${SCRIPT_DIR}" -theme auto -profile appliance "${SETUP_EXTRA[@]}")
   elif COLLECTOR_MOD="$(resolve_collector_module)"; then
-    SETUP_CMD=(go run -C "${COLLECTOR_MOD}" ./cmd/collector setup -dir "${SCRIPT_DIR}" -theme auto -profile appliance)
+    SETUP_CMD=(go run -C "${COLLECTOR_MOD}" ./cmd/collector setup -dir "${SCRIPT_DIR}" -theme auto -profile appliance "${SETUP_EXTRA[@]}")
   else
     echo "collector binary or snmp-collector source not found; install collector or sync repo." >&2
     exit 1
@@ -101,9 +121,9 @@ fi
 export MQTT_BROKER MQTT_PASSWORD
 export SNMP_COMMUNITY SNMP_DISCOVERY_COMMUNITY
 
-mapfile -t SITE_IDS < <(awk '/^    site_id: / {gsub(/"/, "", $2); print $2}' sites/manifest.yaml)
-mapfile -t SERVICES < <(awk '/^    service_name: / {print $2}' sites/manifest.yaml)
-mapfile -t ADMIN_PORTS < <(awk '/    admin_port: / {print $2}' sites/manifest.yaml)
+mapfile -t SITE_IDS < <(awk '/site_id:/ {gsub(/"/, "", $2); if ($2 != "") print $2}' sites/manifest.yaml)
+mapfile -t SERVICES < <(awk '/service_name:/ {print $2}' sites/manifest.yaml)
+mapfile -t ADMIN_PORTS < <(awk '/admin_port: / {print $2}' sites/manifest.yaml)
 
 if [[ "${#SITE_IDS[@]}" -eq 0 ]] || [[ "${#SERVICES[@]}" -eq 0 ]]; then
   echo "sites/manifest.yaml is invalid — run equate configure" >&2

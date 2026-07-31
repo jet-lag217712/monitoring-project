@@ -13,6 +13,11 @@ const defaultPamHelperPath = "/opt/equate/scripts/manage-users.sh"
 
 // resolvePamHelper finds the host PAM user-management helper script.
 func resolvePamHelper(deployDir string) (string, error) {
+	return ResolvePamHelperPath(deployDir)
+}
+
+// ResolvePamHelperPath returns the manage-users helper for CLI and setup tooling.
+func ResolvePamHelperPath(deployDir string) (string, error) {
 	candidates := []string{
 		filepath.Join(deployDir, "scripts", "manage-users.sh"),
 		defaultPamHelperPath,
@@ -50,6 +55,16 @@ func pamHasExistingUsers(helper string) (bool, string, error) {
 
 func pamUserDisable(helper, username string) error {
 	_, err := runPamHelperOutput(helper, "disable", username)
+	return err
+}
+
+func pamUserEnable(helper, username string) error {
+	_, err := runPamHelperOutput(helper, "enable", username)
+	return err
+}
+
+func pamUserDelete(helper, username string) error {
+	_, err := runPamHelperOutput(helper, "delete", username)
 	return err
 }
 

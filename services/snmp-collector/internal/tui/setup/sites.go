@@ -299,8 +299,11 @@ func WriteSiteArtifacts(deployDir string, specs []SiteSpec, rate float64, burst 
 		if err := os.Rename(tmp, cfgPath); err != nil {
 			return err
 		}
-		if err := writeSeedManaged(spec.ManagedInventoryPath(deployDir), []string{spec.CIDR}, rate, burst, communityEnv); err != nil {
-			return err
+		managedPath := spec.ManagedInventoryPath(deployDir)
+		if _, err := os.Stat(managedPath); err != nil {
+			if err := writeSeedManaged(managedPath, []string{spec.CIDR}, rate, burst, communityEnv); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

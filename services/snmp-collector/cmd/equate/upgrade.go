@@ -10,17 +10,21 @@ import (
 	"strings"
 )
 
-func resolveConfigureScript(deployDir string) (string, error) {
-	candidates := []string{
+func resolveConfigureScript(deployDir, bundle string) (string, error) {
+	candidates := []string{}
+	if strings.TrimSpace(bundle) != "" {
+		candidates = append(candidates, filepath.Join(bundle, "scripts", "configure-vm.sh"))
+	}
+	candidates = append(candidates,
 		filepath.Join(deployDir, "scripts", "configure-vm.sh"),
 		"/tmp/equate-staging/configure-vm.sh",
-	}
+	)
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("configure-vm.sh not found (checked release scripts and /tmp/equate-staging)")
+	return "", fmt.Errorf("configure-vm.sh not found (checked bundle, release scripts, and /tmp/equate-staging)")
 }
 
 func runUpgrade(args []string) int {
@@ -48,7 +52,7 @@ func runUpgrade(args []string) int {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		return 1
 	}
-	configureScript, err := resolveConfigureScript(deployDir)
+	configureScript, err := resolveConfigureScript(deployDir, *bundle)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		return 1

@@ -241,6 +241,14 @@ compose_from_release() {
   shift
   (
     cd "${release_dir}"
+    if declare -F load_release_dotenv >/dev/null 2>&1; then
+      load_release_dotenv "${release_dir}"
+    elif [[ -f "${release_dir}/.env" ]]; then
+      set -a
+      # shellcheck disable=SC1091
+      source "${release_dir}/.env"
+      set +a
+    fi
     docker compose \
       --env-file "${COMPOSE_ENV}" \
       -f docker-compose.yml \
@@ -267,6 +275,31 @@ copy_customer_artifacts() {
       cp -a "${old_release}/${artifact}" "${new_release}/${artifact}"
     fi
   done
+  if declare -F debug_agent_log >/dev/null 2>&1; then
+    local manifest="${new_release}/sites/manifest.yaml"
+    local manifest_data="null"
+    if [[ -f "${manifest}" ]]; then
+      manifest_data="$(manifest_topology_json "${manifest}")"
+    fi
+    debug_agent_log "H4" "bootstrap-appliance-rendered.sh:copy_customer_artifacts" "copied customer artifacts" "{\"old\":\"${old_release}\",\"new\":\"${new_release}\",\"manifest\":${manifest_data}}"
+  fi
+}
+
+release_is_configured() {
+  local dir="$1"
+  if [[ -f "${dir}/.setup-complete" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${dir}/sites/manifest.yaml" || ! -f "${dir}/docker-compose.sites.generated.yml" ]]; then
+    return 1
+  fi
+  if [[ -f "${dir}/scripts/manifest-utils.sh" ]]; then
+    # shellcheck source=manifest-utils.sh
+    source "${dir}/scripts/manifest-utils.sh"
+    manifest_has_sites "${dir}/sites/manifest.yaml"
+    return $?
+  fi
+  awk '/site_id:/ {found=1} END {exit !found}' "${dir}/sites/manifest.yaml"
 }
 
 merge_compose_env_for_upgrade() {
@@ -392,9 +425,12 @@ upgrade_appliance_release() {
     echo "release missing release.env: ${RELEASE_DIR}" >&2
     return 1
   fi
-  if [[ ! -f "${old_release_dir}/.setup-complete" ]]; then
-    echo "current release is not configured (.setup-complete missing); run equate configure first" >&2
+  if ! release_is_configured "${old_release_dir}"; then
+    echo "current release is not configured (.setup-complete and site manifest missing); run equate configure first" >&2
     return 1
+  fi
+  if [[ ! -f "${old_release_dir}/.setup-complete" ]] && declare -F debug_agent_log >/dev/null 2>&1; then
+    debug_agent_log "H7" "bootstrap-appliance-rendered.sh:upgrade_appliance_release" "upgrade allowed without setup-complete marker" "{\"old_release_dir\":\"${old_release_dir}\"}"
   fi
   COMPOSE_ENV="${RUN_DIR}/rendered/compose.env"
   if [[ ! -f "${COMPOSE_ENV}" ]]; then
@@ -476,6 +512,12 @@ upgrade_appliance_release() {
 EOF
   chmod 0600 "${RUN_DIR}/rendered/installation.json"
   echo "upgrade complete: ${old_version} -> ${VERSION}"
+  if declare -F debug_agent_log >/dev/null 2>&1; then
+    local db_after manifest_data
+    db_after="$(query_db_topology_json "${RELEASE_DIR}" "${COMPOSE_ENV}")"
+    manifest_data="$(manifest_topology_json "${RELEASE_DIR}/sites/manifest.yaml")"
+    debug_agent_log "H3" "bootstrap-appliance-rendered.sh:upgrade_appliance_release" "upgrade stack started" "{\"version\":\"${VERSION}\",\"manifest\":${manifest_data},\"db_after_stack_up\":${db_after}}"
+  fi
 }
 
 rollback_appliance_release() {

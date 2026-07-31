@@ -304,6 +304,52 @@ func markComplete(deployDir string) error {
 	return os.WriteFile(filepath.Join(deployDir, setupMarker), []byte(time.Now().UTC().Format(time.RFC3339Nano)+"\n"), 0o600)
 }
 
+func runAppliancePostConfigure(deployDir string, profile Profile) error {
+	if profile != ProfileAppliance {
+		return nil
+	}
+	script := filepath.Join(deployDir, "scripts", "post-configure.sh")
+	if _, err := os.Stat(script); err != nil {
+		return runAppliancePostConfigureInline(deployDir)
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Dir = deployDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("post-configure: %w", err)
+	}
+	return nil
+}
+
+func runAppliancePostConfigureInline(deployDir string) error {
+	syncScript := filepath.Join(deployDir, "scripts", "sync-site-topology.sh")
+	if _, err := os.Stat(syncScript); err == nil {
+		cmd := exec.Command("bash", syncScript)
+		cmd.Dir = deployDir
+		cmd.Env = append(os.Environ(),
+			"EQUATE_DEPLOY_DIR="+deployDir,
+			"EQUATE_COMPOSE_ENV=/run/equate/rendered/compose.env",
+		)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("site topology sync: %w", err)
+		}
+	}
+	args := []string{"compose"}
+	args = append(args, composeEnvArgs(deployDir)...)
+	args = append(args, "-f", "docker-compose.yml", "-f", generatedComposeFile, "up", "-d", "--remove-orphans")
+	cmd := exec.Command("docker", args...)
+	cmd.Dir = deployDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker compose up: %w", err)
+	}
+	return nil
+}
+
 // deviceIDFromDiscoveryCandidate prefers the SNMP hostname label so accepted
 // devices align with existing inventory rows (e.g. DO-CORE.lab -> do-core).
 func deviceIDFromDiscoveryCandidate(hostname, ip string) string {

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/tui/setup"
 )
@@ -34,8 +35,21 @@ func runView(args []string) int {
 		fmt.Fprintf(os.Stderr, "view: site %q not found in manifest\n", siteID)
 		return 1
 	}
-	if err := runDockerCompose(deployDir, "exec", "-it", spec.ServiceName,
-		"/collector", "tui", "-socket", "/run/snmp-collector/control.sock", "-theme", "auto"); err != nil {
+	socket := spec.SocketPath(deployDir)
+	collector, err := exec.LookPath("collector")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "view: collector binary not found on PATH\n")
+		return 1
+	}
+	cmd := exec.Command(collector, "tui", "-socket", socket, "-theme", "auto")
+	cmd.Dir = deployDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			return exit.ExitCode()
+		}
 		fmt.Fprintf(os.Stderr, "view: %v\n", err)
 		return 1
 	}

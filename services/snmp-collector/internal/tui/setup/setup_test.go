@@ -53,7 +53,7 @@ func TestWriteEnvFile(t *testing.T) {
 }
 
 func TestNewModelInitialStep(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileDevVxrail)
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileDevVxrail, RunOptions{})
 	if !m.splash {
 		t.Fatal("expected splash screen on launch")
 	}

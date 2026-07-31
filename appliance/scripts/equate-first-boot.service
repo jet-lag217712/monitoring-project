@@ -1,0 +1,23 @@
+[Unit]
+Description=Equate appliance first-boot setup console
+DefaultDependencies=no
+After=local-fs.target
+Before=getty@tty1.service
+Conflicts=rescue.service rescue.target
+ConditionPathExists=/etc/equate/deploy-dir
+
+[Service]
+Type=simple
+Environment=TERM=linux
+ExecCondition=/usr/local/lib/equate/first-boot-needed.sh
+ExecStart=/usr/local/lib/equate/first-boot-console.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

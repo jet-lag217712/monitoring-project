@@ -33,6 +33,6 @@ See [`infrastructure/docker/mqtt-broker/README.md`](../../infrastructure/docker/
 
 ## Dashboard users
 
-Use the appliance user-management TUI/helper to disable, reset, or create local
-PAM-backed users. Never edit `/etc/shadow` from a container or place passwords
-in Compose files.
+Use `equate users` or the appliance setup wizard user-management step to
+create, delete, disable, enable, or reset local PAM-backed users. Never edit
+`/etc/shadow` from a container or place passwords in Compose files.

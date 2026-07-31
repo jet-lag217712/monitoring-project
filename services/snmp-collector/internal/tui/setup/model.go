@@ -92,6 +92,8 @@ type model struct {
 	confirmQuit bool
 
 	adminPhase string
+
+	reconfigureMode ReconfigureMode
 }
 
 func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
@@ -102,7 +104,7 @@ func styleTextInput(ti textinput.Model, th tui.Theme) textinput.Model {
 	return ti
 }
 
-func newModel(deployDir string, theme tui.Theme, version string, profile Profile) model {
+func newModel(deployDir string, theme tui.Theme, version string, profile Profile, opts RunOptions) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = theme.Spinner
@@ -178,8 +180,10 @@ func newModel(deployDir string, theme tui.Theme, version string, profile Profile
 		usersPassword:      usersPassword,
 		usersConfirm:       usersConfirm,
 		usersMode:          "menu",
+		reconfigureMode:    opts.Reconfigure,
 	}
 	m.resizeSiteInputs(defaultSiteCount)
+	preloadExistingState(&m)
 	return m
 }
 
@@ -280,6 +284,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.step == stepEnv {
 					m.envFocus = 0
 					m = m.updateEnvFocus()
+				} else if m.step == stepUsers {
+					m.usersMode = "menu"
+					m.loading = true
+					return m, m.refreshUsersList()
 				}
 				return m, textinput.Blink
 			}
@@ -977,6 +985,9 @@ func (m model) applyThreshold() tea.Cmd {
 			}
 		}
 		if err := markComplete(deployDir); err != nil {
+			return asyncDoneMsg{err: err}
+		}
+		if err := runAppliancePostConfigure(deployDir, m.profile); err != nil {
 			return asyncDoneMsg{err: err}
 		}
 		return asyncDoneMsg{body: fmt.Sprintf("Threshold %.0f°C applied to %d site(s). Setup complete.", temp, len(manifest.Sites))}

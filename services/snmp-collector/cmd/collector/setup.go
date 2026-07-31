@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/equate/ogsd/services/snmp-collector/internal/tui"
 	"github.com/equate/ogsd/services/snmp-collector/internal/tui/setup"
@@ -15,6 +16,7 @@ func runSetup(args []string) int {
 	deployDir := fs.String("dir", ".", "deployment directory (e.g. deployments/development/vxrail)")
 	themeName := fs.String("theme", "auto", "color theme: auto, light, or dark")
 	profileName := fs.String("profile", "dev-vxrail", "setup profile: dev-vxrail or appliance")
+	reconfigureMode := fs.String("reconfigure", "", "reconfigure mode: full, sites, or users")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -27,7 +29,16 @@ func runSetup(args []string) int {
 		fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 		return 2
 	}
-	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName), buildVersion, profile); err != nil {
+	mode := setup.ReconfigureModeFromEnv()
+	if strings.TrimSpace(*reconfigureMode) != "" {
+		mode, err = setup.ParseReconfigureMode(*reconfigureMode)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
+			return 2
+		}
+	}
+	opts := setup.RunOptions{Reconfigure: mode}
+	if err := setup.Run(*deployDir, tui.ParseThemeName(*themeName), buildVersion, profile, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 		return 1
 	}

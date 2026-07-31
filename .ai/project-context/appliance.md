@@ -60,6 +60,10 @@ permissioned host broker socket. The API is unprivileged, never mounts
 `/etc/shadow`, uses generic login errors and rate limiting, and stores opaque
 revocable sessions. Appliance users are not members of the Docker group.
 
+Day-2 operator commands (`equate view`, `equate configure`, `equate users`) are
+available to members of the `equate-appliance` group via passwordless sudo rules
+installed to `/etc/sudoers.d/equate-appliance`.
+
 Generated database, MQTT, TLS, session, and SNMP credentials remain outside
 release artifacts and are redacted from logs, diagnostics, manifests, and
 telemetry.

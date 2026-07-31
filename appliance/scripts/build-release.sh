@@ -281,11 +281,25 @@ cp "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" "${BUNDLE_DIR}/scripts/boots
 cp "${SCRIPTS_SRC}/sync-db-role-passwords.sh" "${BUNDLE_DIR}/scripts/sync-db-role-passwords.sh"
 cp "${SCRIPTS_SRC}/prepare-ova.sh" "${BUNDLE_DIR}/scripts/prepare-ova.sh"
 cp "${SCRIPTS_SRC}/equate-auth-broker.service" "${BUNDLE_DIR}/scripts/equate-auth-broker.service"
+for fb in first-boot-needed.sh first-boot-console.sh equate-first-boot.service getty-tty1-override.conf equate-appliance.sudoers; do
+  if [[ -f "${SCRIPTS_SRC}/${fb}" ]]; then
+    cp "${SCRIPTS_SRC}/${fb}" "${BUNDLE_DIR}/scripts/${fb}"
+  fi
+done
 if [[ -f "${DEPLOY_SRC}/scripts/manage-users.sh" ]]; then
   cp "${DEPLOY_SRC}/scripts/manage-users.sh" "${BUNDLE_DIR}/scripts/manage-users.sh"
 fi
 if [[ -f "${DEPLOY_SRC}/scripts/sync-site-topology.sh" ]]; then
   cp "${DEPLOY_SRC}/scripts/sync-site-topology.sh" "${BUNDLE_DIR}/scripts/sync-site-topology.sh"
+fi
+if [[ -f "${ROOT}/appliance/scripts/debug-agent-log.sh" ]]; then
+  cp "${ROOT}/appliance/scripts/debug-agent-log.sh" "${BUNDLE_DIR}/scripts/debug-agent-log.sh"
+fi
+if [[ -f "${DEPLOY_SRC}/scripts/post-configure.sh" ]]; then
+  cp "${DEPLOY_SRC}/scripts/post-configure.sh" "${BUNDLE_DIR}/scripts/post-configure.sh"
+fi
+if [[ -f "${DEPLOY_SRC}/scripts/manifest-utils.sh" ]]; then
+  cp "${DEPLOY_SRC}/scripts/manifest-utils.sh" "${BUNDLE_DIR}/scripts/manifest-utils.sh"
 fi
 chmod 0755 "${BUNDLE_DIR}/scripts/"*.sh
 

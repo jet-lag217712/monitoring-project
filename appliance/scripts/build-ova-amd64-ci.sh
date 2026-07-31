@@ -92,7 +92,7 @@ mkdir -p "${CI_SEED_DIR}"
 
 cat >"${CI_SEED_DIR}/meta-data" <<EOF
 instance-id: equate-appliance-amd64-build
-local-hostname: equate-appliance-build
+local-hostname: equate-appliance
 EOF
 
 PUB_KEY="$(cat "${SSH_PUB}")"

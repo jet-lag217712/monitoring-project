@@ -16,6 +16,7 @@ Usage:
   ${SCRIPT_NAME} disable <username>
   ${SCRIPT_NAME} enable <username>
   ${SCRIPT_NAME} reset-password <username> <password>
+  ${SCRIPT_NAME} delete <username>
 EOF
 }
 
@@ -123,6 +124,45 @@ reset_password() {
   echo "reset password for ${USERNAME}"
 }
 
+count_enabled_appliance_users() {
+  local members user count=0 status
+  members="$(getent group "${APPLIANCE_GROUP}" | awk -F: '{print $4}')"
+  if [[ -z "${members}" ]]; then
+    echo 0
+    return
+  fi
+  IFS=',' read -ra users <<< "${members}"
+  for user in "${users[@]}"; do
+    [[ -z "${user}" ]] && continue
+    status="$(passwd -S "${user}" 2>/dev/null | awk '{print $2}')"
+    if [[ "${status}" != "L" && "${status}" != "LK" ]]; then
+      count=$((count + 1))
+    fi
+  done
+  echo "${count}"
+}
+
+delete_user() {
+  require_username
+  if ! id "${USERNAME}" &>/dev/null; then
+    echo "user not found" >&2
+    exit 1
+  fi
+  if ! in_appliance_group; then
+    echo "user is not an appliance account" >&2
+    exit 1
+  fi
+  local enabled_count status
+  enabled_count="$(count_enabled_appliance_users)"
+  status="$(passwd -S "${USERNAME}" 2>/dev/null | awk '{print $2}')"
+  if [[ "${enabled_count}" -le 1 ]] && [[ "${status}" != "L" && "${status}" != "LK" ]]; then
+    echo "cannot delete the last enabled appliance user" >&2
+    exit 1
+  fi
+  userdel -r "${USERNAME}" 2>/dev/null || userdel "${USERNAME}"
+  echo "deleted ${USERNAME}"
+}
+
 require_root
 
 case "${OPERATION}" in
@@ -131,6 +171,7 @@ case "${OPERATION}" in
   disable) set_lock disable ;;
   enable) set_lock enable ;;
   reset-password) reset_password ;;
+  delete) delete_user ;;
   *)
     usage >&2
     exit 2

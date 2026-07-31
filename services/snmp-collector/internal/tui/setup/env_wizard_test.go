@@ -9,7 +9,7 @@ import (
 )
 
 func TestApplianceEnvInputsOnlySNMP(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileAppliance)
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileAppliance, RunOptions{})
 	if len(m.envInputs) != 2 {
 		t.Fatalf("inputs=%d", len(m.envInputs))
 	}
@@ -30,7 +30,7 @@ func TestSharedEnvValuesApplianceMergesMQTT(t *testing.T) {
 	applianceComposeEnv = composeEnv
 	t.Cleanup(func() { applianceComposeEnv = orig })
 
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileAppliance)
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileAppliance, RunOptions{})
 	m.envInputs[0].SetValue("lab-read")
 	m.envInputs[1].SetValue("lab-discover")
 

@@ -211,7 +211,31 @@ check_first_boot_service() {
     || systemctl is-enabled equate-setup.service >/dev/null 2>&1; then
     pass "first-boot systemd unit is enabled"
   else
-    note "WARN first-boot systemd unit not found (name may differ on this build)"
+    fail "first-boot systemd unit is not enabled"
+  fi
+}
+
+check_guest_hostname() {
+  local hn
+  hn="$(hostname)"
+  case "${hn}" in
+    equate-appliance)
+      pass "hostname is equate-appliance"
+      ;;
+    equate-appliance-build)
+      fail "hostname still set to CI build name: ${hn}"
+      ;;
+    *)
+      note "WARN unexpected hostname: ${hn}"
+      ;;
+  esac
+}
+
+check_build_accounts_absent() {
+  if id debian >/dev/null 2>&1; then
+    fail "CI build account debian still present"
+  else
+    pass "CI build account debian removed"
   fi
 }
 
@@ -241,6 +265,8 @@ main() {
       check_no_default_credentials
       check_clone_artifacts_absent
       check_machine_identity
+      check_guest_hostname
+      check_build_accounts_absent
       check_first_boot_service
       if [[ "${CONFIGURED}" -eq 1 ]]; then
         check_configured_stack
