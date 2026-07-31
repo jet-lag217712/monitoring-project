@@ -210,7 +210,14 @@ tar -cf - \
 ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo install -m 0755 /tmp/equate-ci-scripts/configure-vm.sh /tmp/equate-ci-scripts/prepare-ova.sh /tmp/equate-ci-scripts/provision-guest.sh ${STAGING}/ && sudo rm -rf /tmp/equate-ci-scripts"
 
 echo "==> provisioning appliance on guest (configure-vm + prepare-ova); this may take 30+ minutes"
+# Account removal / poweroff may drop the SSH session; the guest continues as root and powers off.
+set +e
 ssh "${SSH_OPTS[@]}" debian@127.0.0.1 "sudo bash ${STAGING}/provision-guest.sh ${VERSION}"
+_provision_rc=$?
+set -e
+if [[ "${_provision_rc}" -ne 0 ]]; then
+  echo "==> guest SSH exited ${_provision_rc} (may be expected after build-account removal or poweroff)"
+fi
 
 echo "==> waiting for QEMU to exit after guest poweroff"
 wait "${QEMU_PID}" || true

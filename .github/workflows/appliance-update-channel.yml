@@ -142,6 +142,16 @@ jobs:
             --arch "${{ steps.meta.outputs.arch }}" \
             --version "${{ steps.meta.outputs.version }}"
 
+      # free-disk-space (large-packages) removes azure-cli; reinstall after packaging.
+      - name: Install Azure CLI
+        run: |
+          if command -v az >/dev/null 2>&1; then
+            az version
+            exit 0
+          fi
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          az version
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
