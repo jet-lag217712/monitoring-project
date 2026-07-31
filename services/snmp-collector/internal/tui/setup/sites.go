@@ -15,30 +15,30 @@ import (
 )
 
 const (
-	defaultSiteCount   = 4
-	minSiteCount       = 1
-	maxSiteCount       = 16
+	defaultSiteCount = 4
+	minSiteCount     = 1
+	maxSiteCount     = 36
 	// Avoid collisions with development cloud admin ports (ingestion :9091, API :9092).
-	baseAdminPort      = 19090
-	manifestFile       = "sites/manifest.yaml"
+	baseAdminPort        = 19090
+	manifestFile         = "sites/manifest.yaml"
 	generatedComposeFile = "docker-compose.sites.generated.yml"
-	collectorTemplate  = "configs/collector.yaml"
-	maxSiteIDLen       = 100
+	collectorTemplate    = "configs/collector.yaml"
+	maxSiteIDLen         = 100
 )
 
 var siteIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // SiteSpec describes one isolated collector site in a multi-site deployment.
 type SiteSpec struct {
-	Index            int      `yaml:"index"`
-	SiteID           string   `yaml:"site_id"`
-	CollectorID      string   `yaml:"collector_id"`
-	MQTTClientID     string   `yaml:"mqtt_client_id"`
-	ServiceName      string   `yaml:"service_name"`
-	CIDR             string   `yaml:"cidr"`
-	AdminPort        int      `yaml:"admin_port"`
-	UpstreamSiteIDs  []string `yaml:"upstream_site_ids,omitempty"`
-	HubDeviceIDs     []string `yaml:"hub_device_ids,omitempty"`
+	Index           int      `yaml:"index"`
+	SiteID          string   `yaml:"site_id"`
+	CollectorID     string   `yaml:"collector_id"`
+	MQTTClientID    string   `yaml:"mqtt_client_id"`
+	ServiceName     string   `yaml:"service_name"`
+	CIDR            string   `yaml:"cidr"`
+	AdminPort       int      `yaml:"admin_port"`
+	UpstreamSiteIDs []string `yaml:"upstream_site_ids,omitempty"`
+	HubDeviceIDs    []string `yaml:"hub_device_ids,omitempty"`
 }
 
 // Manifest is the generated multi-site deployment contract.
@@ -248,18 +248,18 @@ func LoadManifest(deployDir string) (Manifest, error) {
 }
 
 type collectorTemplateDoc struct {
-	SiteID       string               `yaml:"site_id"`
+	SiteID       string                 `yaml:"site_id"`
 	Collector    config.CollectorConfig `yaml:"collector"`
-	PollInterval string               `yaml:"poll_interval"`
-	MaxWorkers   int                  `yaml:"max_workers"`
-	Admin        config.AdminConfig   `yaml:"admin"`
-	SNMP         config.SNMPConfig    `yaml:"snmp"`
+	PollInterval string                 `yaml:"poll_interval"`
+	MaxWorkers   int                    `yaml:"max_workers"`
+	Admin        config.AdminConfig     `yaml:"admin"`
+	SNMP         config.SNMPConfig      `yaml:"snmp"`
 	Publisher    config.PublisherConfig `yaml:"publisher"`
-	Buffer       config.BufferConfig  `yaml:"buffer"`
-	MQTT         config.MQTTConfig    `yaml:"mqtt"`
+	Buffer       config.BufferConfig    `yaml:"buffer"`
+	MQTT         config.MQTTConfig      `yaml:"mqtt"`
 	Inventory    config.InventoryConfig `yaml:"inventory"`
 	Discovery    config.DiscoveryConfig `yaml:"discovery"`
-	Devices      []config.DeviceConfig `yaml:"devices"`
+	Devices      []config.DeviceConfig  `yaml:"devices"`
 }
 
 // WriteSiteArtifacts generates per-site static config and managed discovery seed.
