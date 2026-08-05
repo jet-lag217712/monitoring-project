@@ -339,7 +339,7 @@ Operator flow:
 
 1. Read installed version and channel latest
 2. Prompt for confirmation (`Type UPGRADE to continue`, unless `--yes`)
-3. Download the `.eqa` to the appliance download directory
+3. Download the `.eqa` to `/var/lib/equate/downloads`
 4. Verify SHA-256 and Ed25519 signature against the embedded public key
 5. Extract to `/tmp/equate-staging/bundle`
 6. Run `configure-vm.sh --upgrade` (preserves sites, secrets, and migrations)
