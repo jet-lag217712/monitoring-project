@@ -12,15 +12,14 @@ export default function DashboardPage({ dashboard }) {
     handleDeviceBack,
     handleDeviceClick,
     handleInterfaceSelect,
+    handleRenameLocation,
     handleSiteClick,
     lastUpdated,
     loadError,
-    searchQuery,
     selectedDevice,
     selectedSite,
-    setSearchQuery,
     siteDetail,
-    visibleSites,
+    sites,
     dataMode,
   } = dashboard
 
@@ -50,17 +49,16 @@ export default function DashboardPage({ dashboard }) {
         siteId={selectedSite}
         onBack={handleBack}
         onDeviceClick={handleDeviceClick}
+        onRenameLocation={handleRenameLocation}
       />
     )
   }
 
   return (
     <SitesGrid
-      sites={visibleSites}
+      sites={sites}
       onSiteClick={handleSiteClick}
       lastUpdated={lastUpdated}
-      searchQuery={searchQuery}
-      onSearchQueryChange={setSearchQuery}
       dataMode={dataMode}
       loadError={loadError}
     />

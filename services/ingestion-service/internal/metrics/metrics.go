@@ -17,6 +17,9 @@ type Ingestion struct {
 	ProcessingDuration   prometheus.Histogram
 	MQTTConnected        prometheus.Gauge
 	MQTTSubscribed       prometheus.Gauge
+	RetentionDeleted     *prometheus.CounterVec
+	RetentionErrors      prometheus.Counter
+	RetentionRunDuration prometheus.Histogram
 }
 
 // New registers all ingestion metrics on the default Prometheus registerer.
@@ -61,6 +64,19 @@ func NewWithRegisterer(reg prometheus.Registerer) *Ingestion {
 			Name: "ingestion_mqtt_subscribed",
 			Help: "Whether MQTT telemetry topic subscription is active (1=subscribed, 0=not subscribed)",
 		}),
+		RetentionDeleted: mustCounterVec(factory, prometheus.CounterOpts{
+			Name: "ingestion_retention_deleted_total",
+			Help: "Total rows deleted by the retention job",
+		}, []string{"table"}),
+		RetentionErrors: mustCounter(factory, prometheus.CounterOpts{
+			Name: "ingestion_retention_errors_total",
+			Help: "Total retention job errors",
+		}),
+		RetentionRunDuration: mustHistogram(factory, prometheus.HistogramOpts{
+			Name:    "ingestion_retention_run_duration_seconds",
+			Help:    "Duration of a full retention prune pass",
+			Buckets: prometheus.DefBuckets,
+		}),
 	}
 	m.MQTTConnected.Set(0)
 	m.MQTTSubscribed.Set(0)
@@ -74,6 +90,12 @@ func Handler() http.Handler {
 
 func mustCounter(reg prometheus.Registerer, opts prometheus.CounterOpts) prometheus.Counter {
 	c := prometheus.NewCounter(opts)
+	reg.MustRegister(c)
+	return c
+}
+
+func mustCounterVec(reg prometheus.Registerer, opts prometheus.CounterOpts, labels []string) *prometheus.CounterVec {
+	c := prometheus.NewCounterVec(opts, labels)
 	reg.MustRegister(c)
 	return c
 }

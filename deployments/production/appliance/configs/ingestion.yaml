@@ -21,3 +21,9 @@ database:
   max_conns: 10
   min_conns: 1
   max_lifetime: 1h
+
+retention:
+  enabled: true
+  days: 30
+  interval: 1h
+  batch_size: 10000

@@ -26,7 +26,12 @@ export default function DeviceRow({ ip, device, renderStatus, onClick }) {
   return (
     <tr {...interactiveProps}>
       <td><span className="ups-ip">{displayIP}</span></td>
-      <td style={mutedCellStyle}>{device.hostname ?? '—'}</td>
+      <td style={mutedCellStyle}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {device.hostname ?? '—'}
+          {device.administratively_ignored ? <span className="ignored-pill">Ignored</span> : null}
+        </span>
+      </td>
       <td style={mutedCellStyle}>{device.role ?? '—'}</td>
       <td>{renderStatus(device.status)}</td>
       <td>

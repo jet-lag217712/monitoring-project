@@ -42,24 +42,14 @@ async function fetchJson(path, errorMessage, options = {}) {
   const res = await fetch(url, fetchOptions)
 
   if (res.status === 401) {
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'sitesApi.js:fetchJson',message:'API 401 unauthorized',data:{path,url},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     throw new ApiError('Unauthorized', 401)
   }
 
   if (!res.ok) {
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'sitesApi.js:fetchJson',message:'API error response',data:{path,url,status:res.status},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     throw new ApiError(`${errorMessage} with ${res.status}`, res.status)
   }
 
-  const json = await res.json()
-  // #region agent log
-  fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'sitesApi.js:fetchJson',message:'API success',data:{path,url,topLevelKeys:json&&typeof json==='object'?Object.keys(json).slice(0,10):[],deviceCount:path.includes('/sites/')&&json?.latest?.devices?Object.keys(json.latest.devices).length:undefined,siteCount:path==='/api/sites'&&json?Object.keys(json).length:undefined},timestamp:Date.now(),hypothesisId:'F'})}).catch(()=>{});
-  // #endregion
-  return json
+  return res.json()
 }
 
 export function fetchSitesFromApi() {
@@ -68,6 +58,14 @@ export function fetchSitesFromApi() {
 
 export function fetchSiteDetailFromApi(siteId) {
   return fetchJson(`/api/sites/${encodeURIComponent(siteId)}`, 'Site detail request failed')
+}
+
+export function updateSiteLocation(siteId, location) {
+  return fetchJson(`/api/sites/${encodeURIComponent(siteId)}`, 'Site rename request failed', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location }),
+  })
 }
 
 export function fetchTestConfigFromApi() {
@@ -105,4 +103,9 @@ export function fetchDeviceMetricsFromApi(deviceId, { siteId, metric, start, end
 
 export function fetchAlertsFromApi() {
   return fetchJson('/api/alerts', 'Alerts request failed')
+}
+
+export function fetchSearchFromApi(query) {
+  const qs = new URLSearchParams({ q: query }).toString()
+  return fetchJson(`/api/search?${qs}`, 'Search request failed')
 }

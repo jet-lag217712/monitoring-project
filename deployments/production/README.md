@@ -46,9 +46,12 @@ For customer installation, use the checksummed offline release and follow
 sudo equate configure              # full wizard
 sudo equate configure --sites      # sites/SNMP/thresholds only
 sudo equate configure --users      # user management only
+sudo equate configure --temperature 80  # global temperature warning only
 
 # Day-2 collector configuration, per site
 equate view <site-id>
+equate sites                       # list sites
+sudo equate sites delete <site-id> # remove one site (type site-id to confirm, or --yes)
 
 # Day-2 user administration
 equate users list

@@ -69,14 +69,14 @@ func TestHealthStatusCode(t *testing.T) {
 }
 
 func TestProjectDeviceStatus_StaleHealthyFallsBackToCritical(t *testing.T) {
-	proj := derive.ProjectDeviceStatus("healthy", true, "", 0, nil, nil, nil, false)
+	proj := derive.ProjectDeviceStatus("healthy", true, "", 0, nil, nil, nil, false, true)
 	if proj.Status != derive.StatusCritical {
 		t.Fatalf("stale healthy device should be critical, got %d", proj.Status)
 	}
 }
 
 func TestProjectDeviceStatus_CriticalVsUnknown(t *testing.T) {
-	critical := derive.ProjectDeviceStatus("critical", true, "poll_failed", 2, nil, nil, nil, false)
+	critical := derive.ProjectDeviceStatus("critical", true, "poll_failed", 2, nil, nil, nil, false, true)
 	if critical.Status != derive.StatusCritical {
 		t.Fatalf("critical status=%d", critical.Status)
 	}
@@ -90,6 +90,7 @@ func TestProjectDeviceStatus_CriticalVsUnknown(t *testing.T) {
 		[]string{"dist-01", "dist-02"},
 		[]string{"core-01"},
 		false,
+		true,
 	)
 	if unknown.Status != derive.StatusUnknown {
 		t.Fatalf("unknown status=%d", unknown.Status)
@@ -101,7 +102,7 @@ func TestProjectDeviceStatus_CriticalVsUnknown(t *testing.T) {
 		t.Fatalf("root cause=%v", unknown.RootCauseDeviceIDs)
 	}
 
-	fallback := derive.ProjectDeviceStatus("", false, "", 0, nil, nil, nil, true)
+	fallback := derive.ProjectDeviceStatus("", false, "", 0, nil, nil, nil, true, true)
 	if fallback.Status != derive.StatusHealthy {
 		t.Fatalf("v1 fallback online should be healthy, got %d", fallback.Status)
 	}
@@ -109,10 +110,10 @@ func TestProjectDeviceStatus_CriticalVsUnknown(t *testing.T) {
 
 func TestSiteHealthCounts_DistinguishCriticalAndUnknown(t *testing.T) {
 	var counts derive.SiteHealthCounts
-	counts.Accumulate(derive.StatusCritical, nil)
-	counts.Accumulate(derive.StatusUnknown, []string{"dist-01"})
-	counts.Accumulate(derive.StatusWarning, nil)
-	counts.Accumulate(derive.StatusHealthy, nil)
+	counts.Accumulate(derive.StatusCritical, nil, true)
+	counts.Accumulate(derive.StatusUnknown, []string{"dist-01"}, true)
+	counts.Accumulate(derive.StatusWarning, nil, true)
+	counts.Accumulate(derive.StatusHealthy, nil, true)
 
 	if counts.CriticalCount != 1 {
 		t.Fatalf("critical_count=%d", counts.CriticalCount)
@@ -125,6 +126,12 @@ func TestSiteHealthCounts_DistinguishCriticalAndUnknown(t *testing.T) {
 	}
 	if derive.SiteStatusFromHealth(counts) != "alert" {
 		t.Fatal("site with critical should be alert")
+	}
+
+	ignored := derive.SiteHealthCounts{}
+	ignored.Accumulate(derive.StatusCritical, nil, false)
+	if ignored.CriticalCount != 0 {
+		t.Fatal("administratively ignored critical must not count")
 	}
 
 	warningOnly := derive.SiteHealthCounts{WarningCount: 1}

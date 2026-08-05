@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/equate/ogsd/services/ingestion-service/internal/config"
 )
@@ -97,5 +98,49 @@ func TestLoad_OK(t *testing.T) {
 	}
 	if cfg.Admin.Listen != ":9091" {
 		t.Fatalf("listen=%q", cfg.Admin.Listen)
+	}
+	if !cfg.Retention.IsEnabled() {
+		t.Fatal("retention should default to enabled")
+	}
+	if cfg.Retention.Days != 30 {
+		t.Fatalf("days=%d", cfg.Retention.Days)
+	}
+	if cfg.Retention.Interval != time.Hour {
+		t.Fatalf("interval=%s", cfg.Retention.Interval)
+	}
+	if cfg.Retention.BatchSize != 10000 {
+		t.Fatalf("batch_size=%d", cfg.Retention.BatchSize)
+	}
+}
+
+func TestLoad_RetentionDisabled(t *testing.T) {
+	t.Setenv("MQTT_PASSWORD", "ingestion")
+	t.Setenv("DATABASE_URL", "postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable")
+	body := baseYAML() + `
+retention:
+  enabled: false
+`
+	cfg, err := config.Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Retention.IsEnabled() {
+		t.Fatal("expected retention disabled")
+	}
+}
+
+func TestLoad_RetentionInvalidDays(t *testing.T) {
+	t.Setenv("MQTT_PASSWORD", "ingestion")
+	t.Setenv("DATABASE_URL", "postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable")
+	body := baseYAML() + `
+retention:
+  enabled: true
+  days: -1
+  interval: 1h
+  batch_size: 1000
+`
+	_, err := config.Load(writeConfig(t, body))
+	if err == nil {
+		t.Fatal("expected error for days <= 0")
 	}
 }

@@ -25,6 +25,7 @@ explicitly indicated in the UI and must not be used for an appliance release.
 | `VITE_API_BASE_URL` | API origin; appliance default is `/api` |
 | `VITE_AUTH_MODE` | Use `appliance_local` for the packaged appliance |
 | `VITE_DEMO_ENABLED` | `true` enables mock fallback for development only |
+| `VITE_APP_VERSION` | Release version shown in the footer; same value as `equate version` (`buildVersion`). Appliance builds pass the release `--version`. Local/dev defaults to `git describe`. |
 
 ## Production image
 
@@ -33,6 +34,7 @@ docker build \
   --build-arg VITE_API_BASE_URL=/api \
   --build-arg VITE_AUTH_MODE=appliance_local \
   --build-arg VITE_DEMO_ENABLED=false \
+  --build-arg VITE_APP_VERSION=1.4.0 \
   -t equate/frontend:local .
 ```
 

@@ -51,12 +51,12 @@ func main() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: equate <command>\n\nCommands:\n")
-	fmt.Fprintf(os.Stderr, "  configure   Run appliance setup wizard (--sites or --users)\n")
+	fmt.Fprintf(os.Stderr, "  configure   Run appliance setup wizard (--sites, --users, or --temperature <celsius>)\n")
 	fmt.Fprintf(os.Stderr, "  users       Manage local appliance users (create, delete, list, …)\n")
 	fmt.Fprintf(os.Stderr, "  reset       Stop containers and clear setup state (--hard for full wipe, no restart)\n")
 	fmt.Fprintf(os.Stderr, "  upgrade     In-place upgrade (channel, --bundle, --check, --rollback)\n")
 	fmt.Fprintf(os.Stderr, "  view <site> Open per-site collector operator TUI\n")
-	fmt.Fprintf(os.Stderr, "  sites       List configured sites from manifest\n")
+	fmt.Fprintf(os.Stderr, "  sites       List or delete configured sites (list, delete)\n")
 	fmt.Fprintf(os.Stderr, "  status      Summarize stack health\n")
 	fmt.Fprintf(os.Stderr, "  version     Show release version\n")
 }

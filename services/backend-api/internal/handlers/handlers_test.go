@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,9 @@ func TestErrorEnvelopeShape(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:5173" {
 		t.Fatalf("missing CORS origin: %v", rec.Header())
+	}
+	if !strings.Contains(rec.Header().Get("Access-Control-Allow-Methods"), "PATCH") {
+		t.Fatalf("PATCH missing from Allow-Methods: %v", rec.Header().Get("Access-Control-Allow-Methods"))
 	}
 }
 
@@ -248,5 +252,25 @@ func TestDeviceDetailJSONKeys(t *testing.T) {
 	}
 	if decoded["status"].(float64) != 0 {
 		t.Fatalf("status=%v", decoded["status"])
+	}
+}
+
+func TestSiteLocationUpdateJSONKeys(t *testing.T) {
+	update := models.SiteLocationUpdate{
+		SiteID:   "district-office",
+		Location: "District Office",
+	}
+	raw, err := json.Marshal(update)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"site_id", "location"} {
+		if _, ok := decoded[key]; !ok {
+			t.Fatalf("missing key %q", key)
+		}
 	}
 }

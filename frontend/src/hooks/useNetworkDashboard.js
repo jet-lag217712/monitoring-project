@@ -8,12 +8,15 @@ import {
   fetchDeviceFromApi,
   fetchDeviceInterfacesFromApi,
   fetchDeviceMetricsFromApi,
+  fetchSearchFromApi,
   fetchSiteDetailFromApi,
   fetchSitesFromApi,
   fetchTestConfigFromApi,
+  updateSiteLocation,
 } from '../services/sitesApi.js'
 import { adaptApiAlerts, adaptDeviceDetail, metricsToSeries } from '../utils/deviceAdapters.js'
 import { buildAlerts, filterSitesBySearch, normalizeSites } from '../utils/siteData.js'
+import { filterDevicesFromSiteDetails, mergeDeviceSearchHits } from '../utils/searchData.js'
 
 function getActiveDemoScenario() {
   return mockScenarios[ACTIVE_DEMO] ?? mockScenarios['all-healthy']
@@ -38,6 +41,9 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
   const [sites, setSites] = useState(initialSites)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchDeviceHits, setSearchDeviceHits] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
   const [selectedSite, setSelectedSite] = useState(null)
   const [selectedDevice, setSelectedDevice] = useState(null)
   const [selectedInterfaceByDevice, setSelectedInterfaceByDevice] = useState({})
@@ -54,6 +60,7 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   const dataModeRef = useRef(dataMode)
   const siteFetchSeqRef = useRef(0)
   const deviceFetchSeqRef = useRef(0)
+  const searchSeqRef = useRef(0)
   siteDetailRef.current = siteDetail
   dataModeRef.current = dataMode
 
@@ -294,7 +301,75 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
     return () => clearInterval(id)
   }, [enabled, selectedSite, selectedDevice, fetchDeviceDetail])
 
+  useEffect(() => {
+    if (!enabled || !searchOpen) {
+      searchSeqRef.current += 1
+      setSearchDeviceHits([])
+      setSearchLoading(false)
+      return undefined
+    }
+
+    const needle = deferredSearchQuery.trim()
+    if (!needle) {
+      searchSeqRef.current += 1
+      setSearchDeviceHits([])
+      setSearchLoading(false)
+      return undefined
+    }
+
+    const seq = ++searchSeqRef.current
+    setSearchLoading(true)
+
+    const run = async () => {
+      const localDetails = {}
+      if (siteDetailRef.current?.site_id) {
+        localDetails[siteDetailRef.current.site_id] = siteDetailRef.current
+      }
+      if (DEMO_ENABLED || dataModeRef.current === 'demo') {
+        const scenario = getActiveDemoScenario()
+        Object.assign(localDetails, scenario.details ?? {})
+      }
+      const localHits = filterDevicesFromSiteDetails(localDetails, needle)
+
+      try {
+        if (dataModeRef.current === 'demo' && DEMO_ENABLED) {
+          if (seq !== searchSeqRef.current) return
+          setSearchDeviceHits(localHits)
+          return
+        }
+        const apiResult = await fetchSearchFromApi(needle)
+        if (seq !== searchSeqRef.current) return
+        setSearchDeviceHits(mergeDeviceSearchHits(apiResult.devices, localHits))
+      } catch (err) {
+        console.error('Search failed:', err)
+        if (handleUnauthorized(err)) return
+        if (seq !== searchSeqRef.current) return
+        setSearchDeviceHits(localHits)
+      } finally {
+        if (seq === searchSeqRef.current) {
+          setSearchLoading(false)
+        }
+      }
+    }
+
+    void run()
+    return undefined
+  }, [enabled, searchOpen, deferredSearchQuery, handleUnauthorized])
+
+  const openSearch = () => {
+    setSearchOpen(true)
+  }
+
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchDeviceHits([])
+    setSearchLoading(false)
+  }
+
   const handleSiteClick = siteId => {
+    setSearchOpen(false)
+    setSearchQuery('')
     setSelectedSite(siteId)
     setSelectedDevice(null)
     setDeviceDetail(null)
@@ -302,6 +377,8 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   }
 
   const handleBack = () => {
+    setSearchOpen(false)
+    setSearchQuery('')
     setSelectedSite(null)
     setSelectedDevice(null)
     setSelectedInterfaceByDevice({})
@@ -310,9 +387,22 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
   }
 
   const handleDeviceClick = ip => {
+    setSearchOpen(false)
+    setSearchQuery('')
     setDeviceDetail(null)
     setDeviceError(null)
     setSelectedDevice(ip)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleSearchDeviceSelect = hit => {
+    if (!hit?.site_id) return
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSelectedSite(hit.site_id)
+    setSelectedDevice(hit.map_key || hit.hostname || hit.ip_address)
+    setDeviceDetail(null)
+    setDeviceError(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -331,8 +421,45 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
   const getSelectedInterfaceKey = deviceIp => selectedInterfaceByDevice[deviceIp] ?? null
 
+  const handleRenameLocation = useCallback(
+    async (siteId, location) => {
+      const nextLabel = String(location ?? '').trim()
+
+      if (dataModeRef.current === 'demo' && DEMO_ENABLED) {
+        const display = nextLabel || siteId
+        setSites(prev => {
+          const next = prev.map(site => (site.site_id === siteId ? { ...site, location: display } : site))
+          setAlerts(buildAlerts(next))
+          return next
+        })
+        setSiteDetail(prev => (prev && prev.site_id === siteId ? { ...prev, location: display } : prev))
+        return { site_id: siteId, location: display }
+      }
+
+      try {
+        const updated = await updateSiteLocation(siteId, nextLabel)
+        setSiteDetail(prev =>
+          prev && prev.site_id === siteId ? { ...prev, location: updated.location } : prev,
+        )
+        await fetchSites()
+        return updated
+      } catch (err) {
+        handleUnauthorized(err)
+        throw err
+      }
+    },
+    [fetchSites, handleUnauthorized],
+  )
+
+  const siteHits = filterSitesBySearch(sites, deferredSearchQuery).map(site => ({
+    kind: 'site',
+    site_id: site.site_id,
+    location: site.location,
+  }))
+
   return {
     alerts,
+    closeSearch,
     dataMode,
     deviceDetail,
     deviceError,
@@ -342,15 +469,22 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
     handleDeviceBack,
     handleDeviceClick,
     handleInterfaceSelect,
+    handleRenameLocation,
+    handleSearchDeviceSelect,
     handleSiteClick,
     lastUpdated,
     loadError,
+    openSearch,
+    searchDeviceHits,
+    searchLoading,
+    searchOpen,
     searchQuery,
+    searchSiteHits: siteHits,
     selectedDevice,
     selectedSite,
     setSearchQuery,
     siteDetail,
     sites,
-    visibleSites: filterSitesBySearch(sites, deferredSearchQuery),
+    visibleSites: sites,
   }
 }

@@ -41,6 +41,14 @@ const (
 	minTemperatureCelsius = -100.0
 )
 
+// ValidateTemperatureWarningC rejects temperatures outside the supported warning range.
+func ValidateTemperatureWarningC(v float64) error {
+	if v < minTemperatureCelsius || v > maxTemperatureCelsius {
+		return fmt.Errorf("temperature_warning_c must be between %.0f and %.0f", minTemperatureCelsius, maxTemperatureCelsius)
+	}
+	return nil
+}
+
 var (
 	identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	envNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -163,7 +171,10 @@ type DeviceConfig struct {
 	TemperatureWarningC *float64              `yaml:"temperature_warning_c"`
 	Role                string                `yaml:"role"`
 	UpstreamDeviceIDs   []string              `yaml:"upstream_device_ids"`
-	InterfaceFilters    InterfaceFilterConfig `yaml:"interface_filters"`
+	// AlertsEnabled controls whether offline/critical health drives site alerts.
+	// nil or true = normal alerting; false = Administratively Ignored (still polled).
+	AlertsEnabled    *bool                 `yaml:"alerts_enabled"`
+	InterfaceFilters InterfaceFilterConfig `yaml:"interface_filters"`
 }
 
 // InterfaceFilterConfig contains ordered rules and roadmap shorthand filters.
@@ -536,6 +547,10 @@ func applyDeviceOverlay(base, overlay DeviceConfig) DeviceConfig {
 	}
 	if strings.TrimSpace(overlay.Role) != "" {
 		base.Role = strings.TrimSpace(overlay.Role)
+	}
+	if overlay.AlertsEnabled != nil {
+		value := *overlay.AlertsEnabled
+		base.AlertsEnabled = &value
 	}
 	if hasInterfaceFilterConfig(overlay.InterfaceFilters) {
 		base.InterfaceFilters = cloneInterfaceFilters(overlay.InterfaceFilters)
@@ -1211,6 +1226,20 @@ func (d DeviceConfig) EffectiveTemperatureWarningC(global float64) float64 {
 	return global
 }
 
+// AlertsEnabledOrDefault reports whether offline/critical health should drive site alerts.
+// Administratively Ignored devices return false; omitted/nil defaults to true.
+func (d DeviceConfig) AlertsEnabledOrDefault() bool {
+	if d.AlertsEnabled == nil {
+		return true
+	}
+	return *d.AlertsEnabled
+}
+
+// AdministrativelyIgnored reports whether the device is monitored without alerting.
+func (d DeviceConfig) AdministrativelyIgnored() bool {
+	return !d.AlertsEnabledOrDefault()
+}
+
 // EffectiveSNMP returns shared SNMP settings with device overrides applied.
 func (d DeviceConfig) EffectiveSNMP(shared SNMPConfig) SNMPConfig {
 	if d.Timeout > 0 {
@@ -1271,6 +1300,9 @@ func ConfigRevision(cfg *Config) string {
 		}
 		if d.TemperatureWarningC != nil {
 			_, _ = fmt.Fprintf(h, "tw=%.4f;", *d.TemperatureWarningC)
+		}
+		if d.AlertsEnabled != nil {
+			_, _ = fmt.Fprintf(h, "ae=%t;", *d.AlertsEnabled)
 		}
 		if d.PollInterval > 0 {
 			_, _ = fmt.Fprintf(h, "pi=%s;", d.PollInterval)

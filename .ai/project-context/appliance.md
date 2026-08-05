@@ -64,8 +64,9 @@ permissioned host broker socket. The API is unprivileged, never mounts
 revocable sessions. Appliance users are not members of the Docker group.
 
 Day-2 operator commands (`equate view`, `equate configure`, `equate users`,
-`equate upgrade`) are available to members of the `equate-appliance` group via
-passwordless sudo rules installed to `/etc/sudoers.d/equate-appliance`.
+`equate sites`, `equate upgrade`) are available to members of the
+`equate-appliance` group via passwordless sudo rules installed to
+`/etc/sudoers.d/equate-appliance`.
 
 Generated database, MQTT, TLS, session, and SNMP credentials remain outside
 release artifacts and are redacted from logs, diagnostics, manifests, and

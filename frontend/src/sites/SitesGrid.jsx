@@ -2,7 +2,6 @@ import LastUpdatedLabel from '../dashboard/LastUpdatedLabel.jsx'
 import OverviewStats from '../dashboard/OverviewStats.jsx'
 import PageHeader from '../dashboard/PageHeader.jsx'
 import PageNavStack from '../common/PageNavStack.jsx'
-import SearchBar from '../common/SearchBar.jsx'
 import SiteCard from './SiteCard.jsx'
 import { getSiteStats } from '../utils/siteData.js'
 
@@ -10,8 +9,6 @@ export default function SitesGrid({
   sites,
   onSiteClick,
   lastUpdated,
-  searchQuery,
-  onSearchQueryChange,
   dataMode,
   loadError,
 }) {
@@ -35,11 +32,6 @@ export default function SitesGrid({
 
       <OverviewStats stats={stats} />
 
-      <SearchBar
-        value={searchQuery}
-        onChange={onSearchQueryChange}
-      />
-
       {sites.length > 0 ? (
         <div className="sites-grid">
           {sites.map(site => (
@@ -52,11 +44,11 @@ export default function SitesGrid({
         </div>
       ) : (
         <div className="empty-state">
-          <div className="empty-state-title">No matching sites</div>
+          <div className="empty-state-title">No sites yet</div>
           <p className="empty-state-copy">
             {loadError
               ? 'Unable to load sites from the live API.'
-              : 'Try a different search term to find a campus, status, or site ID.'}
+              : 'Sites appear here once collectors begin reporting.'}
           </p>
         </div>
       )}

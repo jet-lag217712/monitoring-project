@@ -258,9 +258,11 @@ Production deployments use v2-only publishing and ingestion topics
 ([`collector-7.md`](../../.ai/decisions/collector-7.md)). The earlier Phase 4
 dual-publish migration window is closed because no production workload ever
 depended on v1 routes. Emergency dual-publish remains a documented override,
-not a deployment default. Initial v2 retention is append-only with no
-automated deletion or archival. Time-based indexes are required; partitioning
-or archival requires a later measured-capacity decision.
+not a deployment default. High-volume time-series and history are retained for
+30 days by default via the ingestion retention job
+([`database-1.md`](../../.ai/decisions/database-1.md)). Time-based indexes are
+required; partitioning or archival may be added later without changing the
+event contract.
 
 ## Security
 

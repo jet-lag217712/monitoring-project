@@ -5,25 +5,58 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/equate/ogsd/services/snmp-collector/internal/tui/setup"
 )
 
-func runConfigure(args []string) int {
-	mode := "full"
-	var extra []string
-	for _, arg := range args {
+type configureOptions struct {
+	mode        string
+	temperature *float64
+}
+
+func parseConfigureArgs(args []string) (configureOptions, error) {
+	opts := configureOptions{mode: "full"}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--sites":
-			mode = "sites"
+			opts.mode = "sites"
 		case "--users":
-			mode = "users"
+			opts.mode = "users"
+		case "--temperature":
+			if i+1 >= len(args) {
+				return configureOptions{}, fmt.Errorf("configure --temperature requires a Celsius value")
+			}
+			i++
+			raw := strings.TrimSpace(args[i])
+			v, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return configureOptions{}, fmt.Errorf("invalid temperature %q", raw)
+			}
+			opts.temperature = &v
 		default:
-			extra = append(extra, arg)
+			return configureOptions{}, fmt.Errorf("configure accepts only --sites, --users, or --temperature <celsius>")
 		}
 	}
-	if len(extra) != 0 {
-		fmt.Fprintln(os.Stderr, "configure accepts only --sites or --users")
+	if opts.temperature != nil && opts.mode != "full" {
+		return configureOptions{}, fmt.Errorf("configure --temperature cannot be combined with --sites or --users")
+	}
+	return opts, nil
+}
+
+func runConfigure(args []string) int {
+	opts, err := parseConfigureArgs(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 2
 	}
+	if opts.temperature != nil {
+		return runConfigureTemperature(*opts.temperature)
+	}
+	mode := opts.mode
+
 	deployDir, err := resolveDeployDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
@@ -53,6 +86,26 @@ func runConfigure(args []string) int {
 		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+func runConfigureTemperature(temp float64) int {
+	deployDir, err := resolveDeployDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
+	manifest, err := setup.LoadManifest(deployDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "applying %.0f°C temperature warning to %d site(s)...\n", temp, len(manifest.Sites))
+	if err := setup.ApplyGlobalTemperature(deployDir, temp); err != nil {
+		fmt.Fprintf(os.Stderr, "configure: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(os.Stdout, setup.FormatTemperatureApplied(temp, len(manifest.Sites)))
 	return 0
 }
 
