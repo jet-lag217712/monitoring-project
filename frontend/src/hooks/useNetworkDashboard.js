@@ -11,6 +11,7 @@ import {
   fetchSiteDetailFromApi,
   fetchSitesFromApi,
   fetchTestConfigFromApi,
+  updateSiteLocation,
 } from '../services/sitesApi.js'
 import { adaptApiAlerts, adaptDeviceDetail, metricsToSeries } from '../utils/deviceAdapters.js'
 import { buildAlerts, filterSitesBySearch, normalizeSites } from '../utils/siteData.js'
@@ -331,6 +332,36 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
 
   const getSelectedInterfaceKey = deviceIp => selectedInterfaceByDevice[deviceIp] ?? null
 
+  const handleRenameLocation = useCallback(
+    async (siteId, location) => {
+      const nextLabel = String(location ?? '').trim()
+
+      if (dataModeRef.current === 'demo' && DEMO_ENABLED) {
+        const display = nextLabel || siteId
+        setSites(prev => {
+          const next = prev.map(site => (site.site_id === siteId ? { ...site, location: display } : site))
+          setAlerts(buildAlerts(next))
+          return next
+        })
+        setSiteDetail(prev => (prev && prev.site_id === siteId ? { ...prev, location: display } : prev))
+        return { site_id: siteId, location: display }
+      }
+
+      try {
+        const updated = await updateSiteLocation(siteId, nextLabel)
+        setSiteDetail(prev =>
+          prev && prev.site_id === siteId ? { ...prev, location: updated.location } : prev,
+        )
+        await fetchSites()
+        return updated
+      } catch (err) {
+        handleUnauthorized(err)
+        throw err
+      }
+    },
+    [fetchSites, handleUnauthorized],
+  )
+
   return {
     alerts,
     dataMode,
@@ -342,6 +373,7 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
     handleDeviceBack,
     handleDeviceClick,
     handleInterfaceSelect,
+    handleRenameLocation,
     handleSiteClick,
     lastUpdated,
     loadError,

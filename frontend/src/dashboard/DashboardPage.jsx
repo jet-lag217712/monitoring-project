@@ -12,6 +12,7 @@ export default function DashboardPage({ dashboard }) {
     handleDeviceBack,
     handleDeviceClick,
     handleInterfaceSelect,
+    handleRenameLocation,
     handleSiteClick,
     lastUpdated,
     loadError,
@@ -50,6 +51,7 @@ export default function DashboardPage({ dashboard }) {
         siteId={selectedSite}
         onBack={handleBack}
         onDeviceClick={handleDeviceClick}
+        onRenameLocation={handleRenameLocation}
       />
     )
   }
