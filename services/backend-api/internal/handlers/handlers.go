@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/equate/ogsd/services/backend-api/internal/derive"
 	"github.com/equate/ogsd/services/backend-api/internal/models"
@@ -14,7 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// API serves the read-only monitoring REST endpoints.
+const maxSiteLocationLen = 255
+
+// API serves the monitoring REST endpoints.
 type API struct {
 	store           *store.Store
 	log             *slog.Logger
@@ -36,6 +41,7 @@ func New(s *store.Store, log *slog.Logger, onlineThreshold time.Duration) *API {
 func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sites", a.handleListSites)
 	mux.HandleFunc("GET /api/sites/{siteId}", a.handleGetSite)
+	mux.HandleFunc("PATCH /api/sites/{siteId}", a.handlePatchSite)
 	mux.HandleFunc("GET /api/sites/{siteId}/devices", a.handleListSiteDevices)
 	mux.HandleFunc("GET /api/devices/{deviceId}", a.handleGetDevice)
 	mux.HandleFunc("GET /api/devices/{deviceId}/interfaces", a.handleListInterfaces)
@@ -192,6 +198,56 @@ func (a *API) handleGetSite(w http.ResponseWriter, r *http.Request) {
 		},
 		Latest: models.SiteDetailLatest{Devices: deviceMap},
 	})
+}
+
+func (a *API) handlePatchSite(w http.ResponseWriter, r *http.Request) {
+	siteID := r.PathValue("siteId")
+	location, err := parsePatchSiteLocation(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	if err := a.store.UpdateSiteLocation(ctx, siteID, location); err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+
+	site, err := a.store.GetSiteByName(ctx, siteID)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+
+	loc := ""
+	if site.Location != nil {
+		loc = *site.Location
+	}
+	writeJSON(w, http.StatusOK, models.SiteLocationUpdate{
+		SiteID:   site.Name,
+		Location: derive.LocationOrName(loc, site.Name),
+	})
+}
+
+func parsePatchSiteLocation(body io.Reader) (*string, error) {
+	dec := json.NewDecoder(body)
+	dec.DisallowUnknownFields()
+	var req models.PatchSiteRequest
+	if err := dec.Decode(&req); err != nil {
+		return nil, errors.New("request body must be a JSON object with a location field")
+	}
+	if req.Location == nil {
+		return nil, errors.New("location is required")
+	}
+	trimmed := strings.TrimSpace(*req.Location)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(trimmed) > maxSiteLocationLen {
+		return nil, errors.New("location must be at most 255 characters")
+	}
+	return &trimmed, nil
 }
 
 func (a *API) handleListSiteDevices(w http.ResponseWriter, r *http.Request) {

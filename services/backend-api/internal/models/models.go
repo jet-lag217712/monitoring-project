@@ -50,6 +50,18 @@ type SiteDetail struct {
 	Latest                     SiteDetailLatest  `json:"latest"`
 }
 
+// PatchSiteRequest is PATCH /api/sites/{siteId}.
+// Location must be present; empty/whitespace clears the stored alias.
+type PatchSiteRequest struct {
+	Location *string `json:"location"`
+}
+
+// SiteLocationUpdate is the PATCH /api/sites/{siteId} response.
+type SiteLocationUpdate struct {
+	SiteID   string `json:"site_id"`
+	Location string `json:"location"`
+}
+
 // SiteDetailSummary is the detail-view summary (field names match mockData).
 type SiteDetailSummary struct {
 	TotalDevices            int `json:"total_devices"`

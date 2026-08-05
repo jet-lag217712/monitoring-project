@@ -35,7 +35,7 @@ func CORSWithCredentials(allowed []string, allowCredentials bool, next http.Hand
 					w.Header().Set("Access-Control-Allow-Credentials", "true")
 				}
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 		}
 

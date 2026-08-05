@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,6 +175,60 @@ func TestAPI_SitesAndDetailShapes(t *testing.T) {
 		var alerts []models.AlertInfo
 		if err := json.Unmarshal(rec.Body.Bytes(), &alerts); err != nil {
 			t.Fatal(err)
+		}
+	})
+
+	t.Run("patch site location set clear and 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPatch, "/api/sites/api-itest-site", strings.NewReader(`{"location":"Renamed Site"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("set status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var updated models.SiteLocationUpdate
+		if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+			t.Fatal(err)
+		}
+		if updated.SiteID != "api-itest-site" || updated.Location != "Renamed Site" {
+			t.Fatalf("updated=%+v", updated)
+		}
+
+		getReq := httptest.NewRequest(http.MethodGet, "/api/sites/api-itest-site", nil)
+		getRec := httptest.NewRecorder()
+		mux.ServeHTTP(getRec, getReq)
+		if getRec.Code != http.StatusOK {
+			t.Fatalf("get status=%d", getRec.Code)
+		}
+		var detail models.SiteDetail
+		if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail.Location != "Renamed Site" {
+			t.Fatalf("detail location=%q", detail.Location)
+		}
+
+		clearReq := httptest.NewRequest(http.MethodPatch, "/api/sites/api-itest-site", strings.NewReader(`{"location":"  "}`))
+		clearReq.Header.Set("Content-Type", "application/json")
+		clearRec := httptest.NewRecorder()
+		mux.ServeHTTP(clearRec, clearReq)
+		if clearRec.Code != http.StatusOK {
+			t.Fatalf("clear status=%d body=%s", clearRec.Code, clearRec.Body.String())
+		}
+		var cleared models.SiteLocationUpdate
+		if err := json.Unmarshal(clearRec.Body.Bytes(), &cleared); err != nil {
+			t.Fatal(err)
+		}
+		if cleared.Location != "api-itest-site" {
+			t.Fatalf("cleared location=%q want site_id fallback", cleared.Location)
+		}
+
+		missingReq := httptest.NewRequest(http.MethodPatch, "/api/sites/does-not-exist", strings.NewReader(`{"location":"X"}`))
+		missingReq.Header.Set("Content-Type", "application/json")
+		missingRec := httptest.NewRecorder()
+		mux.ServeHTTP(missingRec, missingReq)
+		if missingRec.Code != http.StatusNotFound {
+			t.Fatalf("missing status=%d body=%s", missingRec.Code, missingRec.Body.String())
 		}
 	})
 

@@ -21,7 +21,7 @@ var ErrAmbiguous = errors.New("ambiguous")
 // DefaultHistoryWindow is the lookback used for embedded device history.
 const DefaultHistoryWindow = 24 * time.Hour
 
-// Store provides read-only access to monitoring data.
+// Store provides monitoring data access (reads plus site display-alias writes).
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -197,6 +197,23 @@ func (s *Store) GetSiteByName(ctx context.Context, name string) (SiteRow, error)
 		return SiteRow{}, fmt.Errorf("get site: %w", err)
 	}
 	return r, nil
+}
+
+// UpdateSiteLocation sets or clears the display alias for a site by collector name.
+// A nil location clears sites.location so projections fall back to the site name.
+func (s *Store) UpdateSiteLocation(ctx context.Context, name string, location *string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE sites
+		SET location = $2
+		WHERE name = $1
+	`, name, location)
+	if err != nil {
+		return fmt.Errorf("update site location: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ListDevicesBySite returns devices for a site UUID with health and latest scalars.
