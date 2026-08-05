@@ -110,10 +110,12 @@ Appliance-level stack management. Deploy directory resolution:
 | Command | Purpose |
 |---------|---------|
 | `equate configure` | Run first-boot or reconfigure setup wizard |
+| `equate configure --temperature <celsius>` | Set global temperature warning on all site collectors |
 | `equate reset` | Stop containers and clear setup state (root required) |
 | `equate upgrade` | In-place release upgrade or rollback (root required) |
 | `equate view <site-id>` | Open per-site collector operator TUI |
-| `equate sites` | List configured sites from manifest |
+| `equate sites` / `equate sites list` | List configured sites from manifest |
+| `equate sites delete <site-id> [--yes]` | Remove a site (collector, artifacts, DB rows) |
 | `equate status` | Summarize stack and collector health |
 | `equate version` | Show release version |
 

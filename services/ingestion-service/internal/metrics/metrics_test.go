@@ -19,6 +19,9 @@ func TestMetrics_Register(t *testing.T) {
 	if m.ProcessingDuration == nil || m.MQTTConnected == nil || m.MQTTSubscribed == nil {
 		t.Fatal("instruments nil")
 	}
+	if m.RetentionDeleted == nil || m.RetentionErrors == nil || m.RetentionRunDuration == nil {
+		t.Fatal("retention instruments nil")
+	}
 	// Second registerer must not panic when using a fresh registry.
 	_ = metrics.NewWithRegisterer(prometheus.NewRegistry())
 }

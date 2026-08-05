@@ -69,7 +69,8 @@ These standards are based on PostgreSQL documentation and the database patterns 
 - Run `ANALYZE` or equivalent maintenance when planner statistics are stale.
 - Use real data when evaluating performance.
 - Treat time-series growth as a first-class scaling concern.
-- Plan for partitioning or archival when sample tables become large enough to need it.
+- Enforce the 30-day default retention on high-volume sample/history tables via the ingestion retention job; leave inventory and current-state tables untouched.
+- Plan for partitioning or archival when sample tables become large enough that delete-based retention is no longer enough.
 
 ## Existing Schema Notes
 

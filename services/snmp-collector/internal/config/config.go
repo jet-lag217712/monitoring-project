@@ -41,6 +41,14 @@ const (
 	minTemperatureCelsius = -100.0
 )
 
+// ValidateTemperatureWarningC rejects temperatures outside the supported warning range.
+func ValidateTemperatureWarningC(v float64) error {
+	if v < minTemperatureCelsius || v > maxTemperatureCelsius {
+		return fmt.Errorf("temperature_warning_c must be between %.0f and %.0f", minTemperatureCelsius, maxTemperatureCelsius)
+	}
+	return nil
+}
+
 var (
 	identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	envNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

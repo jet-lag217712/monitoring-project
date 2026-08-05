@@ -95,9 +95,10 @@ MQTT messages are acknowledged only after successful persistence; invalid
 non-retryable messages are acknowledged as rejected, while database failures
 are redelivered.
 
-Initial v2 retention is append-only with no automated deletion or archival.
-Time-based indexes are required; partitioning or archival requires a later
-measured-capacity decision.
+High-volume time-series and history are retained for 30 days by default via the
+ingestion retention job ([`database-1.md`](database-1.md)). Time-based indexes
+are required; partitioning or archival may be added later without changing the
+event contract.
 
 ### Vendor evidence boundary
 

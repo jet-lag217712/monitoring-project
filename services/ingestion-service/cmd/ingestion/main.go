@@ -14,6 +14,7 @@ import (
 	"github.com/equate/ogsd/services/ingestion-service/internal/handler"
 	"github.com/equate/ogsd/services/ingestion-service/internal/metrics"
 	"github.com/equate/ogsd/services/ingestion-service/internal/mqtt"
+	"github.com/equate/ogsd/services/ingestion-service/internal/retention"
 	"github.com/equate/ogsd/services/ingestion-service/internal/store"
 )
 
@@ -47,6 +48,18 @@ func main() {
 	if err != nil {
 		log.Error("mqtt subscriber", "err", err)
 		os.Exit(1)
+	}
+
+	if cfg.Retention.IsEnabled() {
+		runner := retention.New(db, cfg.Retention, m, log)
+		go runner.Run(ctx)
+		log.Info("retention enabled",
+			"days", cfg.Retention.Days,
+			"interval", cfg.Retention.Interval,
+			"batch_size", cfg.Retention.BatchSize,
+		)
+	} else {
+		log.Info("retention disabled")
 	}
 
 	mux := http.NewServeMux()

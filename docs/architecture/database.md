@@ -41,9 +41,14 @@ natural-key constraints remain in place throughout the compatibility window.
 
 ## Retention and indexing
 
-Initial v2 retention is append-only: no automated deletion or archival job is
-introduced until a separate measured-capacity decision is approved. All
-time-series, component-reading, health-history, and heartbeat-history tables
+High-volume time-series and history tables are retained for 30 days by default.
+The ingestion service runs a configurable batched-delete job that prunes
+`metric_samples`, `interface_samples`, component readings, health/heartbeat
+history, `ingested_events`, and `alerts` older than the cutoff. Inventory and
+current-state projections are never deleted. See
+[`.ai/decisions/database-1.md`](../../.ai/decisions/database-1.md).
+
+All time-series, component-reading, health-history, and heartbeat-history tables
 must index their owning entity and observation time, for example
 `(device_id, observed_at DESC)` and `(collector_id, observed_at DESC)`. Current
 state tables require unique entity keys; event history requires a unique event

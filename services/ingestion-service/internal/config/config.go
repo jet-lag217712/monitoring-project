@@ -11,9 +11,10 @@ import (
 
 // Config is the ingestion service runtime configuration.
 type Config struct {
-	Admin    AdminConfig    `yaml:"admin"`
-	MQTT     MQTTConfig     `yaml:"mqtt"`
-	Database DatabaseConfig `yaml:"database"`
+	Admin     AdminConfig     `yaml:"admin"`
+	MQTT      MQTTConfig      `yaml:"mqtt"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Retention RetentionConfig `yaml:"retention"`
 }
 
 // AdminConfig controls the admin HTTP server (metrics/health).
@@ -28,8 +29,8 @@ type MQTTConfig struct {
 	Username    string          `yaml:"username"`
 	PasswordEnv string          `yaml:"password_env"`
 	QoS         byte            `yaml:"qos"`
-	Topic       string          `yaml:"topic"`   // legacy single-topic form
-	Topics      []string        `yaml:"topics"`  // preferred multi-topic form
+	Topic       string          `yaml:"topic"`  // legacy single-topic form
+	Topics      []string        `yaml:"topics"` // preferred multi-topic form
 	TLS         MQTTTLSConfig   `yaml:"tls"`
 	Reconnect   ReconnectConfig `yaml:"reconnect"`
 }
@@ -53,6 +54,23 @@ type DatabaseConfig struct {
 	MaxConns    int32         `yaml:"max_conns"`
 	MinConns    int32         `yaml:"min_conns"`
 	MaxLifetime time.Duration `yaml:"max_lifetime"`
+}
+
+// RetentionConfig controls the background history prune job.
+type RetentionConfig struct {
+	// Enabled defaults to true when omitted (nil). Set false to disable.
+	Enabled   *bool         `yaml:"enabled"`
+	Days      int           `yaml:"days"`
+	Interval  time.Duration `yaml:"interval"`
+	BatchSize int           `yaml:"batch_size"`
+}
+
+// IsEnabled reports whether retention should run (default true).
+func (r RetentionConfig) IsEnabled() bool {
+	if r.Enabled == nil {
+		return true
+	}
+	return *r.Enabled
 }
 
 // Load reads and validates an ingestion config file.
@@ -121,6 +139,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Database.MaxLifetime == 0 {
 		c.Database.MaxLifetime = time.Hour
+	}
+	if c.Retention.Days == 0 {
+		c.Retention.Days = 30
+	}
+	if c.Retention.Interval == 0 {
+		c.Retention.Interval = time.Hour
+	}
+	if c.Retention.BatchSize == 0 {
+		c.Retention.BatchSize = 10000
 	}
 }
 
@@ -199,6 +226,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.MinConns < 0 {
 		return fmt.Errorf("database.min_conns must be >= 0")
+	}
+	if c.Retention.IsEnabled() {
+		if c.Retention.Days <= 0 {
+			return fmt.Errorf("retention.days must be positive")
+		}
+		if c.Retention.Interval <= 0 {
+			return fmt.Errorf("retention.interval must be positive")
+		}
+		if c.Retention.BatchSize <= 0 {
+			return fmt.Errorf("retention.batch_size must be positive")
+		}
 	}
 	return nil
 }
