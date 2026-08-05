@@ -30,11 +30,13 @@ export default function Nav({
       />
 
       <div className="nav-right">
-        {user?.email && (
+        {user && (
           <>
-            <span className="nav-user" title={user.email}>
-              {user.name || user.email}
-            </span>
+            {(user.name || user.email) && (
+              <span className="nav-user" title={user.email || user.name}>
+                {user.name || user.email}
+              </span>
+            )}
             <button type="button" className="nav-sign-out" onClick={onSignOut}>
               Log out
             </button>
