@@ -1,3 +1,4 @@
+import packageJson from '../../package.json'
 import AlertBanner from '../alerts/AlertBanner.jsx'
 import Nav from './Nav.jsx'
 
@@ -26,6 +27,8 @@ export default function AppShell({ children, dashboard, auth }) {
       <main className="page-content" style={{ paddingTop: contentTopPad }}>
         {children}
       </main>
+
+      <footer className="app-footer">v{packageJson.version}</footer>
     </div>
   )
 }

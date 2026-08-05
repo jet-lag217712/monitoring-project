@@ -54,14 +54,23 @@ body {
   width: 100%;
 }
 
+.app-footer {
+  padding: 16px 48px 24px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
 /* ── NAV ── */
 .app-nav {
   position: fixed;
   top: 0; left: 0; right: 0;
   z-index: 100;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 462px) 1fr;
   align-items: center;
-  justify-content: flex-start;
   padding: 0 48px;
   height: 60px;
   background: var(--bg);
@@ -81,6 +90,7 @@ body {
   text-decoration: none;
   cursor: pointer;
   flex-shrink: 0;
+  justify-self: start;
 }
 
 .logo-mark { width: 30px; height: 30px; display: grid; place-items: center; flex-shrink: 0; }
@@ -91,7 +101,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  justify-self: end;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.72rem;
   color: var(--ink-muted);
@@ -339,10 +349,11 @@ body {
 }
 
 .searchbar-nav {
-  flex: 1;
+  width: 100%;
   min-width: 0;
-  max-width: 420px;
-  margin: 0 24px;
+  max-width: 462px;
+  margin: 0;
+  justify-self: center;
 }
 
 .searchbar {
@@ -866,34 +877,39 @@ body {
 
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
-  .app-nav { padding: 0 20px; }
-  .page-content { padding: 88px 20px 40px; }
-  .alert-banner { padding: 10px 20px; }
-  .stat-strip { grid-template-columns: 1fr 1fr; }
-  .sites-grid { grid-template-columns: 1fr; }
-  .nav-right { gap: 8px; }
-  .searchbar-nav {
-    order: 3;
-    flex: 1 1 100%;
-    max-width: none;
-    margin: 0;
-  }
-  .searchbar { max-width: none; }
-}
-
-@media (max-width: 540px) {
   .app-nav {
+    padding: 0 20px;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "logo right"
+      "search search";
     height: auto;
     min-height: 60px;
     padding-top: 10px;
     padding-bottom: 10px;
-    flex-wrap: wrap;
     gap: 8px 12px;
   }
+  .nav-logo { grid-area: logo; }
   .nav-right {
-    width: 100%;
-    margin-left: 0;
+    grid-area: right;
+    gap: 8px;
+  }
+  .searchbar-nav {
+    grid-area: search;
+    max-width: none;
+  }
+  .page-content { padding: 88px 20px 40px; }
+  .app-footer { padding: 12px 20px 20px; }
+  .alert-banner { padding: 10px 20px; }
+  .stat-strip { grid-template-columns: 1fr 1fr; }
+  .sites-grid { grid-template-columns: 1fr; }
+  .searchbar { max-width: none; }
+}
+
+@media (max-width: 540px) {
+  .nav-right {
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .stat-strip { grid-template-columns: 1fr; }
 }
