@@ -84,7 +84,8 @@ CIDR allowlist.
 
 Managed overlay (allowed): temperature thresholds (global and per-device),
 upstream dependencies, interface filters, discovery rate
-(`max_probes_per_second`, `probe_burst` only).
+(`max_probes_per_second`, `probe_burst` only), and per-device
+`alerts_enabled` (Administratively Ignored when false).
 
 A managed device entry with the same ID as a static device is an overlay of
 allowed fields onto the static device. Unique managed IDs append full devices.

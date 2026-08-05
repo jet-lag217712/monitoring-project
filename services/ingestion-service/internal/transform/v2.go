@@ -86,6 +86,7 @@ type HealthSample struct {
 	UpstreamDeviceIDs            []string
 	UnavailableUpstreamDeviceIDs []string
 	RootCauseDeviceIDs           []string
+	AlertsEnabled                bool
 }
 
 // HeartbeatSample is a transformed v2 collector heartbeat event.
@@ -201,6 +202,7 @@ func HealthFromValidated(msg validate.HealthStateV2) HealthSample {
 		UpstreamDeviceIDs:            cloneStrings(msg.UpstreamDeviceIDs),
 		UnavailableUpstreamDeviceIDs: cloneStrings(msg.UnavailableUpstreamDeviceIDs),
 		RootCauseDeviceIDs:           cloneStrings(msg.RootCauseDeviceIDs),
+		AlertsEnabled:                msg.AlertsEnabled,
 	}
 }
 

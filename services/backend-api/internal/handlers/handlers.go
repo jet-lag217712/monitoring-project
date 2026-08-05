@@ -47,6 +47,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/devices/{deviceId}/interfaces", a.handleListInterfaces)
 	mux.HandleFunc("GET /api/devices/{deviceId}/metrics", a.handleListMetrics)
 	mux.HandleFunc("GET /api/alerts", a.handleListAlerts)
+	mux.HandleFunc("GET /api/search", a.handleSearch)
 	mux.HandleFunc("GET /api/test-config", a.handleTestConfig)
 }
 
@@ -355,6 +356,8 @@ func (a *API) handleGetDevice(w http.ResponseWriter, r *http.Request) {
 		UnavailableUpstreamSiteIDs: unavailableSites,
 		RootCauseSiteIDs:           rootCauseSites,
 		Role:                       d.Role,
+		AlertsEnabled:              proj.AlertsEnabled,
+		AdministrativelyIgnored:    !proj.AlertsEnabled,
 		CPUPct:                 d.CPUPct,
 		MemoryPct:              d.MemoryPct,
 		TemperatureC:           d.TemperatureC,
@@ -533,6 +536,69 @@ func (a *API) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	resp := models.SearchResponse{
+		Query:   q,
+		Sites:   []models.SearchHit{},
+		Devices: []models.SearchHit{},
+	}
+	if q == "" {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	ctx := r.Context()
+	now := a.now()
+	sites, err := a.store.ListSites(ctx)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+	devices, err := a.store.SearchDevices(ctx, q, 50)
+	if err != nil {
+		a.writeStoreError(w, err)
+		return
+	}
+
+	needle := strings.ToLower(q)
+	for _, site := range sites {
+		loc := ""
+		if site.Location != nil {
+			loc = *site.Location
+		}
+		display := derive.LocationOrName(loc, site.Name)
+		hay := strings.ToLower(strings.Join([]string{site.Name, display}, " "))
+		if !strings.Contains(hay, needle) {
+			continue
+		}
+		resp.Sites = append(resp.Sites, models.SearchHit{
+			Kind:     "site",
+			SiteID:   site.Name,
+			Location: display,
+		})
+	}
+
+	for _, d := range devices {
+		online := derive.DeviceOnline(d.Status, d.LastSeen, now, a.onlineThreshold)
+		proj := projectDevice(d, online)
+		resp.Devices = append(resp.Devices, models.SearchHit{
+			Kind:                    "device",
+			SiteID:                  d.SiteName,
+			Location:                d.SiteName,
+			DeviceID:                d.InventoryDeviceID,
+			Hostname:                d.Hostname,
+			IPAddress:               derive.NormalizeIP(d.IPAddress),
+			MapKey:                  derive.DeviceMapKey(d.IPAddress, d.Hostname),
+			Role:                    d.Role,
+			Status:                  proj.Status,
+			AdministrativelyIgnored: !proj.AlertsEnabled,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (a *API) handleTestConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, models.TestConfig{
 		Mode:           "live",
@@ -550,6 +616,7 @@ func projectDevice(d store.DeviceRow, online bool) derive.DeviceProjection {
 		d.UnavailableIDs,
 		d.RootCauseIDs,
 		online,
+		d.AlertsEnabled,
 	)
 }
 
@@ -566,6 +633,8 @@ func toDeviceSummary(d store.DeviceRow, proj derive.DeviceProjection) models.Dev
 		UpstreamDeviceIDs:      emptyToNil(proj.UpstreamDeviceIDs),
 		UnavailableUpstreamIDs: emptyToNil(proj.UnavailableUpstreamIDs),
 		RootCauseDeviceIDs:     emptyToNil(proj.RootCauseDeviceIDs),
+		AlertsEnabled:          proj.AlertsEnabled,
+		AdministrativelyIgnored: !proj.AlertsEnabled,
 		CPUPct:                 d.CPUPct,
 		MemoryPct:              d.MemoryPct,
 		UptimeDays:             derive.UptimeDays(d.UptimeSeconds),

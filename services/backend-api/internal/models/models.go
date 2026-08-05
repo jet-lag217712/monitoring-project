@@ -82,23 +82,46 @@ type SiteDetailLatest struct {
 
 // DeviceSummary is a device row in site detail / device list.
 type DeviceSummary struct {
-	DeviceID               string   `json:"device_id,omitempty"`
-	Hostname               string   `json:"hostname"`
-	IPAddress              string   `json:"ip_address,omitempty"`
-	Role                   string   `json:"role"`
-	Status                 int      `json:"status"`
-	StatusReason           string   `json:"status_reason,omitempty"`
-	FailureCount           *int     `json:"failure_count,omitempty"`
-	UpstreamDeviceIDs      []string `json:"upstream_device_ids,omitempty"`
-	UnavailableUpstreamIDs []string `json:"unavailable_upstream_device_ids,omitempty"`
-	RootCauseDeviceIDs     []string `json:"root_cause_device_ids,omitempty"`
-	UpstreamSiteIDs        []string `json:"upstream_site_ids,omitempty"`
+	DeviceID                   string   `json:"device_id,omitempty"`
+	Hostname                   string   `json:"hostname"`
+	IPAddress                  string   `json:"ip_address,omitempty"`
+	Role                       string   `json:"role"`
+	Status                     int      `json:"status"`
+	StatusReason               string   `json:"status_reason,omitempty"`
+	FailureCount               *int     `json:"failure_count,omitempty"`
+	UpstreamDeviceIDs          []string `json:"upstream_device_ids,omitempty"`
+	UnavailableUpstreamIDs     []string `json:"unavailable_upstream_device_ids,omitempty"`
+	RootCauseDeviceIDs         []string `json:"root_cause_device_ids,omitempty"`
+	UpstreamSiteIDs            []string `json:"upstream_site_ids,omitempty"`
 	UnavailableUpstreamSiteIDs []string `json:"unavailable_upstream_site_ids,omitempty"`
-	RootCauseSiteIDs       []string `json:"root_cause_site_ids,omitempty"`
-	CPUPct                 *float64 `json:"cpu_pct"`
-	MemoryPct              *float64 `json:"memory_pct"`
-	UptimeDays             *float64 `json:"uptime_days"`
-	LatencyMs              *float64 `json:"latency_ms"`
+	RootCauseSiteIDs           []string `json:"root_cause_site_ids,omitempty"`
+	AlertsEnabled              bool     `json:"alerts_enabled"`
+	AdministrativelyIgnored    bool     `json:"administratively_ignored"`
+	CPUPct                     *float64 `json:"cpu_pct"`
+	MemoryPct                  *float64 `json:"memory_pct"`
+	UptimeDays                 *float64 `json:"uptime_days"`
+	LatencyMs                  *float64 `json:"latency_ms"`
+}
+
+// SearchHit is one result from GET /api/search.
+type SearchHit struct {
+	Kind                    string `json:"kind"` // site | device
+	SiteID                  string `json:"site_id"`
+	Location                string `json:"location,omitempty"`
+	DeviceID                string `json:"device_id,omitempty"`
+	Hostname                string `json:"hostname,omitempty"`
+	IPAddress               string `json:"ip_address,omitempty"`
+	MapKey                  string `json:"map_key,omitempty"`
+	Role                    string `json:"role,omitempty"`
+	Status                  int    `json:"status,omitempty"`
+	AdministrativelyIgnored bool   `json:"administratively_ignored,omitempty"`
+}
+
+// SearchResponse is the GET /api/search payload.
+type SearchResponse struct {
+	Query   string      `json:"query"`
+	Sites   []SearchHit `json:"sites"`
+	Devices []SearchHit `json:"devices"`
 }
 
 // ComponentReading is a temperature or power component projection.
@@ -148,6 +171,8 @@ type DeviceDetail struct {
 	UnavailableUpstreamSiteIDs []string       `json:"unavailable_upstream_site_ids,omitempty"`
 	RootCauseSiteIDs       []string           `json:"root_cause_site_ids,omitempty"`
 	Role                   string             `json:"role"`
+	AlertsEnabled          bool               `json:"alerts_enabled"`
+	AdministrativelyIgnored bool              `json:"administratively_ignored"`
 	CPUPct                 *float64           `json:"cpu_pct"`
 	MemoryPct              *float64           `json:"memory_pct"`
 	TemperatureC           *float64           `json:"temperature_c"`

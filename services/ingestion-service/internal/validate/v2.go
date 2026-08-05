@@ -102,6 +102,7 @@ type HealthStateV2 struct {
 	UpstreamDeviceIDs            []string
 	UnavailableUpstreamDeviceIDs []string
 	RootCauseDeviceIDs           []string
+	AlertsEnabled                bool
 }
 
 // HeartbeatV2 is a validated v2 collector heartbeat event.
@@ -200,6 +201,7 @@ type healthPayloadV2 struct {
 	UpstreamDeviceIDs            []string `json:"upstream_device_ids"`
 	UnavailableUpstreamDeviceIDs []string `json:"unavailable_upstream_device_ids"`
 	RootCauseDeviceIDs           []string `json:"root_cause_device_ids"`
+	AlertsEnabled                *bool    `json:"alerts_enabled"`
 }
 
 type heartbeatPayloadV2 struct {
@@ -570,6 +572,10 @@ func validateHealthV2(env EnvelopeV2, payload json.RawMessage) (HealthStateV2, e
 			return HealthStateV2{}, err
 		}
 	}
+	alertsEnabled := true
+	if p.AlertsEnabled != nil {
+		alertsEnabled = *p.AlertsEnabled
+	}
 	return HealthStateV2{
 		Envelope:                     env,
 		State:                        p.State,
@@ -584,6 +590,7 @@ func validateHealthV2(env EnvelopeV2, payload json.RawMessage) (HealthStateV2, e
 		UpstreamDeviceIDs:            cloneStrings(p.UpstreamDeviceIDs),
 		UnavailableUpstreamDeviceIDs: cloneStrings(p.UnavailableUpstreamDeviceIDs),
 		RootCauseDeviceIDs:           cloneStrings(p.RootCauseDeviceIDs),
+		AlertsEnabled:                alertsEnabled,
 	}, nil
 }
 

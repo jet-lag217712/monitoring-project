@@ -83,7 +83,8 @@ func (t *Tracker) Snapshot() Snapshot {
 }
 
 // ApplyBatch commits outcomes for a completed cycle and evaluates the full inventory.
-// Events are returned sorted by device ID. Phase 3 never emits TransitionReasserted.
+// Events are returned sorted by device ID. TransitionReasserted is emitted when
+// alerts_enabled (Administratively Ignored) changes without a state change.
 func (t *Tracker) ApplyBatch(cfg *config.Config, outcomes []PollOutcome) []Event {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -145,7 +146,12 @@ func (t *Tracker) ApplyBatch(cfg *config.Config, outcomes []PollOutcome) []Event
 			eventReason = ReasonRecovered
 		}
 
-		emit := !entry.HasState || entry.State != desired.state || entry.Reason != ledgerReason
+		alertsEnabled := device.AlertsEnabledOrDefault()
+		policyChanged := entry.HasState && entry.HasAlertsEnabled && entry.AlertsEnabledPublished != alertsEnabled
+		emit := !entry.HasState || entry.State != desired.state || entry.Reason != ledgerReason || policyChanged
+		if policyChanged && entry.State == desired.state && entry.Reason == ledgerReason {
+			transition = TransitionReasserted
+		}
 
 		entry.HasState = true
 		entry.State = desired.state
@@ -155,8 +161,10 @@ func (t *Tracker) ApplyBatch(cfg *config.Config, outcomes []PollOutcome) []Event
 		entry.UpstreamDeviceIDs = append([]string(nil), upstreams...)
 		entry.UnavailableUpstream = append([]string(nil), desired.unavailable...)
 		entry.RootCauseDeviceIDs = append([]string(nil), desired.rootCauses...)
+		entry.AlertsEnabledPublished = alertsEnabled
+		entry.HasAlertsEnabled = true
 
-		if !emit || transition == TransitionReasserted {
+		if !emit {
 			continue
 		}
 
@@ -179,6 +187,7 @@ func (t *Tracker) ApplyBatch(cfg *config.Config, outcomes []PollOutcome) []Event
 			UpstreamDeviceIDs:            append([]string(nil), upstreams...),
 			UnavailableUpstreamDeviceIDs: append([]string(nil), desired.unavailable...),
 			RootCauseDeviceIDs:           append([]string(nil), desired.rootCauses...),
+			AlertsEnabled:                alertsEnabled,
 			ObservedAt:                   observedAt,
 		})
 	}

@@ -227,12 +227,15 @@ func ApplySiteDependencyOverlay(state SiteDependencyState, proj DeviceProjection
 func ProjectedSiteHealth(devices []DeviceProjection) SiteHealthCounts {
 	var counts SiteHealthCounts
 	for _, proj := range devices {
+		if !proj.AlertsEnabled {
+			continue
+		}
 		if strings.EqualFold(proj.StatusReason, ReasonUpstreamSiteUnreachable) {
 			counts.UnknownCount++
 			counts.DependencyImpactedCount++
 			continue
 		}
-		counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
+		counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs, proj.AlertsEnabled)
 	}
 	return counts
 }

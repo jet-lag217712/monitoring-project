@@ -146,6 +146,8 @@ type HealthStatePayload struct {
 	UpstreamDeviceIDs            []string `json:"upstream_device_ids"`
 	UnavailableUpstreamDeviceIDs []string `json:"unavailable_upstream_device_ids"`
 	RootCauseDeviceIDs           []string `json:"root_cause_device_ids"`
+	// AlertsEnabled is false when the device is Administratively Ignored.
+	AlertsEnabled bool `json:"alerts_enabled"`
 }
 
 // Topic returns the v2 health route.

@@ -173,6 +173,7 @@ func renderHelp(th Theme) string {
 		"R reload",
 		"t threshold",
 		"d deps",
+		"i ignore",
 		"↑↓ scroll",
 		"q quit",
 	}

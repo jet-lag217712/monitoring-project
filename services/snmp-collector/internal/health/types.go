@@ -61,7 +61,10 @@ type Event struct {
 	UpstreamDeviceIDs            []string
 	UnavailableUpstreamDeviceIDs []string
 	RootCauseDeviceIDs           []string
-	ObservedAt                   time.Time
+	// AlertsEnabled is copied from the active device overlay at emit time.
+	// false means Administratively Ignored (monitor without site-alert impact).
+	AlertsEnabled bool
+	ObservedAt    time.Time
 }
 
 // DeviceHealth is the committed per-device ledger entry.
@@ -79,6 +82,10 @@ type DeviceHealth struct {
 	UpstreamDeviceIDs   []string
 	UnavailableUpstream []string
 	RootCauseDeviceIDs  []string
+	// AlertsEnabledPublished tracks the last alerts_enabled value emitted so
+	// overlay toggles can force a TransitionReasserted publish.
+	AlertsEnabledPublished bool
+	HasAlertsEnabled       bool
 }
 
 // Snapshot is a read-only copy of committed tracker gauges.

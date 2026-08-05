@@ -347,10 +347,30 @@ func TestNoEventWhenUnchangedAndNoReasserted(t *testing.T) {
 	if len(events) != 0 {
 		t.Fatalf("unchanged must not emit: %#v", events)
 	}
-	for _, ev := range events {
-		if ev.Transition == TransitionReasserted {
-			t.Fatal("reasserted must never be emitted")
-		}
+}
+
+func TestAlertsEnabledToggleReasserts(t *testing.T) {
+	t.Parallel()
+
+	tracker := NewTracker()
+	cfg := baseCfg(config.DeviceConfig{ID: "core-01", Host: "10.0.0.1", CommunityEnv: "C", Version: "2c"})
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	first := tracker.ApplyBatch(cfg, []PollOutcome{success("core-01", now, nil)})
+	if len(first) != 1 || !first[0].AlertsEnabled {
+		t.Fatalf("first emit=%#v", first)
+	}
+
+	disabled := false
+	cfg.Devices[0].AlertsEnabled = &disabled
+	events := tracker.ApplyBatch(cfg, []PollOutcome{success("core-01", now.Add(time.Minute), nil)})
+	if len(events) != 1 {
+		t.Fatalf("expected reassert on alerts_enabled toggle, got %#v", events)
+	}
+	if events[0].Transition != TransitionReasserted {
+		t.Fatalf("transition=%s want reasserted", events[0].Transition)
+	}
+	if events[0].AlertsEnabled {
+		t.Fatal("expected alerts_enabled=false")
 	}
 }
 

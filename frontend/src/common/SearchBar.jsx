@@ -1,16 +1,37 @@
-export default function SearchBar({ value, onChange }) {
+export default function SearchBar({
+  value,
+  onChange,
+  onFocus,
+  onClear,
+  placeholder = 'Search sites, hostname, or IP…',
+  id = 'global-search',
+  autoFocus = false,
+  variant = 'page',
+}) {
   return (
-    <div className="searchbar-row">
-      <label className="searchbar" htmlFor="site-search">
+    <div className={variant === 'nav' ? 'searchbar-nav' : 'searchbar-row'}>
+      <label className={`searchbar searchbar-${variant}`} htmlFor={id}>
         <span className="searchbar-icon" aria-hidden="true">⌕</span>
         <input
-          id="site-search"
+          id={id}
           type="search"
           value={value}
           onChange={event => onChange(event.target.value)}
-          placeholder="Search by site name, type, status, or ID"
+          onFocus={onFocus}
+          placeholder={placeholder}
           autoComplete="off"
+          autoFocus={autoFocus}
         />
+        {value ? (
+          <button
+            type="button"
+            className="searchbar-clear"
+            onClick={onClear}
+            aria-label="Clear search"
+          >
+            Clear
+          </button>
+        ) : null}
       </label>
     </div>
   )

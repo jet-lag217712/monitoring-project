@@ -82,6 +82,10 @@
               "items": {
                 "$ref": "urn:equate:ogsd:telemetry:v2:event-envelope#/$defs/identifier"
               }
+            },
+            "alerts_enabled": {
+              "type": "boolean",
+              "description": "false when the device is Administratively Ignored (monitored without site-alert impact)"
             }
           },
           "required": [
@@ -92,7 +96,8 @@
             "failure_threshold",
             "upstream_device_ids",
             "unavailable_upstream_device_ids",
-            "root_cause_device_ids"
+            "root_cause_device_ids",
+            "alerts_enabled"
           ],
           "additionalProperties": false
         }
@@ -100,6 +105,6 @@
       "required": ["device_id"]
     }
   ],
-  "$comment": "A pending failure does not emit a terminal state transition. It retains the prior state and is represented by failure_count and operational metrics.",
+  "$comment": "A pending failure does not emit a terminal state transition. It retains the prior state and is represented by failure_count and operational metrics. TransitionReasserted is used when alerts_enabled changes without a health state change.",
   "unevaluatedProperties": false
 }

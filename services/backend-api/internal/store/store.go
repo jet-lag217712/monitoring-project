@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equate/ogsd/services/backend-api/internal/derive"
@@ -101,6 +102,7 @@ type DeviceRow struct {
 	UpstreamIDs    []string
 	UnavailableIDs []string
 	RootCauseIDs   []string
+	AlertsEnabled  bool
 }
 
 // InterfaceRow is an interfaces table row with optional latest sample.
@@ -238,6 +240,29 @@ func (s *Store) ListAllDevices(ctx context.Context) ([]DeviceRow, error) {
 	return scanDevices(rows)
 }
 
+// SearchDevices finds devices by hostname or IP substring (case-insensitive).
+func (s *Store) SearchDevices(ctx context.Context, query string, limit int) ([]DeviceRow, error) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	pattern := "%" + strings.ToLower(q) + "%"
+	rows, err := s.pool.Query(ctx, deviceSelect+`
+		WHERE lower(d.hostname) LIKE $1
+		   OR lower(d.ip_address::text) LIKE $1
+		   OR lower(COALESCE(d.inventory_device_id, '')) LIKE $1
+		ORDER BY s.name, d.hostname
+		LIMIT $2`, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search devices: %w", err)
+	}
+	defer rows.Close()
+	return scanDevices(rows)
+}
+
 // GetDevice resolves a device by UUID, site-scoped collector ID, or globally unique hostname.
 func (s *Store) GetDevice(ctx context.Context, deviceID, siteName string) (DeviceRow, error) {
 	if id, err := uuid.Parse(deviceID); err == nil {
@@ -305,7 +330,8 @@ const deviceSelect = `
 			COALESCE(h.failure_count, 0),
 			COALESCE(h.upstream_device_ids, '{}'),
 			COALESCE(h.unavailable_upstream_device_ids, '{}'),
-			COALESCE(h.root_cause_device_ids, '{}')
+			COALESCE(h.root_cause_device_ids, '{}'),
+			COALESCE(h.alerts_enabled, TRUE)
 		FROM devices d
 		JOIN sites s ON s.id = d.site_id
 		LEFT JOIN device_health_current h ON h.device_id = d.id
@@ -626,7 +652,7 @@ func scanDeviceFields(row scannable) (DeviceRow, error) {
 		&r.ProfileName, &r.Capabilities, &r.Status, &r.LastSeen, &r.UptimeSeconds,
 		&r.CPUPct, &r.MemoryPct, &r.TemperatureC,
 		&r.HealthPresent, &r.HealthState, &r.HealthReason, &r.FailureCount,
-		&r.UpstreamIDs, &r.UnavailableIDs, &r.RootCauseIDs,
+		&r.UpstreamIDs, &r.UnavailableIDs, &r.RootCauseIDs, &r.AlertsEnabled,
 	)
 	if err != nil {
 		return DeviceRow{}, fmt.Errorf("scan device: %w", err)

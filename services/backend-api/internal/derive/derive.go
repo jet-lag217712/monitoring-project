@@ -88,14 +88,17 @@ type DeviceProjection struct {
 	UpstreamDeviceIDs      []string
 	UnavailableUpstreamIDs []string
 	RootCauseDeviceIDs     []string
+	// AlertsEnabled is false when the device is Administratively Ignored.
+	AlertsEnabled bool
 }
 
 // ProjectDeviceStatus prefers health-current evidence when present.
-func ProjectDeviceStatus(healthState string, healthPresent bool, reason string, failureCount int, upstream, unavailable, rootCause []string, online bool) DeviceProjection {
+func ProjectDeviceStatus(healthState string, healthPresent bool, reason string, failureCount int, upstream, unavailable, rootCause []string, online bool, alertsEnabled bool) DeviceProjection {
 	out := DeviceProjection{
 		UpstreamDeviceIDs:      nonNilStrings(upstream),
 		UnavailableUpstreamIDs: nonNilStrings(unavailable),
 		RootCauseDeviceIDs:     nonNilStrings(rootCause),
+		AlertsEnabled:          alertsEnabled,
 	}
 	if healthPresent {
 		out.Status = HealthStatusCode(healthState, online)
@@ -125,7 +128,12 @@ type SiteHealthCounts struct {
 }
 
 // Accumulate updates counts from one device projection.
-func (c *SiteHealthCounts) Accumulate(status int, unavailableUpstream []string) {
+// Administratively Ignored devices (AlertsEnabled=false) are excluded from
+// alert-driving aggregates so they do not flip site status to alert/caution.
+func (c *SiteHealthCounts) Accumulate(status int, unavailableUpstream []string, alertsEnabled bool) {
+	if !alertsEnabled {
+		return
+	}
 	switch status {
 	case StatusHealthy:
 		c.HealthyCount++

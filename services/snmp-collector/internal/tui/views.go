@@ -12,7 +12,7 @@ func formatInventory(th Theme, result map[string]any) string {
 	if len(devices) == 0 {
 		return renderEmpty(th, "Inventory", "No devices configured.")
 	}
-	headers := []string{"ID", "Host", "Port", "Health", "Last Poll", "Upstreams"}
+	headers := []string{"ID", "Host", "Port", "Health", "Alerts", "Last Poll", "Upstreams"}
 	rows := make([][]string, 0, len(devices))
 	for _, raw := range devices {
 		d, ok := raw.(map[string]any)
@@ -22,11 +22,16 @@ func formatInventory(th Theme, result map[string]any) string {
 		healthState := nestedString(d, "health", "state")
 		lastPoll := formatLastPoll(d["last_poll"])
 		upstreams := formatStringSlice(d["upstream_device_ids"])
+		alerts := "on"
+		if ignored, ok := d["administratively_ignored"].(bool); ok && ignored {
+			alerts = "ignored"
+		}
 		rows = append(rows, []string{
 			fmt.Sprint(d["id"]),
 			fmt.Sprint(d["host"]),
 			fmt.Sprint(d["port"]),
 			renderStatusBadge(th, healthState),
+			alerts,
 			lastPoll,
 			upstreams,
 		})
@@ -44,6 +49,10 @@ func formatInventory(th Theme, result map[string]any) string {
 
 func formatDevice(th Theme, result map[string]any) string {
 	id, _ := result["id"].(string)
+	alerting := "enabled"
+	if ignored, ok := result["administratively_ignored"].(bool); ok && ignored {
+		alerting = "Administratively Ignored"
+	}
 	rows := [][2]string{
 		{"id", id},
 		{"host", fmt.Sprint(result["host"])},
@@ -52,6 +61,7 @@ func formatDevice(th Theme, result map[string]any) string {
 		{"community_env", fmt.Sprint(result["community_env"])},
 		{"temp_warning_c", fmt.Sprint(result["temperature_warning_c"])},
 		{"upstreams", formatStringSlice(result["upstream_device_ids"])},
+		{"alerting", alerting},
 		{"revision", shortRev(fmt.Sprint(result["config_revision"]))},
 	}
 	var b strings.Builder
@@ -90,7 +100,7 @@ func formatDevice(th Theme, result map[string]any) string {
 		}
 		b.WriteString("\n\n")
 	}
-	b.WriteString(th.Muted.Render("t edit threshold  ·  d edit dependencies"))
+	b.WriteString(th.Muted.Render("t edit threshold  ·  d edit dependencies  ·  i toggle Administratively Ignored"))
 	return strings.TrimRight(b.String(), "\n")
 }
 

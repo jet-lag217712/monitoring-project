@@ -54,7 +54,7 @@ func buildSiteProjections(sites []store.SiteRow, devices []store.DeviceRow, now 
 				InventoryDeviceID: device.InventoryDeviceID,
 				Projection:        proj,
 			})
-			rawSite.Counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs)
+			rawSite.Counts.Accumulate(proj.Status, proj.UnavailableUpstreamIDs, proj.AlertsEnabled)
 		}
 		raw[site.Name] = rawSite
 	}
