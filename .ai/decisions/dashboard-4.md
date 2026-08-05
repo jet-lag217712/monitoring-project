@@ -10,18 +10,21 @@ Monitoring Dashboard
 
 ### Choice Made
 
-Move global search into the fixed app header and open a full-page search
-takeover when the operator focuses the field or types a query. Search covers:
+Move global search into the fixed app header and open a translucent results
+popover under the header when the operator focuses the field or types a query.
+The current page (sites grid / site detail / device detail) stays mounted and
+remains visible through the dimmed backdrop. Search covers:
 
 - sites (name / location / ID)
 - devices by hostname and IP address (`GET /api/search?q=`)
 
 Selecting a site or device hit navigates through the existing
-`useNetworkDashboard` selection state (no router). Escape / Clear / Close
-dismisses the takeover and restores the prior view context after navigation
+`useNetworkDashboard` selection state (no router). Escape / X / backdrop click /
+Clear dismisses the popover and restores the prior view context after navigation
 handlers clear the query.
 
-The mid-page overview `SearchBar` is removed so there is a single entry point.
+The mid-page overview `SearchBar` is removed so there is a single entry point
+in the nav.
 
 ### Status
 

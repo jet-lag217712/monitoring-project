@@ -1,5 +1,6 @@
 import packageJson from '../../package.json'
 import AlertBanner from '../alerts/AlertBanner.jsx'
+import SearchPopover from '../dashboard/SearchPopover.jsx'
 import Nav from './Nav.jsx'
 
 export default function AppShell({ children, dashboard, auth }) {
@@ -23,6 +24,18 @@ export default function AppShell({ children, dashboard, auth }) {
         onSearchClear={dashboard.closeSearch}
       />
       <AlertBanner alerts={dashboard.alerts} />
+
+      {dashboard.searchOpen ? (
+        <SearchPopover
+          query={dashboard.searchQuery}
+          onClose={dashboard.closeSearch}
+          siteHits={dashboard.searchSiteHits}
+          deviceHits={dashboard.searchDeviceHits}
+          loading={dashboard.searchLoading}
+          onSelectSite={dashboard.handleSiteClick}
+          onSelectDevice={dashboard.handleSearchDeviceSelect}
+        />
+      ) : null}
 
       <main className="page-content" style={{ paddingTop: contentTopPad }}>
         {children}
