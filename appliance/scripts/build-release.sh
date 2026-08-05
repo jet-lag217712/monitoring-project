@@ -188,7 +188,8 @@ FRONTEND_TAG="$(build_local_image frontend "${ROOT}/frontend" \
   --build-arg "VITE_API_BASE_URL=/api" \
   --build-arg "VITE_AUTH_MODE=appliance_local" \
   --build-arg "VITE_GOOGLE_CLIENT_ID=" \
-  --build-arg "VITE_DEMO_ENABLED=false")"
+  --build-arg "VITE_DEMO_ENABLED=false" \
+  --build-arg "VITE_APP_VERSION=${VERSION}")"
 COLLECTOR_TAG="$(build_local_image snmp-collector "${ROOT}/services/snmp-collector")"
 
 echo "building host CLI binaries (${ARCH})..."

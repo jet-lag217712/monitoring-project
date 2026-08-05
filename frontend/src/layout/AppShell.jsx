@@ -1,6 +1,6 @@
-import packageJson from '../../package.json'
 import AlertBanner from '../alerts/AlertBanner.jsx'
 import SearchPopover from '../dashboard/SearchPopover.jsx'
+import { APP_VERSION } from '../config/version.js'
 import Nav from './Nav.jsx'
 
 export default function AppShell({ children, dashboard, auth }) {
@@ -41,7 +41,7 @@ export default function AppShell({ children, dashboard, auth }) {
         {children}
       </main>
 
-      <footer className="app-footer">v{packageJson.version}</footer>
+      <footer className="app-footer">v{APP_VERSION}</footer>
     </div>
   )
 }
