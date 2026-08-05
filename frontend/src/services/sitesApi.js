@@ -70,6 +70,14 @@ export function fetchSiteDetailFromApi(siteId) {
   return fetchJson(`/api/sites/${encodeURIComponent(siteId)}`, 'Site detail request failed')
 }
 
+export function updateSiteLocation(siteId, location) {
+  return fetchJson(`/api/sites/${encodeURIComponent(siteId)}`, 'Site rename request failed', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location }),
+  })
+}
+
 export function fetchTestConfigFromApi() {
   return fetchJson('/api/test-config', 'Test config request failed')
 }
