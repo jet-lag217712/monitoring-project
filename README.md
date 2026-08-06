@@ -203,10 +203,11 @@ Notes:
 - Bare `equate sites` or `equate sites list` prints each site ID, Compose
   service name, collector admin URL, and SNMP CIDR.
 - `equate sites delete <site-id>` permanently removes one site: stops and
-  removes its collector container and volume, rewrites the manifest and
-  generated Compose file, deletes host artifacts under `sites/<site-id>`,
-  deletes related PostgreSQL rows, reconciles the stack, and re-syncs site
-  topology.
+  removes its collector container and volume, deletes related PostgreSQL
+  rows, rewrites the manifest and generated Compose file, deletes host
+  artifacts under `sites/<site-id>`, reconciles the stack, and re-syncs site
+  topology. If the site is already gone from the manifest but still appears
+  on the dashboard, the same command cleans leftover DB rows and artifacts.
 
 ### Purpose
 
@@ -216,9 +217,12 @@ Use sites when you need to:
 - Confirm site IDs before `equate view <site-id>`
 - Retire a monitoring site without running the full configure wizard (which
   risks accidental CIDR or inventory changes)
+- Clear a deleted site that still shows on the frontend after a configure
+  shrink or interrupted delete
 
 Listing is read-only. Delete is destructive and requires confirmation (or
-`--yes`).
+`--yes`). Topology sync after configure/delete also drops Postgres site rows
+that are no longer in the manifest so the dashboard matches `equate sites`.
 
 ### How to use it
 
@@ -232,6 +236,9 @@ sudo equate sites delete campus-a
 
 # Non-interactive delete
 sudo equate sites delete campus-a --yes
+
+# Clean a ghost site that still appears on the dashboard but not in equate sites
+sudo equate sites delete old-campus --yes
 ```
 
 List output columns:
@@ -244,9 +251,8 @@ List output columns:
 | `CIDR` | Configured SNMP discovery / poll network |
 
 Delete confirmation: type the exact `site-id` when prompted, unless `--yes` is
-set. Deleting the last remaining sites leaves the core stack running without
-collectors; add sites again with `sudo equate configure --sites`.
-
+set. You cannot delete the last remaining site from the manifest; use
+`sudo equate configure --sites` to reshape the site list.
 ---
 
 ## `equate upgrade`
