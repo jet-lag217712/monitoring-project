@@ -58,6 +58,16 @@ func TestRemoveSiteFromManifestMissing(t *testing.T) {
 	}
 }
 
+func TestManifestHasSite(t *testing.T) {
+	manifest := Manifest{Sites: []SiteSpec{{SiteID: "campus-a"}}}
+	if !ManifestHasSite(manifest, "campus-a") {
+		t.Fatal("expected campus-a present")
+	}
+	if ManifestHasSite(manifest, "ghost") {
+		t.Fatal("expected ghost absent")
+	}
+}
+
 func TestSiteUUIDStable(t *testing.T) {
 	a := SiteUUID("district")
 	b := SiteUUID("district")
@@ -75,10 +85,39 @@ func TestSiteDeleteSQLContainsOrderedDeletes(t *testing.T) {
 	if !strings.Contains(sql, sid) {
 		t.Fatalf("missing site uuid in sql")
 	}
+	if !strings.Contains(sql, "OR name = 'district'") {
+		t.Fatalf("expected name match for orphan rows: %s", sql)
+	}
 	devicesIdx := strings.Index(sql, "DELETE FROM devices")
 	sitesIdx := strings.Index(sql, "DELETE FROM sites")
 	if devicesIdx < 0 || sitesIdx < 0 || devicesIdx > sitesIdx {
 		t.Fatalf("devices must be deleted before sites")
+	}
+}
+
+func TestOrphanSitesPruneSQL(t *testing.T) {
+	if OrphanSitesPruneSQL(nil) != "" {
+		t.Fatal("empty keep list must refuse prune")
+	}
+	sql := OrphanSitesPruneSQL([]string{"campus-a", "campus-b", "campus-a"})
+	if !strings.Contains(sql, "name NOT IN ('campus-a', 'campus-b')") {
+		t.Fatalf("unexpected keep list: %s", sql)
+	}
+	devicesIdx := strings.Index(sql, "DELETE FROM devices")
+	sitesIdx := strings.Index(sql, "DELETE FROM sites WHERE name NOT IN")
+	if devicesIdx < 0 || sitesIdx < 0 || devicesIdx > sitesIdx {
+		t.Fatalf("devices must be deleted before sites")
+	}
+	for _, table := range []string{
+		"device_health_history",
+		"device_health_current",
+		"collectors",
+		"devices",
+		"sites",
+	} {
+		if !strings.Contains(sql, "DELETE FROM "+table) {
+			t.Fatalf("missing delete for %s", table)
+		}
 	}
 }
 

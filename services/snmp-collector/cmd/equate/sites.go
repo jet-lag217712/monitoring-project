@@ -83,10 +83,25 @@ func runSitesDelete(args []string) int {
 		fmt.Fprintf(os.Stderr, "sites: %v\n", err)
 		return 1
 	}
-	updated, removed, err := setup.RemoveSiteFromManifest(manifest, siteID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "sites: %v\n", err)
-		return 1
+
+	inManifest := setup.ManifestHasSite(manifest, siteID)
+	var updated setup.Manifest
+	var removed setup.SiteSpec
+	if inManifest {
+		updated, removed, err = setup.RemoveSiteFromManifest(manifest, siteID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "sites: %v\n", err)
+			return 1
+		}
+	} else {
+		// Manifest already lacks the site (configure shrink / partial delete),
+		// but Postgres may still have rows the dashboard lists.
+		removed = setup.SiteSpec{
+			SiteID:      siteID,
+			ServiceName: "snmp-collector-" + strings.ToLower(siteID),
+		}
+		updated = manifest
+		fmt.Fprintf(os.Stderr, "site %q not in manifest; cleaning leftover collector artifacts and database rows\n", siteID)
 	}
 
 	if !yes {
@@ -104,29 +119,37 @@ func runSitesDelete(args []string) int {
 
 	fmt.Fprintf(os.Stderr, "stopping collector %s...\n", removed.ServiceName)
 	if err := runDockerCompose(deployDir, "rm", "-sfv", removed.ServiceName); err != nil {
-		fmt.Fprintf(os.Stderr, "sites: remove collector: %v\n", err)
+		// Orphan cleanup: container may already be gone.
+		if inManifest {
+			fmt.Fprintf(os.Stderr, "sites: remove collector: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "sites: collector remove skipped: %v\n", err)
+	}
+
+	// Delete Postgres before rewriting the manifest so a DB failure leaves the
+	// site listed and operators can retry instead of creating a frontend ghost.
+	fmt.Fprintln(os.Stderr, "deleting Postgres rows...")
+	if err := runSiteDeleteSQL(deployDir, removed.SiteID); err != nil {
+		fmt.Fprintf(os.Stderr, "sites: database cleanup: %v\n", err)
 		return 1
 	}
 
-	if err := setup.WriteManifest(deployDir, updated); err != nil {
-		fmt.Fprintf(os.Stderr, "sites: write manifest: %v\n", err)
-		return 1
-	}
-	if err := setup.GenerateCompose(deployDir, setup.ProfileAppliance, updated.Sites, ""); err != nil {
-		fmt.Fprintf(os.Stderr, "sites: regenerate compose: %v\n", err)
-		return 1
+	if inManifest {
+		if err := setup.WriteManifest(deployDir, updated); err != nil {
+			fmt.Fprintf(os.Stderr, "sites: write manifest: %v\n", err)
+			return 1
+		}
+		if err := setup.GenerateCompose(deployDir, setup.ProfileAppliance, updated.Sites, ""); err != nil {
+			fmt.Fprintf(os.Stderr, "sites: regenerate compose: %v\n", err)
+			return 1
+		}
 	}
 
 	siteDir := filepath.Join(deployDir, "sites", removed.SiteID)
 	fmt.Fprintf(os.Stderr, "removing %s...\n", siteDir)
 	if err := os.RemoveAll(siteDir); err != nil {
 		fmt.Fprintf(os.Stderr, "sites: remove site directory: %v\n", err)
-		return 1
-	}
-
-	fmt.Fprintln(os.Stderr, "deleting Postgres rows...")
-	if err := runSiteDeleteSQL(deployDir, removed.SiteID); err != nil {
-		fmt.Fprintf(os.Stderr, "sites: database cleanup: %v\n", err)
 		return 1
 	}
 
@@ -140,7 +163,11 @@ func runSitesDelete(args []string) int {
 		return 1
 	}
 
-	fmt.Fprintf(os.Stdout, "Deleted site %s (%d site(s) remaining).\n", removed.SiteID, len(updated.Sites))
+	if inManifest {
+		fmt.Fprintf(os.Stdout, "Deleted site %s (%d site(s) remaining).\n", removed.SiteID, len(updated.Sites))
+	} else {
+		fmt.Fprintf(os.Stdout, "Cleaned orphaned site %s (%d site(s) in manifest).\n", removed.SiteID, len(updated.Sites))
+	}
 	return 0
 }
 

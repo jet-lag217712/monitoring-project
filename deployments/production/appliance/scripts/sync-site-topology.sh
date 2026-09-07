@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Sync sites/manifest.yaml upstream_site_ids and hub_device_ids into PostgreSQL.
+# Sync sites/manifest.yaml into PostgreSQL: upsert configured sites/topology and
+# prune orphan sites rows (and dependents) that are no longer in the manifest.
+# Keep delete order aligned with services/snmp-collector/.../remove_site.go.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -147,6 +149,36 @@ for site in sites:
         "upstream_site_ids = EXCLUDED.upstream_site_ids, "
         "hub_device_ids = EXCLUDED.hub_device_ids;"
     )
+
+# Prune sites that left the manifest (configure shrink / partial delete).
+# Empty keep list is refused above so we never wipe the database.
+keep = []
+seen = set()
+for site in sites:
+    site_id = site["site_id"]
+    if site_id in seen:
+        continue
+    seen.add(site_id)
+    keep.append("'" + site_id.replace("'", "''") + "'")
+keep_list = ", ".join(keep)
+orphan_sites = f"SELECT id FROM sites WHERE name NOT IN ({keep_list})"
+orphan_devices = f"SELECT id FROM devices WHERE site_id IN ({orphan_sites})"
+orphan_interfaces = f"SELECT id FROM interfaces WHERE device_id IN ({orphan_devices})"
+print(f"DELETE FROM device_health_history WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM device_health_current WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM device_temperature_readings WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM device_temperature_components WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM device_power_readings WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM device_power_components WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM interface_samples WHERE interface_id IN ({orphan_interfaces});")
+print(f"DELETE FROM metric_samples WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM alerts WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM interfaces WHERE device_id IN ({orphan_devices});")
+print(f"DELETE FROM collector_status_current WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM collector_heartbeat_history WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM collectors WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM devices WHERE site_id IN ({orphan_sites});")
+print(f"DELETE FROM sites WHERE name NOT IN ({keep_list});")
 PY
 }
 
