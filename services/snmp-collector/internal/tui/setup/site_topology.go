@@ -61,14 +61,15 @@ func ValidateSiteTopology(specs []SiteSpec) error {
 }
 
 // SuggestSiteTopology fills upstream_site_ids and hub_device_ids using naming heuristics.
+// Nested lab/campus chains are Internet → core → MDF → IDF.
 func SuggestSiteTopology(specs []SiteSpec) []SiteSpec {
 	out := make([]SiteSpec, len(specs))
 	copy(out, specs)
-	ids := make(map[string]struct{}, len(out))
+	ids := make(map[string]string, len(out))
 	coreID := ""
 	for _, spec := range out {
-		ids[spec.SiteID] = struct{}{}
 		lower := strings.ToLower(spec.SiteID)
+		ids[lower] = spec.SiteID
 		if coreID == "" && (lower == "do-core" || strings.Contains(lower, "core")) {
 			coreID = spec.SiteID
 		}
@@ -81,6 +82,12 @@ func SuggestSiteTopology(specs []SiteSpec) []SiteSpec {
 			if out[i].HubDeviceIDs == nil {
 				out[i].HubDeviceIDs = []string{out[i].SiteID}
 			}
+		case strings.Contains(lower, "-idf"):
+			if mdf := matchingMDFSiteID(lower, ids); mdf != "" {
+				out[i].UpstreamSiteIDs = []string{mdf}
+			} else if coreID != "" {
+				out[i].UpstreamSiteIDs = []string{coreID}
+			}
 		case strings.Contains(lower, "-mdf"):
 			if coreID != "" {
 				out[i].UpstreamSiteIDs = []string{coreID}
@@ -88,6 +95,14 @@ func SuggestSiteTopology(specs []SiteSpec) []SiteSpec {
 		}
 	}
 	return out
+}
+
+func matchingMDFSiteID(lowerIDF string, ids map[string]string) string {
+	i := strings.Index(lowerIDF, "-idf")
+	if i <= 0 {
+		return ""
+	}
+	return ids[lowerIDF[:i]+"-mdf"]
 }
 
 // ParseUpstreamSiteIDs parses comma-separated upstream site IDs.

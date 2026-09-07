@@ -131,6 +131,22 @@ export function useNetworkDashboard({ enabled = true, onUnauthorized } = {}) {
       try {
         const data = await fetchSiteDetailFromApi(siteId)
         if (!isCurrentFetch()) return
+        // #region agent log
+        {
+          const devices = Object.entries(data?.latest?.devices ?? {}).map(([key, device]) => ({
+            key,
+            device_id: device?.device_id,
+            status: device?.status,
+            status_reason: device?.status_reason,
+            upstream_device_ids: device?.upstream_device_ids ?? [],
+            unavailable_upstream_device_ids: device?.unavailable_upstream_device_ids ?? [],
+            upstream_site_ids: device?.upstream_site_ids ?? [],
+            unavailable_upstream_site_ids: device?.unavailable_upstream_site_ids ?? [],
+            root_cause_site_ids: device?.root_cause_site_ids ?? [],
+          }))
+          fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f7c9cd'},body:JSON.stringify({sessionId:'f7c9cd',runId:'post-fix',hypothesisId:'A',location:'useNetworkDashboard.js:fetchSiteDetail',message:'site detail device health',data:{site_id:siteId,location:data?.location,critical:data?.summary?.critical_count,unknown:data?.summary?.unknown_count,upstream_site_ids:data?.upstream_site_ids??[],unavailable_upstream_site_ids:data?.unavailable_upstream_site_ids??[],root_cause_site_ids:data?.root_cause_site_ids??[],site_dependency_impacted:!!data?.site_dependency_impacted,devices},timestamp:Date.now()})}).catch(()=>{});
+        }
+        // #endregion
         setSiteDetail(data)
         setDataMode('live')
         setLoadError(null)

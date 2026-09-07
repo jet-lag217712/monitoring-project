@@ -30,7 +30,12 @@ Persisted collector health rows are not rewritten by the API.
 Upstream site unavailable when configured hub devices are direct-critical, or
 when any direct-critical device exists if no hubs are configured. Downstream
 site dependency impact requires all configured upstream sites to be unavailable
-and a strict majority of site devices to show direct failure evidence.
+and a strict majority of site devices to show failure evidence (direct
+critical, or Unknown from an intra-collector / nested upstream outage).
+
+Nested campus chains are `core → MDF → IDF`. Setup naming and API evaluation
+complete empty IDF/MDF `upstream_site_ids` to that chain so an IDF outage
+walks `IDF → MDF → core` and keeps the core as the only Critical root cause.
 
 ### Alternatives Considered
 

@@ -81,8 +81,59 @@ func TopologicalSiteOrder(index map[string]SiteTopologyNode) []string {
 	return out
 }
 
+// CompleteMissingSiteUpstreams fills empty upstream_site_ids using the same
+// core → MDF → IDF naming heuristic as setup. Operator-defined edges are kept.
+func CompleteMissingSiteUpstreams(index map[string]SiteTopologyNode) map[string]SiteTopologyNode {
+	out := make(map[string]SiteTopologyNode, len(index))
+	idByLower := make(map[string]string, len(index))
+	coreID := ""
+	for name, node := range index {
+		out[name] = SiteTopologyNode{
+			Name:            node.Name,
+			UpstreamSiteIDs: append([]string(nil), node.UpstreamSiteIDs...),
+			HubDeviceIDs:    append([]string(nil), node.HubDeviceIDs...),
+		}
+		lower := strings.ToLower(name)
+		idByLower[lower] = name
+		if coreID == "" && (lower == "do-core" || strings.Contains(lower, "core")) {
+			coreID = name
+		}
+	}
+	for name, node := range out {
+		if len(node.UpstreamSiteIDs) > 0 {
+			continue
+		}
+		lower := strings.ToLower(name)
+		switch {
+		case lower == "do-core" || strings.Contains(lower, "core"):
+			continue
+		case strings.Contains(lower, "-idf"):
+			if mdf := matchingMDFSiteID(lower, idByLower); mdf != "" {
+				node.UpstreamSiteIDs = []string{mdf}
+			} else if coreID != "" {
+				node.UpstreamSiteIDs = []string{coreID}
+			}
+		case strings.Contains(lower, "-mdf"):
+			if coreID != "" {
+				node.UpstreamSiteIDs = []string{coreID}
+			}
+		}
+		out[name] = node
+	}
+	return out
+}
+
+func matchingMDFSiteID(lowerIDF string, idByLower map[string]string) string {
+	i := strings.Index(lowerIDF, "-idf")
+	if i <= 0 {
+		return ""
+	}
+	return idByLower[lowerIDF[:i]+"-mdf"]
+}
+
 // EvaluateSiteTopology computes unavailable upstream sites and downstream impact.
 func EvaluateSiteTopology(index map[string]SiteTopologyNode, raw map[string]SiteRawHealth) SiteTopologyEval {
+	index = CompleteMissingSiteUpstreams(index)
 	order := TopologicalSiteOrder(index)
 	unavailable := make(map[string]bool, len(index))
 	states := make(map[string]SiteDependencyState, len(index))
@@ -145,12 +196,7 @@ func siteShowsCascadeSignature(raw SiteRawHealth) bool {
 	}
 	failed := 0
 	for _, device := range raw.Devices {
-		if isDirectCritical(device.Projection) {
-			failed++
-			continue
-		}
-		if device.Projection.Status == StatusUnknown &&
-			!isDeviceDependencyImpacted(device.Projection) {
+		if isDirectCritical(device.Projection) || device.Projection.Status == StatusUnknown {
 			failed++
 		}
 	}
@@ -168,12 +214,6 @@ func isDirectFailureReason(reason string) bool {
 	default:
 		return false
 	}
-}
-
-func isDeviceDependencyImpacted(proj DeviceProjection) bool {
-	return proj.Status == StatusUnknown &&
-		(strings.EqualFold(proj.StatusReason, "upstream_unreachable") ||
-			len(proj.UnavailableUpstreamIDs) > 0)
 }
 
 func collectRootCauseSites(unavailable []string, raw map[string]SiteRawHealth, index map[string]SiteTopologyNode) []string {
