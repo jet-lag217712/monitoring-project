@@ -1,6 +1,0 @@
-.env
-certs/*
-!certs/.gitkeep
-data/
-*.db
-*.log

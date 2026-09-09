@@ -81,14 +81,7 @@ go test ./...
 go run ./cmd/collector validate -config configs/collector.docker-test.yaml
 ```
 
-For a complete local smoke path use:
-
-```bash
-./deployments/end-to-end/up.sh
-./deployments/end-to-end/smoke.sh
-./deployments/end-to-end/acceptance.sh
-```
-
-See [`services/snmp-collector/deployments/README.md`](deployments/README.md)
-for the least-privilege systemd fixture and
-[`deployments/runbooks/`](../../deployments/runbooks/) for operator recovery.
+For a complete local smoke path, stage onto an Equate-Appliance VM
+(`make appliance-stage`) and use the GNS3 lab under
+[`remote-server/`](../../remote-server/). Operator recovery lives in
+[`deployments/runbooks/`](../../deployments/runbooks/).

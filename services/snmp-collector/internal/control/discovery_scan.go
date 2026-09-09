@@ -32,16 +32,8 @@ func (s *Server) updateScanProgress(probed, total int) {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
 	if !s.scanState.running {
-		agentDebugLog("A", "discovery_scan.go:updateScanProgress", "ignored progress update, scan not running", map[string]any{
-			"probed": probed,
-			"total":  total,
-		})
 		return
 	}
-	agentDebugLog("A", "discovery_scan.go:updateScanProgress", "progress updated", map[string]any{
-		"probed": probed,
-		"total":  total,
-	})
 	s.scanState.probed = probed
 	if total > 0 {
 		s.scanState.total = total

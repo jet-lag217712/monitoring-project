@@ -35,9 +35,6 @@ wait_for_apt() {
 
 install_ci_host_packages() {
   echo "installing CI host packages (open-vm-tools, qemu-guest-agent)..."
-  # #region agent log
-  echo "==> debug apt state before host packages (hypothesis A/C): cloud-init=$(cloud-init status 2>&1 || true); apt-get=$(pgrep -a apt-get 2>/dev/null || echo none); dpkg=$(pgrep -a dpkg 2>/dev/null || echo none)"
-  # #endregion
   wait_for_apt
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o DPkg::Lock::Timeout=300 update -qq
@@ -50,9 +47,6 @@ ensure_docker_compose() {
     return 0
   fi
   echo "installing Docker Engine with compose plugin..."
-  # #region agent log
-  echo "==> debug apt state before docker install (hypothesis A/C): cloud-init=$(cloud-init status 2>&1 || true); apt-get=$(pgrep -a apt-get 2>/dev/null || echo none); dpkg=$(pgrep -a dpkg 2>/dev/null || echo none)"
-  # #endregion
   wait_for_apt
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o DPkg::Lock::Timeout=300 update -qq

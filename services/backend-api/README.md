@@ -18,14 +18,16 @@ limited, CSRF-protected, and tied to active local appliance users.
 
 ## Run locally
 
-Start the local Compose validation stack first, then run the API with the
-appliance configuration:
+Unit tests do not require a live stack:
 
 ```bash
-./deployments/end-to-end/up.sh
 cd services/backend-api
+go test ./...
 go run ./cmd/api -config configs/api.example.yaml
 ```
+
+Full-stack checks run on an Equate-Appliance VM (`make appliance-stage`) with
+the GNS3 lab under `remote-server/`. See `make help`.
 
 The REST listener defaults to `http://127.0.0.1:8000`; administration and
 metrics default to `http://127.0.0.1:9092`.

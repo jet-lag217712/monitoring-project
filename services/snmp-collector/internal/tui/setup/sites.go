@@ -100,11 +100,11 @@ func siteIDForIndex(index int) string {
 }
 
 func collectorIDForSiteID(siteID string) string {
-	return collectorIDForProfile(ProfileConfigFor(ProfileDevVxrail), siteID)
+	return collectorIDForProfile(ProfileConfigFor(ProfileAppliance), siteID)
 }
 
 func mqttClientIDForSiteID(siteID string) string {
-	return mqttClientIDForProfile(ProfileConfigFor(ProfileDevVxrail), siteID)
+	return mqttClientIDForProfile(ProfileConfigFor(ProfileAppliance), siteID)
 }
 
 // dockerResourceSlug lowercases site IDs for Docker service/image/volume names.

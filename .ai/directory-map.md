@@ -8,11 +8,10 @@ architecture, decisions, standards, and roadmap documentation.
 ```text
 monitoring-dashboard/
 ├── .ai/                         canonical project guidance
+├── Makefile                     develop (appliance VM) and release entry points
 ├── deployments/production/
 │   └── appliance/               supported local appliance Compose runtime
 ├── deployments/update-channel/  Azure Blob channel manifest examples/schema
-├── deployments/end-to-end/      single-host source validation
-├── deployments/development/     developer integration fixture
 ├── deployments/runbooks/        operator procedures
 ├── appliance/scripts/           release, VM, OVA, .eqa package/publish scripts
 ├── appliance/keys/              update-signing public key (no private keys)
@@ -24,7 +23,7 @@ monitoring-dashboard/
 ├── infrastructure/docker/       local Mosquitto and PostgreSQL images
 ├── database/                    schema, seeds, and migrations
 ├── docs/                        architecture, contracts, schemas, and release docs
-└── remote-server/               GNS3/VMware laboratory network fixtures
+└── remote-server/               GNS3 laboratory network fixtures
 ```
 
 ## `.ai` structure
@@ -45,6 +44,7 @@ PostgreSQL, Backend API, nginx, and the React dashboard. Collectors reach
 monitored SNMP networks through the VM route table. The TUI reaches each
 collector through an owner-only Unix socket. Only nginx publishes 80/443.
 
-The old split deployment directories and retired infrastructure files are not
-product architecture. Do not add documentation that presents them as customer
-installation options.
+Human workflows are Makefile-driven: develop by staging onto an Equate-Appliance
+VM, and release via OVA/`.eqa` targets. See [appliance-6](decisions/appliance-6.md).
+The GNS3 lab under `remote-server/` is operator lab infrastructure, not a
+customer install path.

@@ -11,10 +11,6 @@ if [[ -f "${SCRIPT_DIR}/manifest-utils.sh" ]]; then
   # shellcheck source=manifest-utils.sh
   source "${SCRIPT_DIR}/manifest-utils.sh"
 fi
-if [[ -f "${SCRIPT_DIR}/debug-agent-log.sh" ]]; then
-  # shellcheck source=debug-agent-log.sh
-  source "${SCRIPT_DIR}/debug-agent-log.sh"
-fi
 
 cd "${DEPLOY_DIR}"
 
@@ -39,9 +35,6 @@ reconcile_site_permissions() {
   fi
   mapfile -t SITE_IDS < <(read_manifest_site_ids "${manifest}")
   if [[ "${#SITE_IDS[@]}" -eq 0 ]]; then
-    if declare -F debug_agent_log >/dev/null 2>&1; then
-      debug_agent_log "H8" "post-configure.sh:reconcile_site_permissions" "no site ids parsed from manifest" "{\"manifest\":\"${manifest}\"}"
-    fi
     echo "post-configure: warning: no site_id entries found in ${manifest}" >&2
     return 0
   fi
@@ -83,11 +76,6 @@ compose() {
     "$@"
 }
 
-if declare -F debug_agent_log >/dev/null 2>&1; then
-  db_before="$(query_db_topology_json "${DEPLOY_DIR}" "${COMPOSE_ENV}")"
-  debug_agent_log "H6" "post-configure.sh" "post-configure start" "{\"deploy_dir\":\"${DEPLOY_DIR}\",\"db_before\":${db_before}}"
-fi
-
 reconcile_site_permissions
 
 if [[ -x "${SCRIPT_DIR}/sync-site-topology.sh" && -f sites/manifest.yaml ]]; then
@@ -104,10 +92,4 @@ compose up -d --remove-orphans
 if [[ -f sites/manifest.yaml ]]; then
   date -u +"%Y-%m-%dT%H:%M:%S.%NZ" > "${DEPLOY_DIR}/.setup-complete"
   chmod 0600 "${DEPLOY_DIR}/.setup-complete"
-fi
-
-if declare -F debug_agent_log >/dev/null 2>&1; then
-  db_after="$(query_db_topology_json "${DEPLOY_DIR}" "${COMPOSE_ENV}")"
-  manifest_sites="$(read_manifest_site_ids sites/manifest.yaml | paste -sd, - || true)"
-  debug_agent_log "H6" "post-configure.sh" "post-configure complete" "{\"db_after\":${db_after},\"site_ids\":\"${manifest_sites}\"}"
 fi

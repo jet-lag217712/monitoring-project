@@ -28,11 +28,11 @@ kept under runtime/state directories and are never supplied as release inputs.
 
 ## Source checkout
 
-For a local source validation run:
+Stage a release onto an Equate-Appliance VM, then configure with `equate`:
 
 ```bash
-cd deployments/production/appliance
-./bootstrapper.sh
+make appliance-bundle ARCH=arm64 VERSION=<version>
+make appliance-stage HOST=<appliance-vm> ARCH=arm64 VERSION=<version>
 ```
 
 For customer installation, use the checksummed offline release and follow

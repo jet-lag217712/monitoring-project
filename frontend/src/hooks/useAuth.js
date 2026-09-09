@@ -71,32 +71,15 @@ function profileFromApplianceUser(username) {
 }
 
 async function fetchApplianceSession() {
-  let sessionUrl
-  try {
-    sessionUrl = apiUrl('/auth/me')
-  } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'apiUrl threw',data:{error:err?.message},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    throw err
-  }
-  // #region agent log
-  fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'fetching session',data:{sessionUrl},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
+  const sessionUrl = apiUrl('/auth/me')
   const res = await fetch(sessionUrl, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
   })
   if (res.status === 401) {
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'session not authenticated',data:{status:res.status},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     return null
   }
   if (!res.ok) {
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'56b40f'},body:JSON.stringify({sessionId:'56b40f',location:'useAuth.js:fetchApplianceSession',message:'session fetch failed',data:{status:res.status},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     throw new Error('Failed to load session')
   }
   const data = await res.json()

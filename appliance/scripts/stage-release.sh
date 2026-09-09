@@ -20,7 +20,7 @@ usage() {
 usage: stage-release.sh --host <hostname> [--user <ssh-user>] --arch <arm64|amd64> --version <semver> [--remote-dir <path>]
 
 Transfers dist/appliance-<arch>-<version>/ plus configure-vm.sh, bootstrap-appliance-rendered.sh,
-and prepare-ova.sh to the target VM.
+prepare-ova.sh, and the appliance verifiers to the target VM.
 EOF
 }
 
@@ -80,6 +80,8 @@ scp \
   "${SCRIPTS_SRC}/configure-vm.sh" \
   "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" \
   "${SCRIPTS_SRC}/prepare-ova.sh" \
+  "${SCRIPTS_SRC}/verify-appliance.sh" \
+  "${SCRIPTS_SRC}/verify-ova-import.sh" \
   "${REMOTE}:${REMOTE_DIR}/"
 
 cat <<EOF

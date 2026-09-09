@@ -19,6 +19,9 @@ remote-server/*
 !remote-server/README.md
 !remote-server/seven-device-c7200.gns3
 !remote-server/validate-lab.sh
+!remote-server/setup-gns3-bridge.sh
+!remote-server/smoke_mqtt_v2_to_api.sh
+!remote-server/mqtt_outage_drill.sh
 
 # IDE Files
 .idea/
@@ -39,19 +42,10 @@ deployments/**/docker-compose.sites.generated.yml
 deployments/**/.setup-complete
 deployments/**/.env
 
-# Terraform
-**/.terraform/
-**/.terraform.lock.hcl
-**/terraform.tfvars
-**/terraform.tfstate
-**/terraform.tfstate.*
-**/crash.log
-**/override.tf
-**/override.tf.json
-**/*_override.tf
-**/*_override.tf.json
-.cursor/debug-36805e.log
-.cursor/debug-36805e.log
+# Local debug probes (never commit)
+.cursor/debug-*.log
+.cursor/debug-*.py
+.cursor/repro-*.sh
 
 # Update signing private keys
 **/equate-updates.priv

@@ -72,11 +72,6 @@ done
 echo "removing CI build accounts..."
 for build_user in debian packer; do
   if id "${build_user}" >/dev/null 2>&1; then
-    # #region agent log
-    # Hypothesis A: CI SSH keeps the account "in use"; plain userdel fails and was swallowed.
-    _procs="$(ps -u "${build_user}" -o pid=,comm= 2>/dev/null | tr '\n' ';' | head -c 500 || true)"
-    echo "==> debug prepare-ova userdel pre (hypothesis A): user=${build_user}; procs=${_procs}"
-    # #endregion
     # -f is required when finalize runs under an active SSH login as the build user
     # (AMD64 CI: ssh debian@guest 'sudo …/prepare-ova.sh'). Without -f, userdel exits
     # with "currently used by process" and the account remains in the golden image.
@@ -90,10 +85,6 @@ for build_user in debian packer; do
       _rc="${_rc2}"
     fi
     set -e
-    # #region agent log
-    _exists="$(id "${build_user}" >/dev/null 2>&1 && echo yes || echo no)"
-    echo "==> debug prepare-ova userdel post (hypothesis A): user=${build_user}; rc=${_rc}; exists=${_exists}; out=${_out}"
-    # #endregion
     if id "${build_user}" >/dev/null 2>&1; then
       report "failed to remove CI build account ${build_user}: ${_out}"
     fi

@@ -7,28 +7,6 @@ import (
 	"testing"
 )
 
-func TestFinalizeSiteArtifactsPermissionsSkipsDevProfile(t *testing.T) {
-	deployDir := t.TempDir()
-	spec := SiteSpec{SiteID: "site-001"}
-	cfgPath := spec.ConfigPath(deployDir)
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := finalizeSiteArtifactsPermissions(ProfileDevVxrail, deployDir, []SiteSpec{spec}); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("cfg mode=%o", info.Mode().Perm())
-	}
-}
-
 func TestFixCollectorManagedPathRequiresRootOrDocker(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "managed-inventory.yaml")

@@ -1,5 +1,0 @@
-.env
-certs/
-secrets/*
-!secrets/.gitkeep
-*.log

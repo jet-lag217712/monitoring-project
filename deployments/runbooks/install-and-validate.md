@@ -32,20 +32,18 @@ place.
 ## Validation
 
 ```bash
-./deployments/test.sh --quick
+make test
 docker compose -f deployments/production/appliance/docker-compose.yml config
-curl -fsS http://127.0.0.1:9090/healthz
-curl -fsS http://127.0.0.1:9090/readyz
 ```
 
-Run the collector checks from the appliance VM or its site container. Service
+Run collector checks from the appliance VM or its site container. Service
 administration ports remain private to the VM; the dashboard is verified on
 the published HTTPS endpoint.
 
 ## Acceptance
 
 ```bash
-/usr/local/lib/equate/verify-appliance.sh
+make appliance-verify
 /usr/local/lib/equate/verify-ova-import.sh --configured
 ```
 
@@ -53,5 +51,4 @@ Confirm dashboard login with two local PAM-backed users, configure at least two
 sites, review discovery before enrollment, view live device telemetry, reboot,
 and verify that state and TUI-managed configuration persist.
 
-For source-only testing use [`../end-to-end/`](../end-to-end/) and
-`./deployments/test.sh --quick`.
+For GNS3 lab acceptance see [`field-acceptance-gns3.md`](field-acceptance-gns3.md).

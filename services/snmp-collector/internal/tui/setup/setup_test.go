@@ -53,7 +53,7 @@ func TestWriteEnvFile(t *testing.T) {
 }
 
 func TestNewModelInitialStep(t *testing.T) {
-	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileDevVxrail, RunOptions{})
+	m := newModel(t.TempDir(), tui.NewTheme(tui.ThemeLight), "test", ProfileAppliance, RunOptions{})
 	if !m.splash {
 		t.Fatal("expected splash screen on launch")
 	}
@@ -74,7 +74,7 @@ func TestNewModelInitialStep(t *testing.T) {
 func TestBuildSiteSpecsFourSites(t *testing.T) {
 	siteIDs := []string{"site-001", "site-002", "site-003", "site-004"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24", "10.255.3.0/24"}
-	specs, err := BuildSiteSpecs(ProfileDevVxrail,4, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileAppliance,4, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,28 +106,28 @@ func TestBuildSiteSpecsFourSites(t *testing.T) {
 }
 
 func TestBuildSiteSpecsRejectsInvalidInput(t *testing.T) {
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,0, nil, nil); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,0, nil, nil); err == nil {
 		t.Fatal("expected error for zero count")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a"}, []string{"10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"site-a"}, []string{"10.0.0.0/24"}); err == nil {
 		t.Fatal("expected site id count mismatch error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24"}); err == nil {
 		t.Fatal("expected cidr count mismatch error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"bad", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"site-a", "site-b"}, []string{"bad", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid cidr error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24", "10.0.0.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"site-a", "site-b"}, []string{"10.0.0.0/24", "10.0.0.0/24"}); err == nil {
 		t.Fatal("expected duplicate cidr error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"Site A", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"Site A", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid site id error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"-bad", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"-bad", "site-b"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected invalid site id error")
 	}
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"site-a", "site-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"site-a", "site-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected duplicate site id error")
 	}
 }
@@ -135,7 +135,7 @@ func TestBuildSiteSpecsRejectsInvalidInput(t *testing.T) {
 func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 	siteIDs := []string{"do-core", "site-a-mdf", "School-B"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24"}
-	specs, err := BuildSiteSpecs(ProfileDevVxrail,3, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileAppliance,3, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 	if specs[0].ServiceName != "snmp-collector-do-core" {
 		t.Fatalf("service=%q", specs[0].ServiceName)
 	}
-	if specs[1].CollectorID != "collector-development-vxrail-site-a-mdf" {
+	if specs[1].CollectorID != "collector-appliance-site-a-mdf" {
 		t.Fatalf("collector_id=%q", specs[1].CollectorID)
 	}
 	if specs[2].SiteID != "School-B" {
@@ -160,7 +160,7 @@ func TestBuildSiteSpecsCustomIDs(t *testing.T) {
 }
 
 func TestBuildSiteSpecsRejectsCaseInsensitiveDuplicate(t *testing.T) {
-	if _, err := BuildSiteSpecs(ProfileDevVxrail,2, []string{"School-A", "school-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
+	if _, err := BuildSiteSpecs(ProfileAppliance,2, []string{"School-A", "school-a"}, []string{"10.0.0.0/24", "10.0.1.0/24"}); err == nil {
 		t.Fatal("expected case-insensitive duplicate site id error")
 	}
 }
@@ -171,16 +171,34 @@ func TestGenerateComposeFourSites(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(template), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(template, []byte("site_id: site-001\ncollector:\n  id: collector-development-vxrail\nmqtt:\n  client_id: development-vxrail-collector\n  broker: tls://127.0.0.1:8883\n  username: collector\n  password_env: MQTT_PASSWORD\n  tls:\n    ca_file: /certs/ca.crt\ninventory:\n  managed_path: /var/lib/snmp-collector/managed/managed-inventory.yaml\ndevices: []\n"), 0o600); err != nil {
+	if err := os.WriteFile(template, []byte("site_id: site-001\ncollector:\n  id: collector-appliance\nmqtt:\n  client_id: appliance-collector\n  broker: tls://127.0.0.1:8883\n  username: collector\n  password_env: MQTT_PASSWORD\n  tls:\n    ca_file: /certs/ca.crt\ninventory:\n  managed_path: /var/lib/snmp-collector/managed/managed-inventory.yaml\ndevices: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	siteIDs := []string{"site-001", "site-002", "site-003", "site-004"}
 	cidrs := []string{"10.255.0.0/24", "10.255.1.0/24", "10.255.2.0/24", "10.255.3.0/24"}
-	specs, err := BuildSiteSpecs(ProfileDevVxrail,4, siteIDs, cidrs)
+	specs, err := BuildSiteSpecs(ProfileAppliance,4, siteIDs, cidrs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := persistMultiSiteArtifacts(deployDir, ProfileDevVxrail, specs, 5, 2); err != nil {
+	cfg := ProfileConfigFor(ProfileAppliance)
+	manifest := Manifest{SiteCount: len(specs), BaseAdminPort: cfg.BaseAdminPort, ProbeRate: 5, ProbeBurst: 2, Sites: specs}
+	if err := WriteManifest(deployDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range specs {
+		managedPath := spec.ManagedInventoryPath(deployDir)
+		if err := os.MkdirAll(filepath.Dir(managedPath), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		seed := "discovery:\n  allowed_cidrs:\n    - " + spec.CIDR + "\n"
+		if err := os.WriteFile(managedPath, []byte(seed), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := WriteSiteArtifacts(deployDir, specs, 5, 2, "SNMP_DISCOVERY_COMMUNITY"); err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateCompose(deployDir, ProfileAppliance, specs, ""); err != nil {
 		t.Fatal(err)
 	}
 	composeData, err := os.ReadFile(generatedComposePath(deployDir))
@@ -223,7 +241,7 @@ func TestGenerateComposeFourSites(t *testing.T) {
 			t.Fatalf("managed missing cidr for %s", spec.SiteID)
 		}
 	}
-	manifest, err := LoadManifest(deployDir)
+	manifest, err = LoadManifest(deployDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +249,10 @@ func TestGenerateComposeFourSites(t *testing.T) {
 		t.Fatalf("manifest site_count=%d sites=%d", manifest.SiteCount, len(manifest.Sites))
 	}
 	if _, err := exec.LookPath("docker"); err == nil {
+		if exec.Command("docker", "info").Run() != nil {
+			t.Log("docker daemon unavailable; skipping compose config")
+			return
+		}
 		cmd := exec.Command("docker", "compose", "-f", filepath.Join(deployDir, "docker-compose.yml"), "-f", generatedComposePath(deployDir), "config")
 		cmd.Env = append(os.Environ(),
 			"MQTT_BROKER=tls://example.com:8883",
@@ -239,7 +261,7 @@ func TestGenerateComposeFourSites(t *testing.T) {
 			"SNMP_DISCOVERY_COMMUNITY=placeholder",
 		)
 		baseCompose := filepath.Join(deployDir, "docker-compose.yml")
-		if err := os.WriteFile(baseCompose, []byte("name: test-vxrail\nservices: {}\nvolumes: {}\n"), 0o600); err != nil {
+		if err := os.WriteFile(baseCompose, []byte("name: test-appliance\nservices: {}\nvolumes: {}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		out, err := cmd.CombinedOutput()
@@ -252,7 +274,7 @@ func TestGenerateComposeFourSites(t *testing.T) {
 func TestApplyThresholdToAllSitesRequiresEverySite(t *testing.T) {
 	deployDir := t.TempDir()
 	specs := []SiteSpec{
-		{Index: 1, SiteID: "site-001", CollectorID: "collector-development-vxrail-site-001", MQTTClientID: "development-vxrail-collector-site-001", ServiceName: "snmp-collector-site-001", CIDR: "10.255.0.0/24", AdminPort: 9090},
+		{Index: 1, SiteID: "site-001", CollectorID: "collector-appliance-site-001", MQTTClientID: "appliance-collector-site-001", ServiceName: "snmp-collector-site-001", CIDR: "10.255.0.0/24", AdminPort: 9090},
 	}
 	manifest := Manifest{SiteCount: 1, BaseAdminPort: baseAdminPort, ProbeRate: 5, ProbeBurst: 2, Sites: specs}
 	if err := WriteManifest(deployDir, manifest); err != nil {

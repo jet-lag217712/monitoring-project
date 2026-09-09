@@ -275,14 +275,6 @@ copy_customer_artifacts() {
       cp -a "${old_release}/${artifact}" "${new_release}/${artifact}"
     fi
   done
-  if declare -F debug_agent_log >/dev/null 2>&1; then
-    local manifest="${new_release}/sites/manifest.yaml"
-    local manifest_data="null"
-    if [[ -f "${manifest}" ]]; then
-      manifest_data="$(manifest_topology_json "${manifest}")"
-    fi
-    debug_agent_log "H4" "bootstrap-appliance-rendered.sh:copy_customer_artifacts" "copied customer artifacts" "{\"old\":\"${old_release}\",\"new\":\"${new_release}\",\"manifest\":${manifest_data}}"
-  fi
 }
 
 release_is_configured() {
@@ -429,9 +421,6 @@ upgrade_appliance_release() {
     echo "current release is not configured (.setup-complete and site manifest missing); run equate configure first" >&2
     return 1
   fi
-  if [[ ! -f "${old_release_dir}/.setup-complete" ]] && declare -F debug_agent_log >/dev/null 2>&1; then
-    debug_agent_log "H7" "bootstrap-appliance-rendered.sh:upgrade_appliance_release" "upgrade allowed without setup-complete marker" "{\"old_release_dir\":\"${old_release_dir}\"}"
-  fi
   COMPOSE_ENV="${RUN_DIR}/rendered/compose.env"
   if [[ ! -f "${COMPOSE_ENV}" ]]; then
     echo "missing rendered compose env: ${COMPOSE_ENV}" >&2
@@ -512,12 +501,6 @@ upgrade_appliance_release() {
 EOF
   chmod 0600 "${RUN_DIR}/rendered/installation.json"
   echo "upgrade complete: ${old_version} -> ${VERSION}"
-  if declare -F debug_agent_log >/dev/null 2>&1; then
-    local db_after manifest_data
-    db_after="$(query_db_topology_json "${RELEASE_DIR}" "${COMPOSE_ENV}")"
-    manifest_data="$(manifest_topology_json "${RELEASE_DIR}/sites/manifest.yaml")"
-    debug_agent_log "H3" "bootstrap-appliance-rendered.sh:upgrade_appliance_release" "upgrade stack started" "{\"version\":\"${VERSION}\",\"manifest\":${manifest_data},\"db_after_stack_up\":${db_after}}"
-  fi
 }
 
 rollback_appliance_release() {

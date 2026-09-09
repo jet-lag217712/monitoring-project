@@ -106,11 +106,6 @@ func (s *Server) handleDiscoveryScanStart(ctx context.Context, params map[string
 
 func (s *Server) handleDiscoveryScanProgress() (map[string]any, error) {
 	snap := s.scanProgressSnapshot()
-	agentDebugLog("D", "discovery_handlers.go:handleDiscoveryScanProgress", "progress polled", map[string]any{
-		"running": snap.running,
-		"probed":  snap.probed,
-		"total":   snap.total,
-	})
 	result := map[string]any{
 		"running": snap.running,
 		"probed":  snap.probed,
@@ -155,16 +150,11 @@ func (s *Server) newDiscoveryScanner() (*discovery.Scanner, *config.Config, erro
 }
 
 func (s *Server) runDiscoveryScan(scanner *discovery.Scanner) {
-	agentDebugLog("C", "discovery_handlers.go:runDiscoveryScan", "async scan goroutine started", nil)
 	scanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	started := s.scanProgressSnapshot().startedAt
 	candidates, scanErr := scanner.Scan(scanCtx)
-	agentDebugLog("C", "discovery_handlers.go:runDiscoveryScan", "async scan goroutine finished", map[string]any{
-		"candidateCount": len(candidates),
-		"scanErr":        scanErr != nil,
-	})
 	state := discoveryScanState{
 		StartedAt:  started,
 		FinishedAt: time.Now().UTC(),

@@ -11,33 +11,33 @@ SNMP devices → collectors → local MQTT/TLS → ingestion → PostgreSQL
                                            API → nginx → dashboard
 ```
 
+Develop and release from the repository Makefile. Operators on the VM use the
+`equate` CLI. See [appliance-6](../.ai/decisions/appliance-6.md).
+
 ## Which directory to use
 
 | Directory | Use |
 |---|---|
 | [`production/appliance/`](production/appliance/) | Customer appliance runtime and first-boot setup |
-| [`end-to-end/`](end-to-end/) | Single-host source validation before packaging |
-| [`development/`](development/) | Developer integration fixture only |
 | [`runbooks/`](runbooks/) | Operator procedures for the local appliance |
-| [`lib/`](lib/) | Smoke and failure-drill helpers |
+| [`update-channel/`](update-channel/) | Connected `.eqa` channel schema and examples |
 
-The old split deployment directories remain in the repository only where their
-source fixtures are needed by tests. They are not supported customer
-installation paths and must not be presented as product architecture.
+GNS3 lab fixtures live in [`../remote-server/`](../remote-server/).
 
 ## Commands
 
 ```bash
-# Source validation on one local host
-./deployments/end-to-end/up.sh
-./deployments/end-to-end/validate.sh
-./deployments/end-to-end/smoke.sh
-./deployments/end-to-end/acceptance.sh
-./deployments/end-to-end/down.sh
+make help
+make test
+make appliance-bundle ARCH=arm64 VERSION=<version>
+make appliance-stage HOST=<appliance-vm> ARCH=arm64 VERSION=<version>
+```
 
-# Aggregate repository checks
-./deployments/test.sh --quick
-./deployments/test.sh --with-smoke
+On the Equate-Appliance VM:
+
+```bash
+sudo equate configure
+make appliance-verify
 ```
 
 ## Appliance configuration ownership
@@ -69,7 +69,7 @@ Only the frontend ports are customer-facing:
 
 ## Acceptance order
 
-1. Validate the local Compose files and migrations.
+1. Validate the local Compose files (`make test`).
 2. Build an architecture-matched offline release.
 3. Prepare a clean Debian 12 VM and import the release.
 4. Complete first boot in the setup TUI.

@@ -13,9 +13,9 @@ import (
 func runSetup(args []string) int {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	deployDir := fs.String("dir", ".", "deployment directory (e.g. deployments/development/vxrail)")
+	deployDir := fs.String("dir", ".", "deployment directory (e.g. deployments/production/appliance)")
 	themeName := fs.String("theme", "auto", "color theme: auto, light, or dark")
-	profileName := fs.String("profile", "dev-vxrail", "setup profile: dev-vxrail or appliance")
+	profileName := fs.String("profile", "appliance", "setup profile: appliance")
 	reconfigureMode := fs.String("reconfigure", "", "reconfigure mode: full, sites, or users")
 	if err := fs.Parse(args); err != nil {
 		return 2

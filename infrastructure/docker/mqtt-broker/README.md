@@ -9,10 +9,8 @@ store; PostgreSQL remains authoritative.
 For source validation:
 
 ```bash
+make mqtt-dev-certs
 cd infrastructure/docker/mqtt-broker
-chmod +x scripts/gen-dev-certs.sh scripts/gen-passwords.sh
-./scripts/gen-dev-certs.sh
-./scripts/gen-passwords.sh
 docker compose up --build -d
 ```
 

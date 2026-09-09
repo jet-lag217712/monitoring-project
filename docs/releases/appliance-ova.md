@@ -59,18 +59,16 @@ From the build host, copy the checksummed bundle and installer scripts into a
 clean Debian VM. Verify the remote architecture matches the bundle before
 installing.
 
-```bash
-# On the build host — verify checksums locally first
-shasum -a 256 -c Equate-Appliance-<version>-arm64.tar.gz.sha256
+Prefer Make so the staged files match the develop workflow:
 
-# Copy bundle and appliance scripts to the VM staging area
-scp Equate-Appliance-<version>-arm64.tar.gz \
-    Equate-Appliance-<version>-arm64.tar.gz.sha256 \
-    appliance/scripts/configure-vm.sh \
-    appliance/scripts/verify-appliance.sh \
-    appliance/scripts/prepare-ova.sh \
-    root@<vm-ip>:/root/equate-staging/
+```bash
+make appliance-bundle ARCH=arm64 VERSION=<version>
+make appliance-stage HOST=<vm-ip> USER=root ARCH=arm64 VERSION=<version>
 ```
+
+`stage-release.sh` copies the bundle plus `configure-vm.sh`,
+`prepare-ova.sh`, `verify-appliance.sh`, and `verify-ova-import.sh`.
+`configure-vm.sh` installs the verifiers to `/usr/local/lib/equate/`.
 
 Do not copy customer configuration, SNMP communities, or operator credentials
 into the build VM. Internal database, MQTT, machine, and TLS credentials are

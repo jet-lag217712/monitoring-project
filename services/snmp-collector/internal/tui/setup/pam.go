@@ -21,8 +21,6 @@ func ResolvePamHelperPath(deployDir string) (string, error) {
 	candidates := []string{
 		filepath.Join(deployDir, "scripts", "manage-users.sh"),
 		defaultPamHelperPath,
-		filepath.Join(deployDir, "scripts", "pam-user-helper.sh"),
-		"/opt/equate/scripts/pam-user-helper.sh",
 	}
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {

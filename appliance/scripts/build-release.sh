@@ -71,15 +71,6 @@ require_cmd() {
 
 require_cmd docker git go
 
-# #region agent log
-_debug_log() {
-  local hypothesis_id="$1" location="$2" message="$3" data="$4"
-  printf '{"sessionId":"11e234","hypothesisId":"%s","location":"%s","message":"%s","data":%s,"timestamp":%s}\n' \
-    "$hypothesis_id" "$location" "$message" "$data" "$(($(date +%s) * 1000))" \
-    >> "${ROOT}/.cursor/debug-11e234.log" 2>/dev/null || true
-}
-# #endregion
-
 docker_config_uses_osxkeychain() {
   local config="${HOME}/.docker/config.json"
   [[ -f "${config}" ]] || return 1
@@ -97,29 +88,17 @@ PY
 ensure_docker_credential_path() {
   local os_name dir cred resolved
   os_name="$(uname -s)"
-  # #region agent log
-  _debug_log "A" "build-release.sh:ensure_docker_credential_path" "credential check entry" "{\"os\":\"${os_name}\"}"
-  # #endregion
 
   if [[ "${os_name}" != "Darwin" ]]; then
-    # #region agent log
-    _debug_log "A" "build-release.sh:ensure_docker_credential_path" "skipped on non-macOS" "{\"os\":\"${os_name}\"}"
-    # #endregion
     return 0
   fi
 
   if ! docker_config_uses_osxkeychain; then
-    # #region agent log
-    _debug_log "B" "build-release.sh:ensure_docker_credential_path" "skipped; docker config does not use osxkeychain" "{}"
-    # #endregion
     return 0
   fi
 
   resolved="$(command -v docker-credential-osxkeychain 2>/dev/null || true)"
   if [[ -n "${resolved}" ]] && [[ -x "${resolved}" ]]; then
-    # #region agent log
-    _debug_log "C" "build-release.sh:ensure_docker_credential_path" "credential helper already in PATH" "{\"path\":\"${resolved}\"}"
-    # #endregion
     return 0
   fi
   local candidates=(
@@ -131,15 +110,9 @@ ensure_docker_credential_path() {
     cred="${dir}/docker-credential-osxkeychain"
     if [[ -x "${cred}" ]]; then
       export PATH="${dir}:${PATH}"
-      # #region agent log
-      _debug_log "C" "build-release.sh:ensure_docker_credential_path" "credential helper added to PATH" "{\"path\":\"${cred}\"}"
-      # #endregion
       return 0
     fi
   done
-  # #region agent log
-  _debug_log "D" "build-release.sh:ensure_docker_credential_path" "credential helper missing on macOS" "{}"
-  # #endregion
   echo "docker-credential-osxkeychain not found in PATH (broken OrbStack symlink or missing Docker Desktop)" >&2
   echo "fix: reinstall Docker Desktop, restore OrbStack, or remove credsStore from ~/.docker/config.json" >&2
   exit 1
@@ -266,42 +239,59 @@ save_image backend-api "${RELEASE_BACKEND_API}"
 save_image frontend "${RELEASE_FRONTEND}"
 save_image snmp-collector "${RELEASE_SNMP_COLLECTOR}"
 
+trim_ws() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "${s}"
+}
+
+resolve_runtime_script() {
+  local name="$1"
+  if [[ -f "${SCRIPTS_SRC}/${name}" ]]; then
+    printf '%s' "${SCRIPTS_SRC}/${name}"
+  elif [[ -f "${DEPLOY_SRC}/scripts/${name}" ]]; then
+    printf '%s' "${DEPLOY_SRC}/scripts/${name}"
+  elif [[ -f "${DEPLOY_SRC}/${name}" ]]; then
+    printf '%s' "${DEPLOY_SRC}/${name}"
+  else
+    echo "runtime.manifest lists ${name} but the file was not found" >&2
+    exit 1
+  fi
+}
+
 echo "copying release assets..."
 cp "${DEPLOY_SRC}/docker-compose.release.yml" "${BUNDLE_DIR}/docker-compose.yml"
 cp "${DEPLOY_SRC}/nginx-frontend.conf" "${BUNDLE_DIR}/nginx-frontend.conf"
-cp "${DEPLOY_SRC}/bootstrapper.sh" "${BUNDLE_DIR}/bootstrapper.sh"
 cp "${DEPLOY_SRC}/.env.example" "${BUNDLE_DIR}/.env.example"
-chmod 0755 "${BUNDLE_DIR}/bootstrapper.sh"
 mkdir -p "${BUNDLE_DIR}/configs"
 cp "${DEPLOY_SRC}/configs/"*.yaml "${BUNDLE_DIR}/configs/"
 cp -R "${ROOT}/database/migrations" "${BUNDLE_DIR}/migrations"
 mkdir -p "${BUNDLE_DIR}/scripts"
-cp "${SCRIPTS_SRC}/auth-broker.sh" "${BUNDLE_DIR}/scripts/auth-broker.sh"
-cp "${SCRIPTS_SRC}/configure-vm.sh" "${BUNDLE_DIR}/scripts/configure-vm.sh"
-cp "${SCRIPTS_SRC}/bootstrap-appliance-rendered.sh" "${BUNDLE_DIR}/scripts/bootstrap-appliance-rendered.sh"
-cp "${SCRIPTS_SRC}/sync-db-role-passwords.sh" "${BUNDLE_DIR}/scripts/sync-db-role-passwords.sh"
-cp "${SCRIPTS_SRC}/prepare-ova.sh" "${BUNDLE_DIR}/scripts/prepare-ova.sh"
+
+RUNTIME_MANIFEST="${SCRIPTS_SRC}/runtime.manifest"
+if [[ ! -f "${RUNTIME_MANIFEST}" ]]; then
+  echo "missing runtime allowlist: ${RUNTIME_MANIFEST}" >&2
+  exit 1
+fi
+while IFS= read -r line || [[ -n "${line}" ]]; do
+  line="$(trim_ws "${line}")"
+  [[ -z "${line}" || "${line}" == \#* ]] && continue
+  src="$(resolve_runtime_script "${line}")"
+  if [[ "${line}" == "bootstrapper.sh" ]]; then
+    cp "${src}" "${BUNDLE_DIR}/bootstrapper.sh"
+  else
+    cp "${src}" "${BUNDLE_DIR}/scripts/${line}"
+  fi
+done < "${RUNTIME_MANIFEST}"
+chmod 0755 "${BUNDLE_DIR}/bootstrapper.sh"
+
 cp "${SCRIPTS_SRC}/equate-auth-broker.service" "${BUNDLE_DIR}/scripts/equate-auth-broker.service"
-for fb in first-boot-needed.sh first-boot-console.sh equate-first-boot.service getty-tty1-override.conf equate-appliance.sudoers; do
-  if [[ -f "${SCRIPTS_SRC}/${fb}" ]]; then
-    cp "${SCRIPTS_SRC}/${fb}" "${BUNDLE_DIR}/scripts/${fb}"
+for unit in equate-first-boot.service getty-tty1-override.conf equate-appliance.sudoers; do
+  if [[ -f "${SCRIPTS_SRC}/${unit}" ]]; then
+    cp "${SCRIPTS_SRC}/${unit}" "${BUNDLE_DIR}/scripts/${unit}"
   fi
 done
-if [[ -f "${DEPLOY_SRC}/scripts/manage-users.sh" ]]; then
-  cp "${DEPLOY_SRC}/scripts/manage-users.sh" "${BUNDLE_DIR}/scripts/manage-users.sh"
-fi
-if [[ -f "${DEPLOY_SRC}/scripts/sync-site-topology.sh" ]]; then
-  cp "${DEPLOY_SRC}/scripts/sync-site-topology.sh" "${BUNDLE_DIR}/scripts/sync-site-topology.sh"
-fi
-if [[ -f "${ROOT}/appliance/scripts/debug-agent-log.sh" ]]; then
-  cp "${ROOT}/appliance/scripts/debug-agent-log.sh" "${BUNDLE_DIR}/scripts/debug-agent-log.sh"
-fi
-if [[ -f "${DEPLOY_SRC}/scripts/post-configure.sh" ]]; then
-  cp "${DEPLOY_SRC}/scripts/post-configure.sh" "${BUNDLE_DIR}/scripts/post-configure.sh"
-fi
-if [[ -f "${DEPLOY_SRC}/scripts/manifest-utils.sh" ]]; then
-  cp "${DEPLOY_SRC}/scripts/manifest-utils.sh" "${BUNDLE_DIR}/scripts/manifest-utils.sh"
-fi
 chmod 0755 "${BUNDLE_DIR}/scripts/"*.sh
 
 cat >"${BUNDLE_DIR}/docker-compose.sites.generated.yml" <<'EOF'

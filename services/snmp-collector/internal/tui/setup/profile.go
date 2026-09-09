@@ -5,11 +5,10 @@ import (
 	"strings"
 )
 
-// Profile selects deployment-specific setup behavior (dev lab vs on-prem appliance).
+// Profile selects setup behavior. The supported product profile is appliance.
 type Profile string
 
 const (
-	ProfileDevVxrail Profile = "dev-vxrail"
 	ProfileAppliance Profile = "appliance"
 )
 
@@ -27,38 +26,23 @@ type ProfileConfig struct {
 // ParseProfile normalizes a profile flag value.
 func ParseProfile(raw string) (Profile, error) {
 	switch strings.TrimSpace(strings.ToLower(raw)) {
-	case "", "dev-vxrail", "vxrail", "dev":
-		return ProfileDevVxrail, nil
-	case "appliance", "prod-appliance", "production-appliance":
+	case "", "appliance", "prod-appliance", "production-appliance":
 		return ProfileAppliance, nil
 	default:
-		return "", fmt.Errorf("unknown setup profile %q (use dev-vxrail or appliance)", raw)
+		return "", fmt.Errorf("unknown setup profile %q (use appliance)", raw)
 	}
 }
 
 // ProfileConfigFor returns deployment constants for a profile.
-func ProfileConfigFor(profile Profile) ProfileConfig {
-	switch profile {
-	case ProfileAppliance:
-		return ProfileConfig{
-			ComposeProjectName:  "equate-appliance",
-			CollectorIDPrefix:   "collector-appliance-",
-			MQTTClientIDPrefix:  "appliance-collector-",
-			AutoAcceptDiscovery: false,
-			RequireAdminUser:    true,
-			UserManagement:      true,
-			BaseAdminPort:       baseAdminPort,
-		}
-	default:
-		return ProfileConfig{
-			ComposeProjectName:  "ogsd-development-vxrail",
-			CollectorIDPrefix:   "collector-development-vxrail-",
-			MQTTClientIDPrefix:  "development-vxrail-collector-",
-			AutoAcceptDiscovery: true,
-			RequireAdminUser:    false,
-			UserManagement:      false,
-			BaseAdminPort:       baseAdminPort,
-		}
+func ProfileConfigFor(_ Profile) ProfileConfig {
+	return ProfileConfig{
+		ComposeProjectName:  "equate-appliance",
+		CollectorIDPrefix:   "collector-appliance-",
+		MQTTClientIDPrefix:  "appliance-collector-",
+		AutoAcceptDiscovery: false,
+		RequireAdminUser:    true,
+		UserManagement:      true,
+		BaseAdminPort:       baseAdminPort,
 	}
 }
 

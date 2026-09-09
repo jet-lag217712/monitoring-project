@@ -90,3 +90,27 @@ show snmp community
 Expected BGP peer counts are three on `DO-CORE`, three on `SITE-A-MDF`, two on `SITE-C-MDF`, and one on each remaining router. All sessions must be `Established`; `DO-CORE` must show the DHCP default route and every non-core router must show its static default route toward its upstream neighbor.
 
 From an approved monitoring address (`10.255.0.x` or the MacBook address `192.168.103.1`), use `snmpwalk -v2c -c EquateMonitor <loopback> <MIB root>` for SNMPv2-MIB, IF-MIB, IP-MIB, CISCO-PROCESS-MIB, CISCO-ENVMON-MIB, and CISCO-MEMORY-POOL-MIB. Confirm an unapproved source is denied. Finally, shut and restore a test interface and verify that `ifOperStatus`, counters, and `ifLastChange` update.
+
+## Equate-Appliance VM pairing
+
+The GNS3 VM is the lab network. The Equate-Appliance VM runs the product stack.
+They are separate machines.
+
+On the appliance VM, create the IP-less GNS3 cloud bridge (safe to re-run):
+
+```bash
+sudo ./setup-gns3-bridge.sh
+```
+
+Bind the GNS3 Cloud adapter to `br-gns3` (override with `GNS3_BRIDGE_NAME`).
+Complete first boot with `sudo equate configure`, then use the field-acceptance
+checklist in [`deployments/runbooks/field-acceptance-gns3.md`](../deployments/runbooks/field-acceptance-gns3.md).
+
+Synthetic MQTT → API smoke and a Mosquitto outage drill:
+
+```bash
+./smoke_mqtt_v2_to_api.sh
+sudo ./mqtt_outage_drill.sh
+```
+
+`validate-lab.sh` checks this GNS3 project only; it does not start Equate.

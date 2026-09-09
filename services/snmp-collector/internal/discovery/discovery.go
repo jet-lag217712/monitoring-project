@@ -155,10 +155,6 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	agentDebugLog("A", "discovery.go:Scan", "scan started", map[string]any{
-		"targetCount": len(targets),
-		"maxWorkers":  s.policy.MaxWorkers,
-	})
 
 	workers := s.policy.MaxWorkers
 	if workers > len(targets) {
@@ -190,12 +186,6 @@ func (s *Scanner) Scan(ctx context.Context) ([]Candidate, error) {
 				if s.onProbeComplete != nil {
 					s.onProbeComplete(int(n), total)
 				}
-				if n == 1 || n%32 == 0 {
-					agentDebugLog("B", "discovery.go:worker", "probe completed in worker", map[string]any{
-						"workerProbed": n,
-						"target":       target.String(),
-					})
-				}
 			}
 		}()
 	}
@@ -210,10 +200,6 @@ sendTargets:
 	}
 	close(jobs)
 	workersWG.Wait()
-	agentDebugLog("A", "discovery.go:Scan", "all workers finished", map[string]any{
-		"workerProbed": probed.Load(),
-		"targetCount":  total,
-	})
 	close(results)
 
 	candidates := make([]Candidate, 0, len(results))

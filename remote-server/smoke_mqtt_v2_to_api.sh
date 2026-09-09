@@ -1,17 +1,37 @@
 #!/usr/bin/env bash
 # Publish a schema-valid v2 device_telemetry event over MQTT/TLS and wait until the API sees it.
-# Required env: MQTT_PASSWORD, MQTT_CA_FILE, COMPOSE_NETWORK (or MQTT_HOST),
-#               API_BASE (e.g. http://127.0.0.1:8000), SMOKE_SITE_ID, SMOKE_DEVICE_ID
-# Optional: MQTT_HOST (default mosquitto), MQTT_PORT (default 8883),
-#           SMOKE_COLLECTOR_ID, SMOKE_UPTIME_SECONDS
+# Required env: MQTT_PASSWORD, MQTT_CA_FILE, API_BASE, SMOKE_SITE_ID, SMOKE_DEVICE_ID
+# Optional: MQTT_HOST, MQTT_PORT, COMPOSE_NETWORK, SMOKE_COLLECTOR_ID, SMOKE_UPTIME_SECONDS
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=./common.sh
-source "${SCRIPT_DIR}/common.sh"
+require_cmd() {
+  local cmd
+  for cmd in "$@"; do
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+      echo "Required command not found: ${cmd}" >&2
+      exit 1
+    fi
+  done
+}
+
+require_file() {
+  local path="$1"
+  if [[ ! -f "${path}" ]]; then
+    echo "Required file missing: ${path}" >&2
+    exit 1
+  fi
+}
+
+require_nonempty() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${value}" ]]; then
+    echo "Required variable is empty: ${name}" >&2
+    exit 1
+  fi
+}
 
 require_cmd curl docker date
-
 require_nonempty MQTT_PASSWORD "${MQTT_PASSWORD:-}"
 require_nonempty MQTT_CA_FILE "${MQTT_CA_FILE:-}"
 require_nonempty API_BASE "${API_BASE:-}"

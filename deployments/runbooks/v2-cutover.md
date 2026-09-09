@@ -32,6 +32,4 @@ Revert to v2-only before any shared or production environment.
 
 ## Smoke
 
-Use [`../lib/smoke_mqtt_v2_to_api.sh`](../lib/smoke_mqtt_v2_to_api.sh).
-The legacy v1 helper `smoke_mqtt_to_api.sh` is retained for emergency override
-testing only and is not wired into profile `smoke.sh` scripts.
+Use [`../../remote-server/smoke_mqtt_v2_to_api.sh`](../../remote-server/smoke_mqtt_v2_to_api.sh).

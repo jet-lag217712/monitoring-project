@@ -40,6 +40,9 @@ reviewed discovery, temperature thresholds, upstream dependencies, interface
 filters, transport status, and reload. Static YAML is read-only; managed files
 are validated, atomically written, and audited without secrets.
 
+Develop and release through the repository Makefile; operators on the VM use
+`equate`. See [appliance-6](../decisions/appliance-6.md).
+
 ## Release lifecycle
 
 1. Build an architecture-matched offline bundle with pinned images, migrations,

@@ -490,25 +490,28 @@ Prints `equate <version> (<git-commit>) built <timestamp>`.
 | [`docs/releases/appliance-updates.md`](docs/releases/appliance-updates.md) | Connected `.eqa` updates, signing, and Azure publish |
 | [`docs/architecture/`](docs/architecture/) | Service boundaries, data flow, contracts, and storage |
 | [`deployments/runbooks/`](deployments/runbooks/) | Installation, TUI operations, rotation, recovery, and rollback |
+| [`remote-server/`](remote-server/) | GNS3 laboratory network fixtures |
 | [`.ai/`](.ai/) | Canonical project context, decisions, standards, and roadmap |
 
-`deployments/end-to-end/` and the development directories are validation
-fixtures for engineers. They are not alternative customer deployment models.
+## Develop on an Equate-Appliance VM
 
-## Local source validation
-
-For a source checkout with Docker Compose and reachable SNMP test devices:
+Stage source onto the appliance VM with Make, then configure with `equate`:
 
 ```bash
-./deployments/end-to-end/up.sh
-./deployments/end-to-end/validate.sh
-./deployments/end-to-end/smoke.sh
-./deployments/end-to-end/acceptance.sh
-./deployments/end-to-end/down.sh
+make appliance-bundle ARCH=arm64 VERSION=<version>
+make appliance-stage HOST=<appliance-vm> ARCH=arm64 VERSION=<version>
 ```
 
-For the supported offline release workflow, use the OVA runbook and the release
-scripts rather than copying service containers or hand-editing a customer VM.
+On the VM (as root):
+
+```bash
+sudo bash /tmp/equate-staging/configure-vm.sh --bundle /tmp/equate-staging/bundle --version <version>
+sudo equate configure
+```
+
+For SNMP lab work, import [`remote-server/seven-device-c7200.gns3`](remote-server/README.md)
+and run [`deployments/runbooks/field-acceptance-gns3.md`](deployments/runbooks/field-acceptance-gns3.md).
+Repository checks: `make test`.
 
 ## Appliance release
 

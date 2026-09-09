@@ -1,31 +1,18 @@
 #!/usr/bin/env bash
-# Aggregate deployment validation runner.
+# Appliance-focused repository checks.
 #
 # Usage:
-#   ./deployments/test.sh              # unit + validate + (optional) builds
-#   ./deployments/test.sh --quick      # shell + compose validate + go unit only
-#   ./deployments/test.sh --with-smoke # also start development stack and smoke it
-#   ./deployments/test.sh --with-integration  # require live stack; fail if missing
+#   ./deployments/test.sh         # shell syntax, appliance compose, go unit, frontend build
+#   ./deployments/test.sh --quick # skip frontend build
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-
-ROOT="$(repo_root)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 
 QUICK=0
-WITH_SMOKE=0
-WITH_INTEGRATION=0
-WITH_BUILDS=1
-
 for arg in "$@"; do
   case "${arg}" in
-    --quick) QUICK=1; WITH_BUILDS=0 ;;
-    --with-smoke) WITH_SMOKE=1 ;;
-    --with-integration) WITH_INTEGRATION=1 ;;
-    --no-builds) WITH_BUILDS=0 ;;
+    --quick) QUICK=1 ;;
     *)
       echo "Unknown argument: ${arg}" >&2
       exit 2
@@ -38,12 +25,23 @@ section() {
   echo "=== $* ==="
 }
 
+require_cmd() {
+  local cmd
+  for cmd in "$@"; do
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+      echo "Required command not found: ${cmd}" >&2
+      exit 1
+    fi
+  done
+}
+
 section "Shell syntax"
 require_cmd bash
 SH_FILES=()
 while IFS= read -r f; do
   SH_FILES+=("${f}")
-done < <(find "${SCRIPT_DIR}" -type f -name '*.sh' | sort)
+done < <(find "${ROOT}/appliance" "${ROOT}/deployments" "${ROOT}/infrastructure" "${ROOT}/remote-server" \
+  -type f -name '*.sh' | sort)
 for f in "${SH_FILES[@]}"; do
   bash -n "${f}"
 done
@@ -56,12 +54,27 @@ else
   echo "shellcheck not installed; skipped"
 fi
 
-section "Profile validate"
-"${SCRIPT_DIR}/end-to-end/validate.sh"
-"${SCRIPT_DIR}/development/validate.sh"
-"${SCRIPT_DIR}/development/vxrail/validate.sh"
-"${SCRIPT_DIR}/production/cloud/validate.sh"
-"${SCRIPT_DIR}/production/vxrail/validate.sh"
+section "Appliance compose validate"
+require_cmd docker
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose plugin is required (docker compose)." >&2
+  exit 1
+fi
+COMPOSE="${ROOT}/deployments/production/appliance/docker-compose.yml"
+export POSTGRES_USER=ogsd
+export POSTGRES_PASSWORD=placeholder
+export POSTGRES_DB=ogsd
+export OGSD_INGESTION_USER=ogsd_ingestion
+export OGSD_INGESTION_PASSWORD=placeholder
+export OGSD_API_USER=ogsd_api
+export OGSD_API_PASSWORD=placeholder
+export MQTT_BROKER=tls://mosquitto:8883
+export MQTT_PASSWORD=placeholder
+export MQTT_INGESTION_PASSWORD=placeholder
+export SNMP_COMMUNITY=placeholder
+export SNMP_DISCOVERY_COMMUNITY=placeholder
+docker compose -f "${COMPOSE}" config >/dev/null
+echo "production/appliance compose: OK"
 
 section "Go unit tests"
 (
@@ -83,50 +96,6 @@ if [[ "${QUICK}" -eq 0 ]]; then
       npm ci
     fi
     npm run build
-  )
-fi
-
-if [[ "${WITH_BUILDS}" -eq 1 ]]; then
-  section "Docker image builds (development cloud + collector)"
-  require_docker
-  ensure_env_file "${SCRIPT_DIR}/development/.env" "${SCRIPT_DIR}/development/.env.example"
-  compose_cmd "${SCRIPT_DIR}/development/.env" "${SCRIPT_DIR}/development/docker-compose.yml" build
-  docker build -t ogsd-snmp-collector:test "${ROOT}/services/snmp-collector"
-fi
-
-if [[ "${WITH_SMOKE}" -eq 1 ]]; then
-  section "Development stack smoke"
-  "${SCRIPT_DIR}/development/up.sh"
-  "${SCRIPT_DIR}/development/smoke.sh"
-fi
-
-if [[ "${WITH_INTEGRATION}" -eq 1 ]]; then
-  section "Go integration tests (required — no skip)"
-  MQTT_DIR="${ROOT}/infrastructure/docker/mqtt-broker"
-  require_file "${MQTT_DIR}/certs/ca.crt"
-  require_nonempty MQTT_PASSWORD_CHECK "${MQTT_PASSWORD:-${MQTT_INGESTION_PASSWORD:-ingestion}}"
-
-  export MQTT_PASSWORD="${MQTT_PASSWORD:-ingestion}"
-  export MQTT_BROKER="${MQTT_BROKER:-tls://127.0.0.1:8883}"
-  export MQTT_CA_FILE="${MQTT_CA_FILE:-${MQTT_DIR}/certs/ca.crt}"
-  export DATABASE_URL="${DATABASE_URL:-postgres://ogsd_ingestion:ingestion@127.0.0.1:5432/ogsd?sslmode=disable}"
-  export DATABASE_ADMIN_URL="${DATABASE_ADMIN_URL:-postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable}"
-
-  # Fail fast if broker/DB unreachable instead of letting tests Skip.
-  require_cmd curl
-  wait_http "http://127.0.0.1:9091/healthz" "ingestion" 10 || {
-    echo "Stack not up. Run ./deployments/development/up.sh first." >&2
-    exit 1
-  }
-
-  (
-    cd "${ROOT}/services/ingestion-service" && go test -tags=integration ./tests/ -count=1 -v
-  )
-  (
-    cd "${ROOT}/services/snmp-collector" && go test -tags=integration ./tests/ -count=1 -v
-  )
-  (
-    cd "${ROOT}/services/backend-api" && go test -tags=integration ./tests/ -count=1 -v
   )
 fi
 

@@ -22,16 +22,17 @@ The appliance runs migrations after PostgreSQL is healthy. For source testing:
 
 ```bash
 export DATABASE_URL=postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable
-./infrastructure/script/migrate.sh up
+make db-migrate DATABASE_URL="$DATABASE_URL"
 ./infrastructure/script/migrate.sh version
 ```
 
 Role bootstrap is performed by the local installation workflow:
 
 ```bash
+export DATABASE_URL=postgres://ogsd:ogsd@127.0.0.1:5432/ogsd?sslmode=disable
 export OGSD_INGESTION_PASSWORD=replace-locally
 export OGSD_API_PASSWORD=replace-locally
-./infrastructure/script/bootstrap-db-roles.sh
+make db-bootstrap-roles DATABASE_URL="$DATABASE_URL"
 ```
 
 The appliance generates actual credentials per installation. Never commit

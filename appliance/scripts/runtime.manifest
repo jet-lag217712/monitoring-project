@@ -1,0 +1,14 @@
+# Shell scripts copied into the customer appliance bundle under scripts/
+# (bootstrapper.sh is copied to the bundle root). Do not add release, CI,
+# OVA-prep, or debug helpers here.
+auth-broker.sh
+bootstrap-appliance-rendered.sh
+bootstrapper.sh
+configure-vm.sh
+first-boot-console.sh
+first-boot-needed.sh
+manage-users.sh
+manifest-utils.sh
+post-configure.sh
+sync-db-role-passwords.sh
+sync-site-topology.sh

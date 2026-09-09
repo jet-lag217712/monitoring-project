@@ -5,14 +5,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/debug-agent-log.sh" ]]; then
-  # shellcheck source=debug-agent-log.sh
-  source "${SCRIPT_DIR}/debug-agent-log.sh"
-elif [[ -f "${SCRIPT_DIR}/../../appliance/scripts/debug-agent-log.sh" ]]; then
-  # shellcheck source=../../appliance/scripts/debug-agent-log.sh
-  source "${SCRIPT_DIR}/../../appliance/scripts/debug-agent-log.sh"
-fi
-
 DEPLOY_DIR="${EQUATE_DEPLOY_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 MANIFEST="${EQUATE_MANIFEST:-${DEPLOY_DIR}/sites/manifest.yaml}"
 COMPOSE_ENV="${EQUATE_COMPOSE_ENV:-/run/equate/rendered/compose.env}"
@@ -208,10 +200,5 @@ run_psql() {
 }
 
 generate_sql | run_psql
-
-if declare -F debug_agent_log >/dev/null 2>&1; then
-  db_after="$(query_db_topology_json "${DEPLOY_DIR}" "${COMPOSE_ENV}")"
-  debug_agent_log "H2" "sync-site-topology.sh" "topology sync applied" "{\"manifest\":$(manifest_topology_json "${MANIFEST}"),\"db_after\":${db_after}}"
-fi
 
 echo "Site topology synced from ${MANIFEST}"

@@ -26,13 +26,12 @@ Cross-collector site relationships use `sites.upstream_site_ids` in PostgreSQL,
 configured in the multi-site manifest and evaluated at read time by the backend
 API. See [api-1](../decisions/api-1.md).
 
-## Installation shapes
+## Validation fixtures (non-product)
 
 | Path | Purpose |
 |---|---|
 | `deployments/production/appliance/` | Supported all-in-one customer VM |
-| `deployments/end-to-end/` | Single-host source smoke and acceptance |
-| `deployments/development/vxrail/` | VxRail-like developer fixture |
+| `remote-server/` | GNS3 SNMP lab topology for field acceptance |
 
 The local appliance publishes only nginx. Admin ports, metrics, broker,
 database, and control sockets stay on private networks or loopback.

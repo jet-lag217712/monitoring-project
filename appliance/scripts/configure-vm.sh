@@ -10,10 +10,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/debug-agent-log.sh" ]]; then
-  # shellcheck source=debug-agent-log.sh
-  source "${SCRIPT_DIR}/debug-agent-log.sh"
-fi
 
 BUNDLE_DIR=""
 VERSION=""
@@ -110,27 +106,13 @@ sync_site_topology_from_release() {
   local script="${release_dir}/scripts/sync-site-topology.sh"
   local manifest="${release_dir}/sites/manifest.yaml"
   if [[ ! -f "${script}" || ! -f "${manifest}" ]]; then
-    if declare -F debug_agent_log >/dev/null 2>&1; then
-      debug_agent_log "H1" "configure-vm.sh:sync_site_topology_from_release" "topology sync skipped" "{\"has_script\":$([[ -f "${script}" ]] && echo true || echo false),\"has_manifest\":$([[ -f "${manifest}" ]] && echo true || echo false)}"
-    fi
     return 0
-  fi
-  if declare -F debug_agent_log >/dev/null 2>&1; then
-    local db_before manifest_data
-    db_before="$(query_db_topology_json "${release_dir}" "${RUN_DIR}/rendered/compose.env")"
-    manifest_data="$(manifest_topology_json "${manifest}")"
-    debug_agent_log "H2" "configure-vm.sh:sync_site_topology_from_release" "before topology sync" "{\"manifest\":${manifest_data},\"db_before\":${db_before}}"
   fi
   echo "syncing site topology from ${manifest}..."
   local sync_rc=0
   EQUATE_DEPLOY_DIR="${release_dir}" \
     EQUATE_COMPOSE_ENV="${RUN_DIR}/rendered/compose.env" \
     bash "${script}" || sync_rc=$?
-  if declare -F debug_agent_log >/dev/null 2>&1; then
-    local db_after
-    db_after="$(query_db_topology_json "${release_dir}" "${RUN_DIR}/rendered/compose.env")"
-    debug_agent_log "H1" "configure-vm.sh:sync_site_topology_from_release" "after topology sync" "{\"sync_rc\":${sync_rc},\"db_after\":${db_after}}"
-  fi
   return "${sync_rc}"
 }
 
@@ -138,9 +120,6 @@ run_post_configure_from_release() {
   local release_dir="$1"
   local script="${release_dir}/scripts/post-configure.sh"
   if [[ ! -f "${release_dir}/sites/manifest.yaml" ]]; then
-    if declare -F debug_agent_log >/dev/null 2>&1; then
-      debug_agent_log "H6" "configure-vm.sh:run_post_configure_from_release" "post-configure skipped (no manifest)" "{}"
-    fi
     return 0
   fi
   if [[ ! -x "${script}" ]]; then
@@ -149,9 +128,6 @@ run_post_configure_from_release() {
     return $?
   fi
   echo "running post-configure handoff from ${release_dir}..."
-  if declare -F debug_agent_log >/dev/null 2>&1; then
-    debug_agent_log "H6" "configure-vm.sh:run_post_configure_from_release" "starting post-configure" "{\"release_dir\":\"${release_dir}\"}"
-  fi
   EQUATE_DEPLOY_DIR="${release_dir}" \
     EQUATE_COMPOSE_ENV="${RUN_DIR}/rendered/compose.env" \
     bash "${script}"
@@ -306,7 +282,7 @@ finalize_release_install() {
 install_first_boot_console() {
   local lib_dir="/usr/local/lib/equate"
   install -d -m 0755 "${lib_dir}"
-  for script in first-boot-needed.sh first-boot-console.sh; do
+  for script in first-boot-needed.sh first-boot-console.sh verify-appliance.sh verify-ova-import.sh; do
     if [[ -f "${RELEASE_DIR}/scripts/${script}" ]]; then
       install -m 0755 "${RELEASE_DIR}/scripts/${script}" "${lib_dir}/${script}"
     elif [[ -f "${SCRIPT_DIR}/${script}" ]]; then

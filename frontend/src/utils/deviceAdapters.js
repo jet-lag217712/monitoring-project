@@ -90,13 +90,6 @@ export function adaptInterface(iface) {
   const utilizationPct =
     iface.utilization_pct ?? deriveUtilizationPct(traffic, iface.speed_bps)
 
-  // #region agent log
-  if (iface?.name === 'Gi0/0' || iface?.if_index === 1) {
-    const raw = Array.isArray(iface.traffic_history) ? iface.traffic_history : []
-    fetch('http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'269a95'},body:JSON.stringify({sessionId:'269a95',location:'deviceAdapters.js:adaptInterface',message:'traffic history mapping',data:{name:iface.name,rawCount:raw.length,rawFirst:raw[0]??null,mappedCount:traffic.length,mappedFirst:traffic[0]??null,utilizationPct},timestamp:Date.now(),runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-  }
-  // #endregion
-
   return {
     ...iface,
     if_index: iface.if_index,

@@ -1,9 +1,6 @@
 package handlers
 
 import (
-	"bytes"
-	"encoding/json"
-	"net/http"
 	"time"
 
 	"github.com/equate/ogsd/services/backend-api/internal/derive"
@@ -63,9 +60,6 @@ func buildSiteProjections(sites []store.SiteRow, devices []store.DeviceRow, now 
 	}
 
 	eval := derive.EvaluateSiteTopology(topology, raw)
-	// #region agent log
-	debugLogSiteTopologyEval(sites, raw, eval)
-	// #endregion
 
 	out := siteProjectionIndex{
 		bySiteID: make(map[uuid.UUID]siteProjectionBundle, len(sites)),
@@ -127,87 +121,3 @@ func (idx siteProjectionIndex) bundleForSiteName(name string) (siteProjectionBun
 	bundle, ok := idx.byName[name]
 	return bundle, ok
 }
-
-// #region agent log
-var lastSiteTopoDebugSig string
-
-func debugLogSiteTopologyEval(sites []store.SiteRow, raw map[string]derive.SiteRawHealth, eval derive.SiteTopologyEval) {
-	type deviceSnap struct {
-		ID     string `json:"id"`
-		Status int    `json:"status"`
-		Reason string `json:"reason"`
-	}
-	type siteSnap struct {
-		Name                 string       `json:"name"`
-		Upstreams            []string     `json:"upstreams"`
-		Hubs                 []string     `json:"hubs"`
-		DeviceCount          int          `json:"device_count"`
-		Critical             int          `json:"critical"`
-		Unknown              int          `json:"unknown"`
-		UnavailableUpstreams []string     `json:"unavailable_upstreams"`
-		RootCauses           []string     `json:"root_causes"`
-		Impacted             bool         `json:"impacted"`
-		Devices              []deviceSnap `json:"devices"`
-	}
-	out := make([]siteSnap, 0, len(sites))
-	for _, site := range sites {
-		rawSite := raw[site.Name]
-		state := eval.States[site.Name]
-		snap := siteSnap{
-			Name:                 site.Name,
-			Upstreams:            append([]string(nil), state.UpstreamSiteIDs...),
-			Hubs:                 append([]string(nil), site.HubDeviceIDs...),
-			DeviceCount:          len(rawSite.Devices),
-			Critical:             rawSite.Counts.CriticalCount,
-			Unknown:              rawSite.Counts.UnknownCount,
-			UnavailableUpstreams: append([]string(nil), state.UnavailableUpstreamSiteIDs...),
-			RootCauses:           append([]string(nil), state.RootCauseSiteIDs...),
-			Impacted:             state.SiteDependencyImpacted,
-		}
-		for _, d := range rawSite.Devices {
-			snap.Devices = append(snap.Devices, deviceSnap{
-				ID:     d.InventoryDeviceID,
-				Status: d.Projection.Status,
-				Reason: d.Projection.StatusReason,
-			})
-		}
-		out = append(out, snap)
-	}
-	data, err := json.Marshal(out)
-	if err != nil {
-		return
-	}
-	sig := string(data)
-	if sig == lastSiteTopoDebugSig {
-		return
-	}
-	lastSiteTopoDebugSig = sig
-	body, err := json.Marshal(map[string]any{
-		"sessionId":    "f7c9cd",
-		"runId":        "post-fix",
-		"hypothesisId": "A",
-		"location":     "site_projections.go:EvaluateSiteTopology",
-		"message":      "backend site topology evaluation",
-		"data":         map[string]any{"sites": json.RawMessage(data)},
-		"timestamp":    time.Now().UnixMilli(),
-	})
-	if err != nil {
-		return
-	}
-	req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:7535/ingest/67222a7b-79e8-4cfd-9a12-c85ccde20fea", bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Debug-Session-Id", "f7c9cd")
-	go func() {
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		resp, err := client.Do(req)
-		if err != nil {
-			return
-		}
-		_ = resp.Body.Close()
-	}()
-}
-
-// #endregion
